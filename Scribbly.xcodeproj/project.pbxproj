@@ -1,0 +1,112 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		B86D671F75834E188769A7A3 /* Recorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 054BAE2AA0174C5EA77E775D /* Recorder.swift */; };
+		FAF428569CF644F3AD799C3E /* ScribblyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADC2AAB66CBF40D79ABE0334 /* ScribblyApp.swift */; };
+		63FE3980477C46FB9A79A59A /* Uploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B091CD67F6E43C5B824E94F /* Uploader.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		054BAE2AA0174C5EA77E775D /* Recorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder.swift; sourceTree = "<group>"; };
+		ADC2AAB66CBF40D79ABE0334 /* ScribblyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScribblyApp.swift; sourceTree = "<group>"; };
+		0B091CD67F6E43C5B824E94F /* Uploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Uploader.swift; sourceTree = "<group>"; };
+		2B55227F02E54ED98FF41B7B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		0BDC02F1B6F041F6A5A35C4A /* Scribbly.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Scribbly.entitlements; sourceTree = "<group>"; };
+		0511F01A7C4545B6A907FE29 /* Scribbly.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Scribbly.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		B639B7D7DF634EA5A5B61E37 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A3D97EFE095E41958B43D701 = {isa = PBXGroup; children = (104FA9B6E54946FBB6ABFD6C /* Scribbly */, 3C4BD6427E334A29A873754C /* Products */, ); sourceTree = "<group>"; };
+		3C4BD6427E334A29A873754C /* Products */ = {isa = PBXGroup; children = (0511F01A7C4545B6A907FE29 /* Scribbly.app */, ); name = Products; sourceTree = "<group>"; };
+		104FA9B6E54946FBB6ABFD6C /* Scribbly */ = {isa = PBXGroup; children = (054BAE2AA0174C5EA77E775D /* Recorder.swift */, ADC2AAB66CBF40D79ABE0334 /* ScribblyApp.swift */, 0B091CD67F6E43C5B824E94F /* Uploader.swift */, 2B55227F02E54ED98FF41B7B /* Info.plist */, 0BDC02F1B6F041F6A5A35C4A /* Scribbly.entitlements */, ); path = Scribbly; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1B5BDF4194B94B18B83F2090 /* Scribbly */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0402491FCB4542AE89D17F5A;
+			buildPhases = (DE308B8CA64548B18EA6843F, B639B7D7DF634EA5A5B61E37, 85F276BCCC584A2B8111B114, );
+			buildRules = ();
+			dependencies = ();
+			name = Scribbly;
+			productName = Scribbly;
+			productReference = 0511F01A7C4545B6A907FE29 /* Scribbly.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D98BDB41321845ECAB8A3CD7 = {
+			isa = PBXProject;
+			attributes = { BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 1500; LastUpgradeCheck = 1500; TargetAttributes = { 1B5BDF4194B94B18B83F2090 = { CreatedOnToolsVersion = 15.0; }; }; };
+			buildConfigurationList = 063FA8C8CE30484E8E8C7875;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base, );
+			mainGroup = A3D97EFE095E41958B43D701;
+			productRefGroup = 3C4BD6427E334A29A873754C;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (1B5BDF4194B94B18B83F2090 /* Scribbly */, );
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		85F276BCCC584A2B8111B114 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		DE308B8CA64548B18EA6843F = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (B86D671F75834E188769A7A3 /* Recorder.swift in Sources */, FAF428569CF644F3AD799C3E /* ScribblyApp.swift in Sources */, 63FE3980477C46FB9A79A59A /* Uploader.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0122DD2EDFB44A0589026272 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+			ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES;
+			COPY_PHASE_STRIP = NO; ENABLE_STRICT_OBJC_MSGSEND = YES; GCC_C_LANGUAGE_STANDARD = gnu17;
+			IPHONEOS_DEPLOYMENT_TARGET = 16.0; ONLY_ACTIVE_ARCH = YES; SDKROOT = iphoneos;
+			SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			SWIFT_VERSION = 5.0; ENABLE_USER_SCRIPT_SANDBOXING = NO;
+		}; name = Debug; };
+		D71BE66C5E0A4AE9A2E30A04 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+			ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES;
+			COPY_PHASE_STRIP = NO; ENABLE_NS_ASSERTIONS = NO; ENABLE_STRICT_OBJC_MSGSEND = YES;
+			GCC_C_LANGUAGE_STANDARD = gnu17; IPHONEOS_DEPLOYMENT_TARGET = 16.0; SDKROOT = iphoneos;
+			SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O";
+			SWIFT_VERSION = 5.0; VALIDATE_PRODUCT = YES; ENABLE_USER_SCRIPT_SANDBOXING = NO;
+		}; name = Release; };
+		0541BC4DB4DB4C8C8F5AC252 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+			ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_ENTITLEMENTS = Scribbly/Scribbly.entitlements;
+			CODE_SIGN_STYLE = Manual; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = XF783932R2;
+			GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Scribbly/Info.plist;
+			LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", );
+			MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = com.connor.scribbly;
+			PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_EMIT_LOC_STRINGS = YES;
+			TARGETED_DEVICE_FAMILY = 1;
+		}; name = Debug; };
+		A5C0C797607E4054AC4A5010 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+			ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_ENTITLEMENTS = Scribbly/Scribbly.entitlements;
+			CODE_SIGN_STYLE = Manual; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = XF783932R2;
+			GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Scribbly/Info.plist;
+			LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", );
+			MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = com.connor.scribbly;
+			PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_EMIT_LOC_STRINGS = YES;
+			TARGETED_DEVICE_FAMILY = 1;
+		}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		063FA8C8CE30484E8E8C7875 = {isa = XCConfigurationList; buildConfigurations = (0122DD2EDFB44A0589026272 /* Debug */, D71BE66C5E0A4AE9A2E30A04 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		0402491FCB4542AE89D17F5A = {isa = XCConfigurationList; buildConfigurations = (0541BC4DB4DB4C8C8F5AC252 /* Debug */, A5C0C797607E4054AC4A5010 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = D98BDB41321845ECAB8A3CD7;
+}
