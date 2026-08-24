@@ -2,32 +2,35 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleDisplayName</key><string>Scribbly</string>
-  <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
-  <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
-  <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
-  <key>LSRequiresIPhoneOS</key><true/>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleDisplayName</key><string>Scribbly</string>
+<key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+<key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+<key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>1.0</string>
+<key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+<key>LSRequiresIPhoneOS</key><true/>
 
-  <!-- THE critical entitlement: keeps the mic alive when backgrounded/locked -->
-  <key>UIBackgroundModes</key>
-  <array>
-    <string>audio</string>
-    <string>processing</string>
-  </array>
+<!-- THE critical entitlement: keeps the mic alive when backgrounded/locked. -->
+<!-- 'processing' was declared but never used: the recorder relies on 'audio'
+     plus a UIApplication background-task assertion, and the uploader uses a
+     background URLSession, which needs no background mode. Declaring it made
+     App Store validation demand BGTaskSchedulerPermittedIdentifiers. -->
+<key>UIBackgroundModes</key>
+<array>
+<string>audio</string>
+</array>
 
-  <key>NSMicrophoneUsageDescription</key>
-  <string>Scribbly records your voice notes and transcribes them into your library. Recording continues in the background until you tap Finish.</string>
+<key>NSMicrophoneUsageDescription</key>
+<string>Scribbly records your voice notes and transcribes them into your library. Recording continues in the background until you tap Finish.</string>
 
-  <key>UILaunchScreen</key>
-  <dict><key>UIColorName</key><string></string></dict>
-  <key>UISupportedInterfaceOrientations</key>
-  <array><string>UIInterfaceOrientationPortrait</string></array>
-  <key>UIUserInterfaceStyle</key><string>Dark</string>
-  <key>ITSAppUsesNonExemptEncryption</key><false/>
+<key>UILaunchScreen</key>
+<dict><key>UIColorName</key><string></string></dict>
+<key>UISupportedInterfaceOrientations</key>
+<array><string>UIInterfaceOrientationPortrait</string></array>
+<key>UIUserInterfaceStyle</key><string>Dark</string>
+<key>ITSAppUsesNonExemptEncryption</key><false/>
 </dict>
 </plist>
