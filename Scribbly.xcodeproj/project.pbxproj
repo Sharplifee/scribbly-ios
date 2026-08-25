@@ -8,6 +8,7 @@
 		B86D671F75834E188769A7A3 /* Recorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 054BAE2AA0174C5EA77E775D /* Recorder.swift */; };
 		FAF428569CF644F3AD799C3E /* ScribblyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADC2AAB66CBF40D79ABE0334 /* ScribblyApp.swift */; };
 		63FE3980477C46FB9A79A59A /* Uploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B091CD67F6E43C5B824E94F /* Uploader.swift */; };
+		A11C0FE10001400000000002 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A11C0FE10001400000000001 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -16,6 +17,7 @@
 		0B091CD67F6E43C5B824E94F /* Uploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Uploader.swift; sourceTree = "<group>"; };
 		2B55227F02E54ED98FF41B7B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		0BDC02F1B6F041F6A5A35C4A /* Scribbly.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Scribbly.entitlements; sourceTree = "<group>"; };
+		A11C0FE10001400000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0511F01A7C4545B6A907FE29 /* Scribbly.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Scribbly.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -26,7 +28,7 @@
 /* Begin PBXGroup section */
 		A3D97EFE095E41958B43D701 = {isa = PBXGroup; children = (104FA9B6E54946FBB6ABFD6C /* Scribbly */, 3C4BD6427E334A29A873754C /* Products */, ); sourceTree = "<group>"; };
 		3C4BD6427E334A29A873754C /* Products */ = {isa = PBXGroup; children = (0511F01A7C4545B6A907FE29 /* Scribbly.app */, ); name = Products; sourceTree = "<group>"; };
-		104FA9B6E54946FBB6ABFD6C /* Scribbly */ = {isa = PBXGroup; children = (054BAE2AA0174C5EA77E775D /* Recorder.swift */, ADC2AAB66CBF40D79ABE0334 /* ScribblyApp.swift */, 0B091CD67F6E43C5B824E94F /* Uploader.swift */, 2B55227F02E54ED98FF41B7B /* Info.plist */, 0BDC02F1B6F041F6A5A35C4A /* Scribbly.entitlements */, ); path = Scribbly; sourceTree = "<group>"; };
+		104FA9B6E54946FBB6ABFD6C /* Scribbly */ = {isa = PBXGroup; children = (054BAE2AA0174C5EA77E775D /* Recorder.swift */, ADC2AAB66CBF40D79ABE0334 /* ScribblyApp.swift */, 0B091CD67F6E43C5B824E94F /* Uploader.swift */, 2B55227F02E54ED98FF41B7B /* Info.plist */, 0BDC02F1B6F041F6A5A35C4A /* Scribbly.entitlements */, A11C0FE10001400000000001 /* Assets.xcassets */, ); path = Scribbly; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -61,7 +63,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		85F276BCCC584A2B8111B114 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		85F276BCCC584A2B8111B114 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A11C0FE10001400000000002 /* Assets.xcassets in Resources */, ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
