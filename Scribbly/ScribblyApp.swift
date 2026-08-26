@@ -140,7 +140,7 @@ struct RecordView: View {
                 Spacer().frame(height: 12)
             }
         }
-        .onChange(of: armToken) { _, _ in
+        .onChange(of: armToken) { _ in
             if rec.state == .idle && !up.isUploading { savedTitle = nil; rec.start() }
         }
         .alert("Discard this recording?", isPresented: $showDiscardConfirm) {
