@@ -41,23 +41,43 @@ enum P {
 
 struct RootView: View {
     @State private var tab = 0
+    @State private var armToken = 0
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
         ZStack {
             P.bg.ignoresSafeArea()
             TabView(selection: $tab) {
-                RecordView()
+                RecordView(armToken: armToken)
                     .tabItem { Label("Record", systemImage: "mic.fill") }.tag(0)
                 NavigationStack { LibraryScreen() }
                     .tabItem { Label("Library", systemImage: "books.vertical.fill") }.tag(1)
             }
             .tint(P.accent)
         }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { consumeArmFlag() } }
+        .onOpenURL { url in if url.scheme == "scribbly" && url.host == "record" { arm() } }
+        .task { consumeArmFlag() }
+    }
+
+    /// Reads the flag the Control Center button / widget set, then clears it.
+    private func consumeArmFlag() {
+        let d = UserDefaults(suiteName: "group.com.connor.scribbly")
+        guard d?.bool(forKey: "arm_recording") == true else { return }
+        d?.set(false, forKey: "arm_recording")
+        arm()
+    }
+
+    private func arm() {
+        tab = 0
+        armToken += 1   // change triggers RecordView to auto-start
     }
 }
 
 // MARK: - Record
 
 struct RecordView: View {
+    var armToken: Int = 0
     @StateObject private var rec = Recorder()
     @StateObject private var up = Uploader.shared
     @State private var savedTitle: String?
@@ -130,6 +150,9 @@ struct RecordView: View {
 
                 Spacer().frame(height: 12)
             }
+        }
+        .onChange(of: armToken) { _, _ in
+            if rec.state == .idle && !up.isUploading { savedTitle = nil; rec.start() }
         }
         .alert("Discard this recording?", isPresented: $showDiscardConfirm) {
             Button("Keep recording", role: .cancel) {}

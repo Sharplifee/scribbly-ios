@@ -1,0 +1,48 @@
+name: Scribbly
+options:
+  bundleIdPrefix: com.connor
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: XF783932R2
+    CODE_SIGN_STYLE: Manual
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    TARGETED_DEVICE_FAMILY: "1"
+
+targets:
+  Scribbly:
+    type: application
+    platform: iOS
+    sources:
+      - Scribbly
+      - path: ScribblyControls/RecordIntent.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.connor.scribbly
+        INFOPLIST_FILE: Scribbly/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: Scribbly/Scribbly.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        PROVISIONING_PROFILE_SPECIFIER: "Scribbly CI"
+    dependencies:
+      - target: ScribblyControls
+    # Embeds the extension automatically because of the dependency.
+
+  ScribblyControls:
+    type: app-extension
+    platform: iOS
+    sources:
+      - ScribblyControls
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.connor.scribbly.ScribblyControls
+        INFOPLIST_FILE: ScribblyControls/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: ScribblyControls/ScribblyControls.entitlements
+        PROVISIONING_PROFILE_SPECIFIER: "ScribblyControls CI"
+        SKIP_INSTALL: YES

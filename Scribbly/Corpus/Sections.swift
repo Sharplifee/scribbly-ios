@@ -216,6 +216,8 @@ struct IngestSection: View {
     private let modes = ["Channel", "Links", "Audio"]
     @State private var text = ""
     @State private var status: String?
+    @State private var showPicker = false
+    @StateObject private var files = FileIngestModel()
 
     var body: some View {
         ScrollView {
@@ -243,8 +245,43 @@ struct IngestSection: View {
                             .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 14))
                     }.padding(.horizontal, 16)
                 } else {
-                    Text("Audio upload uses the system file picker — wire-up pending.")
-                        .font(.system(size: 13)).foregroundColor(P.textDim).padding(.top, 20)
+                    VStack(spacing: 12) {
+                        Text("AUDIO & VIDEO · MP3 · M4A · WAV · MP4 · MOV · M4V")
+                            .font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim)
+                            .kerning(0.4)
+                        Button { showPicker = true } label: {
+                            VStack(spacing: 8) {
+                                if files.working { ProgressView().tint(P.accent) }
+                                else { Image(systemName: "arrow.up").font(.system(size: 22)).foregroundColor(P.accent) }
+                                Text(files.working ? "Working…" : "Tap to upload")
+                                    .font(.system(size: 16, weight: .semibold)).foregroundColor(.white)
+                                Text("any audio or video — the audio is transcribed")
+                                    .font(.system(size: 12)).foregroundColor(P.textDim)
+                            }
+                            .frame(maxWidth: .infinity).padding(.vertical, 34)
+                            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
+                            .overlay(RoundedRectangle(cornerRadius: 16)
+                                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [6])).foregroundColor(P.border))
+                        }
+                        .disabled(files.working)
+                        .padding(.horizontal, 16)
+                        if let s = files.status {
+                            Text(s).font(.system(size: 13)).foregroundColor(P.textSec)
+                                .multilineTextAlignment(.center).padding(.horizontal, 24)
+                        }
+                        if let e = files.lastError {
+                            Text(e).font(.system(size: 13)).foregroundColor(P.danger)
+                                .multilineTextAlignment(.center).padding(.horizontal, 24)
+                        }
+                    }
+                    .padding(.top, 6)
+                    .fileImporter(isPresented: $showPicker,
+                                  allowedContentTypes: FileIngestModel.contentTypes,
+                                  allowsMultipleSelection: false) { result in
+                        if case .success(let urls) = result, let url = urls.first {
+                            Task { await files.handle(url) }
+                        }
+                    }
                 }
 
                 if let s = status {

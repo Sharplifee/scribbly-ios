@@ -11,6 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_26.4.1.app || sudo xcode-select -s /Applications/Xcode.app
 
@@ -48,6 +54,18 @@ jobs:
           echo "PROFILE_NAME=$NAME" >> $GITHUB_ENV
           echo "Installed profile: $NAME ($UUID)"
 
+      - name: Install widget provisioning profile
+        env:
+          WPROFILE: ${{ secrets.APPLE_WIDGET_PROFILE }}
+        run: |
+          set -euo pipefail
+          echo "$WPROFILE" | base64 --decode > /tmp/wp.mobileprovision
+          WUUID=$(security cms -D -i /tmp/wp.mobileprovision | plutil -extract UUID raw -)
+          WNAME=$(security cms -D -i /tmp/wp.mobileprovision | plutil -extract Name raw -)
+          cp /tmp/wp.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$WUUID.mobileprovision
+          echo "WIDGET_PROFILE_NAME=$WNAME" >> $GITHUB_ENV
+          echo "Installed widget profile: $WNAME"
+
       - name: Set build number
         run: |
           echo "BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> $GITHUB_ENV
@@ -63,7 +81,6 @@ jobs:
             CURRENT_PROJECT_VERSION=$BUILD_NUMBER \
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM=${{ secrets.APPLE_TEAM_ID }} \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             archive
 
@@ -81,7 +98,10 @@ jobs:
             <key>signingStyle</key><string>manual</string>
             <key>uploadSymbols</key><true/>
             <key>provisioningProfiles</key>
-            <dict><key>com.connor.scribbly</key><string>$PROFILE_NAME</string></dict>
+            <dict>
+              <key>com.connor.scribbly</key><string>$PROFILE_NAME</string>
+              <key>com.connor.scribbly.ScribblyControls</key><string>$WIDGET_PROFILE_NAME</string>
+            </dict>
           </dict></plist>
           PLIST
           xcodebuild -exportArchive \
