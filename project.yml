@@ -43,6 +43,5 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.connor.scribbly.ScribblyControls
         INFOPLIST_FILE: ScribblyControls/Info.plist
         GENERATE_INFOPLIST_FILE: NO
-        CODE_SIGN_ENTITLEMENTS: ScribblyControls/ScribblyControls.entitlements
         PROVISIONING_PROFILE_SPECIFIER: "ScribblyControls CI"
         SKIP_INSTALL: YES

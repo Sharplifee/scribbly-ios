@@ -1,23 +1,18 @@
 import AppIntents
 import Foundation
 
-/// Fired by the Control Center button and the Home Screen widget.
-/// iOS does not allow a third-party control to capture audio in place, so this
-/// opens Scribbly and sets a flag the app reads on foreground to auto-start
-/// recording. One tap → app opens already recording.
+/// Runs when the Control Center button is tapped. It opens Scribbly; the app
+/// then auto-starts recording. Without an App Group we can't share a flag file
+/// cross-process, so the app treats "opened via the control/URL" as the arm
+/// signal (see RootView.onOpenURL and the openAppWhenRun path).
 struct StartRecordingIntent: AppIntent {
     static var title: LocalizedStringResource = "Start Scribbly Recording"
     static var description = IntentDescription("Opens Scribbly and begins recording immediately.")
-
-    /// Bring the app to the foreground — required for mic capture.
     static var openAppWhenRun: Bool = true
 
     @MainActor
-    func perform() async throws -> some IntentResult {
-        // App group flag; RootView reads and clears it on becomeActive.
-        let defaults = UserDefaults(suiteName: "group.com.connor.scribbly")
-        defaults?.set(true, forKey: "arm_recording")
-        defaults?.set(Date().timeIntervalSince1970, forKey: "arm_recording_at")
-        return .result()
+    func perform() async throws -> some IntentResult & OpensIntent {
+        // Hand off to the app via its URL scheme so RootView.onOpenURL arms recording.
+        return .result(opensIntent: OpenURLIntent(URL(string: "scribbly://record")!))
     }
 }
