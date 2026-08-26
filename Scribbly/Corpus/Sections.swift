@@ -34,14 +34,14 @@ struct GroupCard: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(group.channel).font(.system(size: 22, weight: .bold)).foregroundColor(.white)
-                Text("\(group.totalVideos) videos · \(group.batchCount) batches")
+                Text("\(group.totalVideos) entries · \(group.batchCount) batches")
                     .font(.system(size: 13)).foregroundColor(P.textSec)
                 Text(group.badgeRange).font(.system(size: 12)).foregroundColor(P.textDim)
             }
             Spacer()
             VStack(spacing: 2) {
                 Text("\(group.totalVideos)").font(.system(size: 26, weight: .bold)).foregroundColor(.white)
-                Text("videos").font(.system(size: 11)).foregroundColor(P.textDim)
+                Text("entries").font(.system(size: 11)).foregroundColor(P.textDim)
             }
         }
         .padding(16)
@@ -106,7 +106,7 @@ struct CollectionCard: View {
             Spacer()
             VStack(spacing: 2) {
                 Text("\(collection.saved_videos ?? 0)").font(.system(size: 22, weight: .bold)).foregroundColor(.white)
-                Text("videos").font(.system(size: 11)).foregroundColor(P.textDim)
+                Text("entries").font(.system(size: 11)).foregroundColor(P.textDim)
             }
         }
         .padding(16).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
