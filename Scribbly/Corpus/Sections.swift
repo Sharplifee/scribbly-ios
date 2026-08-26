@@ -8,7 +8,7 @@ struct GroupsSection: View {
         ScrollView {
             LazyVStack(spacing: 12) {
                 if !store.groups.isEmpty {
-                    Text("\(store.groups.count) groups · \(fmt(store.groups.reduce(0){$0+$1.totalVideos})) videos")
+                    Text("\(store.groups.count) groups · \(fmt(store.groups.reduce(0){$0+$1.totalVideos})) entries")
                         .font(.system(size: 12, weight: .semibold)).foregroundColor(P.textDim)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 18).padding(.top, 12)
