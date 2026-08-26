@@ -209,13 +209,13 @@ enum CorpusAPI {
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
-            throw CorpusError.http(status, String(data: data, encoding: .utf8) ?? "")
+            throw CorpusAPIError.http(status, String(data: data, encoding: .utf8) ?? "")
         }
         return try JSONDecoder().decode(T.self, from: data)
     }
 }
 
-enum CorpusError: LocalizedError {
+enum CorpusAPIError: LocalizedError {
     case http(Int, String)
     var errorDescription: String? {
         switch self { case .http(let s, let b): return "HTTP \(s): \(b.prefix(160))" }
