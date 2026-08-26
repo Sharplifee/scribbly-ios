@@ -68,7 +68,7 @@ jobs:
 
       - name: Set build number
         run: |
-          echo "BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> $GITHUB_ENV
+          echo "BUILD_NUMBER=$((GITHUB_RUN_NUMBER + 100))" >> $GITHUB_ENV
 
       - name: Archive
         run: |
