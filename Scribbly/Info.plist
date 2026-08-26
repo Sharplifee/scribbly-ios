@@ -39,6 +39,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Scribbly records your voice notes and transcribes them into your library. Recording continues in the background until you tap Finish.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Scribbly transcribes your recordings into searchable notes.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
