@@ -1,5 +1,4 @@
 import SwiftUI
-import WebKit
 import UIKit
 
 // MARK: - App entry
@@ -48,7 +47,7 @@ struct RootView: View {
             TabView(selection: $tab) {
                 RecordView()
                     .tabItem { Label("Record", systemImage: "mic.fill") }.tag(0)
-                LibraryView()
+                NavigationStack { LibraryScreen() }
                     .tabItem { Label("Library", systemImage: "books.vertical.fill") }.tag(1)
             }
             .tint(P.accent)
@@ -236,28 +235,4 @@ struct WaveBars: View {
             }
         }
     }
-}
-
-// MARK: - Library (the existing web app, embedded)
-
-struct LibraryView: View {
-    var body: some View {
-        WebView(url: URL(string: "https://getscribbly.vercel.app/?tab=library")!)
-            .ignoresSafeArea(edges: .bottom)
-    }
-}
-
-struct WebView: UIViewRepresentable {
-    let url: URL
-    func makeUIView(context: Context) -> WKWebView {
-        let cfg = WKWebViewConfiguration()
-        cfg.allowsInlineMediaPlayback = true
-        let w = WKWebView(frame: .zero, configuration: cfg)
-        w.isOpaque = false
-        w.backgroundColor = .black
-        w.scrollView.backgroundColor = .black
-        w.load(URLRequest(url: url))
-        return w
-    }
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
