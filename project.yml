@@ -28,6 +28,8 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Scribbly/Scribbly.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PROVISIONING_PROFILE_SPECIFIER: "Scribbly CI"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait"
     dependencies:
       - target: ScribblyControls
     # Embeds the extension automatically because of the dependency.
