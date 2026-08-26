@@ -20,7 +20,6 @@ targets:
     platform: iOS
     sources:
       - Scribbly
-      - path: ScribblyControls/RecordIntent.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.connor.scribbly
