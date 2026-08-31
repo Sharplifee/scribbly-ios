@@ -22,6 +22,34 @@ enum CorpusAPI {
         ["apikey": anonKey, "Authorization": "Bearer \(anonKey)"]
     }
 
+    // MARK: - Ingest helpers
+
+    /// Which of these YouTube ids are already saved as entries (id = yt_<videoId>).
+    static func existingVideoIDs(_ ids: [String]) async throws -> Set<String> {
+        var found = Set<String>()
+        for chunk in stride(from: 0, to: ids.count, by: 100).map({ Array(ids[$0..<min($0 + 100, ids.count)]) }) {
+            let list = chunk.map { "yt_" + $0 }.joined(separator: ",")
+            var c = URLComponents(string: "\(restBase)/scribbly_entries")!
+            c.queryItems = [URLQueryItem(name: "select", value: "id"), URLQueryItem(name: "id", value: "in.(\(list))")]
+            var req = URLRequest(url: c.url!)
+            restHeaders.forEach { req.setValue($1, forHTTPHeaderField: $0) }
+            let (data, _) = try await URLSession.shared.data(for: req)
+            if let rows = try? JSONDecoder().decode([[String: String]].self, from: data) {
+                for r in rows { if let id = r["id"] { found.insert(String(id.dropFirst(3))) } }
+            }
+        }
+        return found
+    }
+
+    /// Extract an 11-char YouTube id from any watch / youtu.be / shorts / embed URL, or a bare id.
+    static func youtubeID(from s: String) -> String? {
+        let pattern = #"(?:v=|youtu\.be/|/shorts/|/embed/|/live/)([A-Za-z0-9_-]{11})"#
+        if let r = s.range(of: pattern, options: .regularExpression) {
+            let m = String(s[r]); return String(m.suffix(11))
+        }
+        return s.range(of: #"^[A-Za-z0-9_-]{11}$"#, options: .regularExpression) != nil ? s : nil
+    }
+
     // MARK: - Entries (Library)
 
     /// One page of the library, newest first. `limit`/`offset` give real

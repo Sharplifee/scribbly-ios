@@ -298,19 +298,61 @@ struct IngestSection: View {
     private func submit() async {
         let payload = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !payload.isEmpty else { return }
-        status = "Sending to the ingest queue…"
+        do {
+            if mode == 0 {
+                // Channel / playlist: resolve -> dedupe against Library -> collection -> enqueue.
+                status = "Fetching video list…"
+                let resolved = try await ingest(["action": "resolve", "url": payload])
+                guard let videos = resolved["videos"] as? [[String: Any]], !videos.isEmpty else {
+                    status = (resolved["error"] as? String) ?? "No videos found."; return
+                }
+                let name = (resolved["name"] as? String) ?? "Batch"
+                let ids = videos.compactMap { $0["videoId"] as? String }
+                let existing = try await CorpusAPI.existingVideoIDs(ids)
+                let fresh = videos.filter { v in
+                    guard let id = v["videoId"] as? String else { return false }
+                    return !existing.contains(id)
+                }
+                if fresh.isEmpty { status = "All \(videos.count) videos are already in your Library."; return }
+                status = "Queuing \(fresh.count) new of \(videos.count)…"
+                let col = try await ingest(["action": "create-collection", "name": name, "videos": fresh])
+                guard let cid = col["collectionId"] as? String else { status = "Could not create collection."; return }
+                var queued = 0
+                for chunk in stride(from: 0, to: fresh.count, by: 100).map({ Array(fresh[$0..<min($0 + 100, fresh.count)]) }) {
+                    let q = try await ingest(["action": "enqueue", "videos": chunk, "collectionId": cid])
+                    queued += (q["queued"] as? Int) ?? 0
+                }
+                status = "Queued \(queued) new videos from \(name). They'll appear in Library as they process."
+            } else {
+                // Individual links: one URL per line.
+                let urls = payload.split(whereSeparator: \.isNewline).map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                let videos: [[String: Any]] = urls.compactMap { u in
+                    guard let id = CorpusAPI.youtubeID(from: u) else { return nil }
+                    return ["videoId": id, "title": u, "url": u]
+                }
+                guard !videos.isEmpty else { status = "No YouTube links recognised."; return }
+                status = "Queuing \(videos.count) link(s)…"
+                let col = try await ingest(["action": "create-collection", "name": "Links — \(Date().formatted(date: .abbreviated, time: .shortened))", "videos": videos])
+                guard let cid = col["collectionId"] as? String else { status = "Could not create collection."; return }
+                let q = try await ingest(["action": "enqueue", "videos": videos, "collectionId": cid])
+                status = "Queued \((q["queued"] as? Int) ?? 0) link(s). They'll appear in Library as they process."
+            }
+        } catch { status = error.localizedDescription }
+    }
+
+    private func ingest(_ body: [String: Any]) async throws -> [String: Any] {
         var req = URLRequest(url: URL(string: "\(CorpusAPI.appBase)/api/ingest")!)
         req.httpMethod = "POST"
+        req.timeoutInterval = 120
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let action = mode == 0 ? "resolve" : "check-existing"
-        let body: [String: Any] = ["action": action, "url": payload]
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        do {
-            let (_, resp) = try await URLSession.shared.data(for: req)
-            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
-            status = code == 200
-                ? "Queued. New videos will appear in Library as they process."
-                : "Ingest returned HTTP \(code)."
-        } catch { status = error.localizedDescription }
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        if code != 200 {
+            throw NSError(domain: "Ingest", code: code,
+                          userInfo: [NSLocalizedDescriptionKey: (json["error"] as? String) ?? "Ingest returned HTTP \(code)."])
+        }
+        return json
     }
 }
