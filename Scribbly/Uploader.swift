@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -6,13 +7,15 @@ import UIKit
 /// Owns every recording from the moment Finish is tapped until the note is
 /// provably in the library.
 ///
-/// Two rules, both learned the hard way:
-///   1. A recording is copied somewhere durable *before* any network call, and
-///      is only deleted once the entry has been read back from the database.
-///      Anything unfinished is retried on the next launch.
-///   2. Success is never assumed. The old uploader treated a response it
-///      couldn't parse as success — which is exactly how a 413 on an
-///      eight-minute note showed a green checkmark and saved nothing.
+/// Rules, all learned the hard way:
+///   1. The audio is copied somewhere durable *before* any network call and is
+///      deleted only once the entry has been read back from the database.
+///   2. Success is never assumed. A response that isn't parseable JSON with an
+///      entry id is a failure — that assumption is how a 413 on an eight-minute
+///      note produced a green checkmark and no note.
+///   3. Length is not the user's problem. Long recordings are split, uploaded
+///      and transcribed segment by segment, with each segment's text persisted
+///      as it lands, so a crash or a dead network resumes instead of restarting.
 final class Uploader: NSObject, ObservableObject {
 
     static let shared = Uploader()
@@ -29,9 +32,6 @@ final class Uploader: NSObject, ObservableObject {
     private let fm = FileManager.default
     private var draining = false
 
-    /// Durable home for recordings that have not been confirmed saved.
-    /// Application Support survives the temp-directory purges that could
-    /// otherwise erase a recording waiting to upload.
     private var pendingDir: URL {
         let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("PendingRecordings", isDirectory: true)
@@ -43,7 +43,6 @@ final class Uploader: NSObject, ObservableObject {
 
     // MARK: - Public entry points
 
-    /// Called by the Record screen. Never throws away the audio.
     func upload(fileURL: URL, duration: TimeInterval, completion: @escaping (Bool, String?) -> Void) {
         let fmt = DateFormatter()
         fmt.dateFormat = "MMM d, h:mm a"
@@ -56,20 +55,20 @@ final class Uploader: NSObject, ObservableObject {
             completion(false, error.localizedDescription)
             return
         }
-
         Task { await drain(completion: completion) }
     }
 
-    /// Used by file/video ingest, which already has bytes on disk.
+    @discardableResult
     func uploadFile(at fileURL: URL, title: String, mime: String) async throws -> String {
-        try enqueue(fileURL: fileURL, title: title, duration: nil, mime: mime)
-        var thrown: Error?
-        await drain { ok, msg in if !ok { thrown = AudioUpload.Failure.server(-1, msg ?? "upload failed") } }
-        if let thrown { throw thrown }
+        let duration = try? await AudioSplitter.durationSeconds(of: AVURLAsset(url: fileURL))
+        try enqueue(fileURL: fileURL, title: title, duration: duration, mime: mime)
+        var failure: String?
+        await drain { ok, msg in if !ok { failure = msg ?? "Upload failed" } }
+        if let failure { throw AudioUpload.Failure.server(-1, failure) }
         return title
     }
 
-    /// Call on launch and on foreground: finishes anything left over.
+    /// Called on launch and on every foreground: finishes anything left over.
     func resumePending() {
         Task { await drain(completion: nil) }
     }
@@ -81,22 +80,26 @@ final class Uploader: NSObject, ObservableObject {
         var title: String
         var mime: String
         var duration: TimeInterval?
-        var storagePath: String?
+        /// Transcribed text per segment index. Persisted as each part lands so
+        /// an interrupted long recording resumes where it stopped.
+        var partTexts: [Int: String] = [:]
+        var uploadedPaths: [Int: String] = [:]
+        var totalParts: Int? = nil
         var createdAt: Date
         var attempts: Int
     }
 
     private func enqueue(fileURL: URL, title: String, duration: TimeInterval?, mime: String) throws {
         let id = UUID().uuidString
-        let ext = (mime.contains("wav") ? "wav" : mime.contains("webm") ? "webm" : mime.contains("video") ? "mp4" : "m4a")
+        let ext = mime.contains("wav") ? "wav"
+                : mime.contains("webm") ? "webm"
+                : mime.contains("video") ? "mp4" : "m4a"
         let dest = pendingDir.appendingPathComponent("\(id).\(ext)")
         if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
-        // Copy, not move: the caller's file may still be referenced elsewhere.
         try fm.copyItem(at: fileURL, to: dest)
 
-        let job = Job(id: id, title: title, mime: mime, duration: duration,
-                      storagePath: nil, createdAt: Date(), attempts: 0)
-        try write(job)
+        try write(Job(id: id, title: title, mime: mime, duration: duration,
+                      createdAt: Date(), attempts: 0))
         refreshPendingCount()
     }
 
@@ -106,18 +109,30 @@ final class Uploader: NSObject, ObservableObject {
     }
 
     private func jobs() -> [(Job, URL)] {
-        let metas = (try? fm.contentsOfDirectory(at: pendingDir, includingPropertiesForKeys: nil)) ?? []
+        let contents = (try? fm.contentsOfDirectory(at: pendingDir, includingPropertiesForKeys: nil)) ?? []
         var out: [(Job, URL)] = []
-        for m in metas where m.pathExtension == "json" {
-            guard let d = try? Data(contentsOf: m),
-                  let job = try? JSONDecoder().decode(Job.self, from: d) else { continue }
-            let audio = (try? fm.contentsOfDirectory(at: pendingDir, includingPropertiesForKeys: nil))?
-                .first { $0.deletingPathExtension().lastPathComponent == job.id && $0.pathExtension != "json" }
-            guard let audio else {          // metadata without audio is dead weight
-                try? fm.removeItem(at: m)
-                continue
+        for meta in contents where meta.pathExtension == "json" {
+            guard let d = try? Data(contentsOf: meta) else { continue }
+            let id = meta.deletingPathExtension().lastPathComponent
+            let audio = contents.first {
+                $0.deletingPathExtension().lastPathComponent == id && $0.pathExtension != "json"
             }
-            out.append((job, audio))
+            guard let audio else { try? fm.removeItem(at: meta); continue }
+
+            if let job = try? JSONDecoder().decode(Job.self, from: d) {
+                out.append((job, audio))
+            } else {
+                // Metadata written by an older build. Recover the recording
+                // rather than stranding it: rebuild the job around the audio
+                // that is sitting right there.
+                let created = (try? audio.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()
+                let fmt = DateFormatter(); fmt.dateFormat = "MMM d, h:mm a"
+                let recovered = Job(id: id, title: "Voice Memo — \(fmt.string(from: created))",
+                                    mime: "audio/m4a", duration: nil,
+                                    createdAt: created, attempts: 0)
+                try? write(recovered)
+                out.append((recovered, audio))
+            }
         }
         return out.sorted { $0.0.createdAt < $1.0.createdAt }
     }
@@ -136,10 +151,7 @@ final class Uploader: NSObject, ObservableObject {
     // MARK: - Drain
 
     private func drain(completion: ((Bool, String?) -> Void)?) async {
-        if draining {
-            completion?(true, nil)
-            return
-        }
+        if draining { completion?(true, nil); return }
         draining = true
         defer { draining = false }
 
@@ -154,26 +166,53 @@ final class Uploader: NSObject, ObservableObject {
         var lastOK = true
         var lastMessage: String?
 
-        for (var job, audio) in jobs() {
+        for (storedJob, audio) in jobs() {
+            var job = storedJob
             setState(uploading: true, error: nil)
-            DispatchQueue.main.async { self.progress = 0.15 }
+            DispatchQueue.main.async { self.progress = 0.05 }
 
+            var segments: [AudioSplitter.Segment] = []
             do {
-                if job.storagePath == nil {
-                    let path = "voice/\(job.id).\(audio.pathExtension)"
-                    _ = try await AudioUpload.putToStorage(fileURL: audio, path: path, mime: job.mime)
-                    job.storagePath = path
-                    try? write(job)                       // survive a crash mid-flight
-                }
-                DispatchQueue.main.async { self.progress = 0.6 }
+                segments = try await AudioSplitter.segments(for: audio)
+                job.totalParts = segments.count
+                try? write(job)
 
-                let result = try await AudioUpload.requestTranscription(
-                    storagePath: job.storagePath!, title: job.title,
-                    mime: job.mime, duration: job.duration)
+                for segment in segments {
+                    // Skip work already done in an earlier attempt.
+                    if job.partTexts[segment.index]?.isEmpty == false { continue }
+
+                    let path = job.uploadedPaths[segment.index]
+                        ?? "voice/\(job.id)/part-\(String(format: "%03d", segment.index)).\(segment.url.pathExtension)"
+                    if job.uploadedPaths[segment.index] == nil {
+                        _ = try await AudioUpload.putToStorage(fileURL: segment.url, path: path,
+                                                               mime: segment.isTemporary ? "audio/m4a" : job.mime)
+                        job.uploadedPaths[segment.index] = path
+                        try? write(job)
+                    }
+
+                    let text = try await AudioUpload.transcribePart(
+                        storagePath: path, mime: segment.isTemporary ? "audio/m4a" : job.mime)
+                    job.partTexts[segment.index] = text
+                    try? write(job)          // durable: never transcribe the same minute twice
+
+                    let done = Double(job.partTexts.count)
+                    let total = Double(max(segments.count, 1))
+                    DispatchQueue.main.async { self.progress = 0.05 + 0.85 * (done / total) }
+                }
+
+                let transcript = job.partTexts.keys.sorted()
+                    .compactMap { job.partTexts[$0]?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: "\n")
+
+                let result = try await AudioUpload.finalize(
+                    transcript: transcript, title: job.title,
+                    audioPath: job.uploadedPaths[0], duration: job.duration)
 
                 try await AudioUpload.verify(entryID: result.entryID)
 
-                finishJob(job, audio: audio)              // only now is it safe
+                AudioSplitter.cleanUp(segments)
+                finishJob(job, audio: audio)
                 lastOK = true
                 lastMessage = result.title
                 DispatchQueue.main.async {
@@ -182,13 +221,14 @@ final class Uploader: NSObject, ObservableObject {
                     self.lastError = nil
                 }
             } catch {
+                AudioSplitter.cleanUp(segments)
                 job.attempts += 1
-                try? write(job)
+                try? write(job)              // partial transcripts survive for the retry
                 lastOK = false
                 lastMessage = error.localizedDescription
                 setState(uploading: false,
                          error: "\(error.localizedDescription) — kept on device, will retry.")
-                break                                     // don't hammer a broken path
+                break
             }
         }
 

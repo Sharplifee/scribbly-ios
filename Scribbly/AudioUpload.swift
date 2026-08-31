@@ -5,8 +5,12 @@ import Foundation
 /// Audio goes to Supabase Storage first and only its *path* is posted to
 /// /api/voice. The old design sent the whole file base64-encoded inside the
 /// JSON body, which Vercel rejects at 4.5 MB — about seven minutes of audio —
-/// with a plain-text 413 the app then reported as success. Nothing about this
-/// path has a size ceiling short of the bucket's 50 MB (~50 minutes).
+/// with a plain-text 413 the app then reported as success.
+///
+/// Long recordings are split into segments (see AudioSplitter) and each one is
+/// transcribed by its own short request, then stitched into a single note by
+/// `finalize`. There is no length limit and nothing to decide: a two-hour
+/// recording is just more segments.
 enum AudioUpload {
 
     static let bucket = "voice-notes"
@@ -14,7 +18,6 @@ enum AudioUpload {
     struct Result {
         let entryID: String
         let title: String
-        let storagePath: String
     }
 
     enum Failure: LocalizedError {
@@ -22,6 +25,7 @@ enum AudioUpload {
         case server(Int, String)
         case noEntryID(String)
         case unverified(String)
+        case emptyTranscript
 
         var errorDescription: String? {
             switch self {
@@ -29,11 +33,14 @@ enum AudioUpload {
             case .server(let c, let b):  return "Transcription failed (HTTP \(c)): \(b.prefix(140))"
             case .noEntryID(let b):      return "Server did not confirm a saved note: \(b.prefix(140))"
             case .unverified(let id):    return "Note \(id) was not found in the library after saving."
+            case .emptyTranscript:       return "No speech was found in that recording."
             }
         }
     }
 
-    /// PUTs the audio into the private bucket. Returns the object path.
+    // MARK: - Storage
+
+    /// Uploads one file into the private bucket. Returns the object path.
     static func putToStorage(fileURL: URL, path: String, mime: String = "audio/m4a") async throws -> String {
         let url = URL(string: "\(CorpusAPI.supabaseURL)/storage/v1/object/\(bucket)/\(path)")!
         var req = URLRequest(url: url)
@@ -52,37 +59,49 @@ enum AudioUpload {
         return path
     }
 
-    /// Asks the server to transcribe an object already in the bucket.
-    /// Only returns once the server hands back a real entry id.
-    static func requestTranscription(storagePath: String,
-                                     title: String,
-                                     mime: String = "audio/m4a",
-                                     duration: TimeInterval?) async throws -> Result {
+    // MARK: - Server calls
+
+    private static func post(_ body: [String: Any], timeout: TimeInterval = 300) async throws -> [String: Any] {
         var req = URLRequest(url: URL(string: "\(CorpusAPI.appBase)/api/voice")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.timeoutInterval = 300
-        var body: [String: Any] = [
-            "action": "process-audio",
-            "storagePath": storagePath,
-            "mimeType": mime,
-            "title": title
-        ]
-        if let duration { body["durationSeconds"] = Int(duration) }
+        req.timeoutInterval = timeout
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, resp) = try await URLSession.shared.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
         let text = String(data: data, encoding: .utf8) ?? ""
         guard (200..<300).contains(code) else { throw Failure.server(code, text) }
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            // A 2xx we can't parse is not a success. This exact assumption is
+            // what hid the 413 that lost an eight-minute note.
+            throw Failure.server(code, text)
+        }
+        return obj
+    }
 
-        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let entryID = (obj?["entryId"] as? String)
-            ?? ((obj?["entry"] as? [String: Any])?["id"] as? String)
-        guard let entryID else { throw Failure.noEntryID(text) }
+    /// Transcribes one segment. Short by construction, so it never runs into
+    /// the function time limit however long the whole recording is.
+    static func transcribePart(storagePath: String, mime: String = "audio/m4a") async throws -> String {
+        let obj = try await post(["action": "transcribe-part", "storagePath": storagePath, "mimeType": mime])
+        return (obj["text"] as? String) ?? ""
+    }
 
-        let savedTitle = ((obj?["entry"] as? [String: Any])?["title"] as? String) ?? title
-        return Result(entryID: entryID, title: savedTitle, storagePath: storagePath)
+    /// Summarizes the stitched transcript and saves the note.
+    static func finalize(transcript: String, title: String,
+                         audioPath: String?, duration: TimeInterval?) async throws -> Result {
+        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw Failure.emptyTranscript
+        }
+        var body: [String: Any] = ["action": "finalize", "transcript": transcript, "title": title]
+        if let audioPath { body["audioPath"] = audioPath }
+        if let duration { body["durationSeconds"] = Int(duration) }
+        let obj = try await post(body)
+
+        let entryID = (obj["entryId"] as? String) ?? ((obj["entry"] as? [String: Any])?["id"] as? String)
+        guard let entryID else { throw Failure.noEntryID(String(describing: obj)) }
+        let savedTitle = ((obj["entry"] as? [String: Any])?["title"] as? String) ?? title
+        return Result(entryID: entryID, title: savedTitle)
     }
 
     /// Independent proof the row exists. A response body is a claim; this is
