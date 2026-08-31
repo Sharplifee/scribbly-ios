@@ -10,6 +10,9 @@ import AVFoundation
 /// Whisper ceiling we upload the container as-is. For larger video we strip
 /// the audio to m4a first with AVAssetExportSession — otherwise a 300MB video
 /// would blow past every size limit for no reason, since only the audio matters.
+///
+/// Uploads go to Supabase Storage first and only the object path is posted to
+/// /api/voice, so nothing here is bound by Vercel's 4.5 MB body limit.
 @MainActor
 final class FileIngestModel: ObservableObject {
     @Published var picking = false
@@ -28,34 +31,34 @@ final class FileIngestModel: ObservableObject {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
         do {
-            let (data, mime, name) = try await prepare(url)
-            status = "Uploading \(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))…"
-            try await upload(data: data, mime: mime, title: name)
-            status = "Done — transcribing on the server. It'll appear in Library."
+            let (local, mime, name, temporary) = try await prepare(url)
+            let size = (try? local.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            status = "Uploading \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))…"
+            _ = try await Uploader.shared.uploadFile(at: local, title: name, mime: mime)
+            if temporary { try? FileManager.default.removeItem(at: local) }
+            status = "Saved — transcript is in your Library."
         } catch {
             lastError = error.localizedDescription
             status = nil
         }
     }
 
-    /// Returns (bytes, mimeType, title) ready to POST.
-    private func prepare(_ url: URL) async throws -> (Data, String, String) {
+    /// Returns (fileURL, mimeType, title, isTemporaryCopy) ready to upload.
+    private func prepare(_ url: URL) async throws -> (URL, String, String, Bool) {
         let ext = url.pathExtension.lowercased()
         let base = url.deletingPathExtension().lastPathComponent
         let isVideo = ["mp4", "mov", "m4v", "webm"].contains(ext)
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
 
         // Audio, or small video: send the container directly.
-        let raw = try Data(contentsOf: url)
-        if !isVideo || raw.count <= whisperCeilingBytes {
-            return (raw, mime(for: ext), base)
+        if !isVideo || size <= whisperCeilingBytes {
+            return (url, mime(for: ext), base, false)
         }
 
         // Large video: extract audio to m4a to avoid uploading the video stream.
         status = "Extracting audio from video…"
         let m4a = try await extractAudio(from: url)
-        let audio = try Data(contentsOf: m4a)
-        try? FileManager.default.removeItem(at: m4a)
-        return (audio, "audio/m4a", base)
+        return (m4a, "audio/m4a", base, true)
     }
 
     private func extractAudio(from url: URL) async throws -> URL {
@@ -72,26 +75,6 @@ final class FileIngestModel: ObservableObject {
             throw IngestError.exportFailed
         }
         return out
-    }
-
-    private func upload(data: Data, mime: String, title: String) async throws {
-        var req = URLRequest(url: URL(string: "\(CorpusAPI.appBase)/api/voice")!)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.timeoutInterval = 300
-        let body: [String: Any] = [
-            "action": "process-audio",
-            "audioBase64": data.base64EncodedString(),
-            "mimeType": mime,
-            "title": title
-        ]
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (respData, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
-            let msg = String(data: respData, encoding: .utf8) ?? ""
-            throw IngestError.server(code, msg)
-        }
     }
 
     private func mime(for ext: String) -> String {

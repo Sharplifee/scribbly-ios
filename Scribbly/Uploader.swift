@@ -1,11 +1,18 @@
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
-/// Sends a finished recording to Scribbly's /api/voice endpoint, which transcribes
-/// (Groq Whisper, falling back to AssemblyAI) and summarizes it into the library.
+/// Owns every recording from the moment Finish is tapped until the note is
+/// provably in the library.
 ///
-/// Uses a *background* URLSession so an upload that is still in flight when the
-/// user swipes the app away is finished by the system rather than dropped. A
-/// recording the user waited for should never be lost to impatience.
+/// Two rules, both learned the hard way:
+///   1. A recording is copied somewhere durable *before* any network call, and
+///      is only deleted once the entry has been read back from the database.
+///      Anything unfinished is retried on the next launch.
+///   2. Success is never assumed. The old uploader treated a response it
+///      couldn't parse as success — which is exactly how a 413 on an
+///      eight-minute note showed a green checkmark and saved nothing.
 final class Uploader: NSObject, ObservableObject {
 
     static let shared = Uploader()
@@ -14,104 +21,187 @@ final class Uploader: NSObject, ObservableObject {
     @Published var progress: Double = 0
     @Published var lastResultTitle: String?
     @Published var lastError: String?
+    @Published var pendingCount: Int = 0
 
-    private let base = "https://getscribbly.vercel.app"
-    private var completion: ((Bool, String?) -> Void)?
-
-    private lazy var bgSession: URLSession = {
-        let cfg = URLSessionConfiguration.background(withIdentifier: "com.connor.scribbly.upload")
-        cfg.isDiscretionary = false
-        cfg.sessionSendsLaunchEvents = true
-        cfg.timeoutIntervalForResource = 60 * 60
-        return URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
-    }()
-
-    /// Handed to us by the AppDelegate when iOS relaunches the app to finish an upload.
+    /// Kept so the AppDelegate's background-session hook still compiles.
     var backgroundCompletionHandler: (() -> Void)?
 
-    func upload(fileURL: URL, duration: TimeInterval, completion: @escaping (Bool, String?) -> Void) {
-        self.completion = completion
-        isUploading = true
-        progress = 0
-        lastError = nil
+    private let fm = FileManager.default
+    private var draining = false
 
-        guard let data = try? Data(contentsOf: fileURL) else {
-            finish(false, "Could not read the recording file.")
-            return
+    /// Durable home for recordings that have not been confirmed saved.
+    /// Application Support survives the temp-directory purges that could
+    /// otherwise erase a recording waiting to upload.
+    private var pendingDir: URL {
+        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("PendingRecordings", isDirectory: true)
+        if !fm.fileExists(atPath: base.path) {
+            try? fm.createDirectory(at: base, withIntermediateDirectories: true)
         }
+        return base
+    }
 
+    // MARK: - Public entry points
+
+    /// Called by the Record screen. Never throws away the audio.
+    func upload(fileURL: URL, duration: TimeInterval, completion: @escaping (Bool, String?) -> Void) {
         let fmt = DateFormatter()
         fmt.dateFormat = "MMM d, h:mm a"
         let title = "Voice Memo — \(fmt.string(from: Date()))"
 
-        let body: [String: Any] = [
-            "action": "process-audio",
-            "audioBase64": data.base64EncodedString(),
-            "mimeType": "audio/m4a",
-            "title": title
-        ]
-        guard let json = try? JSONSerialization.data(withJSONObject: body) else {
-            finish(false, "Could not encode the upload.")
+        do {
+            try enqueue(fileURL: fileURL, title: title, duration: duration, mime: "audio/m4a")
+        } catch {
+            setState(uploading: false, error: "Could not save the recording locally: \(error.localizedDescription)")
+            completion(false, error.localizedDescription)
             return
         }
 
-        // Background uploads must be file-backed; an in-memory body is rejected.
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("upload-\(UUID().uuidString).json")
-        do { try json.write(to: tmp) } catch {
-            finish(false, "Could not stage the upload: \(error.localizedDescription)")
+        Task { await drain(completion: completion) }
+    }
+
+    /// Used by file/video ingest, which already has bytes on disk.
+    func uploadFile(at fileURL: URL, title: String, mime: String) async throws -> String {
+        try enqueue(fileURL: fileURL, title: title, duration: nil, mime: mime)
+        var thrown: Error?
+        await drain { ok, msg in if !ok { thrown = AudioUpload.Failure.server(-1, msg ?? "upload failed") } }
+        if let thrown { throw thrown }
+        return title
+    }
+
+    /// Call on launch and on foreground: finishes anything left over.
+    func resumePending() {
+        Task { await drain(completion: nil) }
+    }
+
+    // MARK: - Queue
+
+    private struct Job: Codable {
+        let id: String
+        var title: String
+        var mime: String
+        var duration: TimeInterval?
+        var storagePath: String?
+        var createdAt: Date
+        var attempts: Int
+    }
+
+    private func enqueue(fileURL: URL, title: String, duration: TimeInterval?, mime: String) throws {
+        let id = UUID().uuidString
+        let ext = (mime.contains("wav") ? "wav" : mime.contains("webm") ? "webm" : mime.contains("video") ? "mp4" : "m4a")
+        let dest = pendingDir.appendingPathComponent("\(id).\(ext)")
+        if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
+        // Copy, not move: the caller's file may still be referenced elsewhere.
+        try fm.copyItem(at: fileURL, to: dest)
+
+        let job = Job(id: id, title: title, mime: mime, duration: duration,
+                      storagePath: nil, createdAt: Date(), attempts: 0)
+        try write(job)
+        refreshPendingCount()
+    }
+
+    private func write(_ job: Job) throws {
+        let data = try JSONEncoder().encode(job)
+        try data.write(to: pendingDir.appendingPathComponent("\(job.id).json"), options: .atomic)
+    }
+
+    private func jobs() -> [(Job, URL)] {
+        let metas = (try? fm.contentsOfDirectory(at: pendingDir, includingPropertiesForKeys: nil)) ?? []
+        var out: [(Job, URL)] = []
+        for m in metas where m.pathExtension == "json" {
+            guard let d = try? Data(contentsOf: m),
+                  let job = try? JSONDecoder().decode(Job.self, from: d) else { continue }
+            let audio = (try? fm.contentsOfDirectory(at: pendingDir, includingPropertiesForKeys: nil))?
+                .first { $0.deletingPathExtension().lastPathComponent == job.id && $0.pathExtension != "json" }
+            guard let audio else {          // metadata without audio is dead weight
+                try? fm.removeItem(at: m)
+                continue
+            }
+            out.append((job, audio))
+        }
+        return out.sorted { $0.0.createdAt < $1.0.createdAt }
+    }
+
+    private func finishJob(_ job: Job, audio: URL) {
+        try? fm.removeItem(at: audio)
+        try? fm.removeItem(at: pendingDir.appendingPathComponent("\(job.id).json"))
+        refreshPendingCount()
+    }
+
+    private func refreshPendingCount() {
+        let n = jobs().count
+        DispatchQueue.main.async { self.pendingCount = n }
+    }
+
+    // MARK: - Drain
+
+    private func drain(completion: ((Bool, String?) -> Void)?) async {
+        if draining {
+            completion?(true, nil)
             return
         }
+        draining = true
+        defer { draining = false }
 
-        var req = URLRequest(url: URL(string: "\(base)/api/voice")!)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        bgSession.uploadTask(with: req, fromFile: tmp).resume()
+        #if canImport(UIKit)
+        var bg: UIBackgroundTaskIdentifier = .invalid
+        bg = await UIApplication.shared.beginBackgroundTask(withName: "scribbly.upload") {
+            if bg != .invalid { UIApplication.shared.endBackgroundTask(bg); bg = .invalid }
+        }
+        defer { if bg != .invalid { UIApplication.shared.endBackgroundTask(bg); bg = .invalid } }
+        #endif
+
+        var lastOK = true
+        var lastMessage: String?
+
+        for (var job, audio) in jobs() {
+            setState(uploading: true, error: nil)
+            DispatchQueue.main.async { self.progress = 0.15 }
+
+            do {
+                if job.storagePath == nil {
+                    let path = "voice/\(job.id).\(audio.pathExtension)"
+                    _ = try await AudioUpload.putToStorage(fileURL: audio, path: path, mime: job.mime)
+                    job.storagePath = path
+                    try? write(job)                       // survive a crash mid-flight
+                }
+                DispatchQueue.main.async { self.progress = 0.6 }
+
+                let result = try await AudioUpload.requestTranscription(
+                    storagePath: job.storagePath!, title: job.title,
+                    mime: job.mime, duration: job.duration)
+
+                try await AudioUpload.verify(entryID: result.entryID)
+
+                finishJob(job, audio: audio)              // only now is it safe
+                lastOK = true
+                lastMessage = result.title
+                DispatchQueue.main.async {
+                    self.progress = 1
+                    self.lastResultTitle = result.title
+                    self.lastError = nil
+                }
+            } catch {
+                job.attempts += 1
+                try? write(job)
+                lastOK = false
+                lastMessage = error.localizedDescription
+                setState(uploading: false,
+                         error: "\(error.localizedDescription) — kept on device, will retry.")
+                break                                     // don't hammer a broken path
+            }
+        }
+
+        setState(uploading: false, error: lastOK ? nil : lastMessage)
+        refreshPendingCount()
+        completion?(lastOK, lastMessage)
     }
 
-    private func finish(_ ok: Bool, _ message: String?) {
+    private func setState(uploading: Bool, error: String?) {
         DispatchQueue.main.async {
-            self.isUploading = false
-            self.progress = ok ? 1 : 0
-            if ok { self.lastResultTitle = message } else { self.lastError = message }
-            self.completion?(ok, message)
-            self.completion = nil
-        }
-    }
-}
-
-extension Uploader: URLSessionDataDelegate, URLSessionTaskDelegate {
-
-    func urlSession(_ s: URLSession, task: URLSessionTask,
-                    didSendBodyData sent: Int64, totalBytesSent: Int64,
-                    totalBytesExpectedToSend expected: Int64) {
-        guard expected > 0 else { return }
-        DispatchQueue.main.async { self.progress = Double(totalBytesSent) / Double(expected) }
-    }
-
-    func urlSession(_ s: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-        if let entry = obj["entry"] as? [String: Any], let t = entry["title"] as? String {
-            finish(true, t)
-        } else if let reason = (obj["error"] as? String) ?? (obj["reason"] as? String) {
-            finish(false, reason)
-        }
-    }
-
-    func urlSession(_ s: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error {
-            finish(false, error.localizedDescription)
-        } else if isUploading {
-            // Completed with no parseable body — treat as success rather than
-            // alarming the user; the entry lands in the library either way.
-            finish(true, nil)
-        }
-    }
-
-    func urlSessionDidFinishEvents(forBackgroundURLSession s: URLSession) {
-        DispatchQueue.main.async {
-            self.backgroundCompletionHandler?()
-            self.backgroundCompletionHandler = nil
+            self.isUploading = uploading
+            if let error { self.lastError = error }
+            if !uploading && error == nil { self.progress = 1 }
         }
     }
 }
