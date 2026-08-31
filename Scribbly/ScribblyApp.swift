@@ -7,7 +7,18 @@ import UIKit
 struct ScribblyApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     var body: some Scene {
-        WindowGroup { RootView().preferredColorScheme(.dark) }
+        WindowGroup {
+            RootView()
+                .preferredColorScheme(.dark)
+                // Anything that didn't finish uploading is retried here, so a
+                // recording can never be stranded by a crash, a dead network,
+                // or the app being swiped away mid-upload.
+                .onAppear { Uploader.shared.resumePending() }
+                .onReceive(NotificationCenter.default.publisher(
+                    for: UIApplication.didBecomeActiveNotification)) { _ in
+                    Uploader.shared.resumePending()
+                }
+        }
     }
 }
 
@@ -132,6 +143,13 @@ struct RecordView: View {
                         .font(.system(size: 13)).foregroundColor(P.good)
                         .padding(.horizontal, 24).multilineTextAlignment(.center)
                 }
+                if up.pendingCount > 0 && !up.isUploading {
+                    Label("\(up.pendingCount) recording\(up.pendingCount == 1 ? "" : "s") waiting to upload — tap to retry",
+                          systemImage: "arrow.clockwise.circle")
+                        .font(.system(size: 12)).foregroundColor(.orange)
+                        .padding(.horizontal, 24).multilineTextAlignment(.center)
+                        .onTapGesture { up.resumePending() }
+                }
                 if let e = rec.lastError ?? up.lastError {
                     Text(e).font(.system(size: 13)).foregroundColor(P.danger)
                         .multilineTextAlignment(.center).padding(.horizontal, 28)
@@ -198,7 +216,7 @@ struct RecordView: View {
                         rec.finish { url, dur in
                             guard let url else { return }
                             up.upload(fileURL: url, duration: dur) { ok, msg in
-                                if ok { savedTitle = msg ?? "Saved to your library" }
+                                savedTitle = ok ? (msg ?? "Saved to your library") : nil
                             }
                         }
                     } label: {
