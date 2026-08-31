@@ -213,6 +213,11 @@ struct HitRow: View {
 
 struct IngestSection: View {
     @State private var mode = 0
+    @State private var progressTotal = 0
+    @State private var progressDone = 0
+    @State private var progressFailed = 0
+    @State private var progressActive = false
+    @State private var progressCollection: String? = nil
     private let modes = ["Channel", "Links", "Audio"]
     @State private var text = ""
     @State private var status: String?
@@ -236,6 +241,8 @@ struct IngestSection: View {
                     TextField(mode == 0 ? "Paste a channel or playlist URL…" : "One URL per line…",
                               text: $text, axis: .vertical)
                         .lineLimit(3...8).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .submitLabel(.go)
+                        .onSubmit { Task { await submit() } }
                         .padding(14).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 14))
                         .overlay(RoundedRectangle(cornerRadius: 14).stroke(P.border)).padding(.horizontal, 16)
                     Button { Task { await submit() } } label: {
@@ -244,6 +251,22 @@ struct IngestSection: View {
                             .frame(maxWidth: .infinity).padding(.vertical, 15)
                             .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 14))
                     }.padding(.horizontal, 16)
+
+                    if progressActive || progressTotal > 0 {
+                        VStack(spacing: 6) {
+                            ProgressView(value: Double(progressDone + progressFailed), total: Double(max(progressTotal, 1)))
+                                .tint(P.brand)
+                            HStack {
+                                Text(progressActive ? "Processing \(progressDone)/\(progressTotal)" : "Finished \(progressDone)/\(progressTotal)")
+                                    .font(.system(size: 12, weight: .semibold)).foregroundColor(P.textSec)
+                                if progressFailed > 0 {
+                                    Text("· \(progressFailed) failed").font(.system(size: 12)).foregroundColor(.orange)
+                                }
+                                Spacer()
+                                if progressActive { ProgressView().controlSize(.small).tint(P.accent) }
+                            }
+                        }.padding(.horizontal, 16)
+                    }
                 } else {
                     VStack(spacing: 12) {
                         Text("AUDIO & VIDEO · MP3 · M4A · WAV · MP4 · MOV · M4V")
@@ -322,7 +345,8 @@ struct IngestSection: View {
                     let q = try await ingest(["action": "enqueue", "videos": chunk, "collectionId": cid])
                     queued += (q["queued"] as? Int) ?? 0
                 }
-                status = "Queued \(queued) new videos from \(name). They'll appear in Library as they process."
+                status = "Queued \(queued) new videos from \(name)."
+                startProgress(collection: cid, total: queued)
             } else {
                 // Individual links: one URL per line.
                 let urls = payload.split(whereSeparator: \.isNewline).map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -335,9 +359,38 @@ struct IngestSection: View {
                 let col = try await ingest(["action": "create-collection", "name": "Links — \(Date().formatted(date: .abbreviated, time: .shortened))", "videos": videos])
                 guard let cid = col["collectionId"] as? String else { status = "Could not create collection."; return }
                 let q = try await ingest(["action": "enqueue", "videos": videos, "collectionId": cid])
-                status = "Queued \((q["queued"] as? Int) ?? 0) link(s). They'll appear in Library as they process."
+                let n = (q["queued"] as? Int) ?? 0
+                status = "Queued \(n) link(s)."
+                startProgress(collection: cid, total: n)
             }
         } catch { status = error.localizedDescription }
+    }
+
+    private func startProgress(collection: String, total: Int) {
+        progressCollection = collection
+        progressTotal = total
+        progressDone = 0
+        progressFailed = 0
+        progressActive = true
+        Task {
+            while progressActive, progressCollection == collection {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard let st = try? await ingest(["action": "queue-status", "collectionId": collection]),
+                      let byLabel = st["byLabel"] as? [String: [String: Int]] else { continue }
+                var done = 0, failed = 0, pending = 0
+                for (_, c) in byLabel {
+                    done += c["done"] ?? 0
+                    failed += c["failed"] ?? 0
+                    pending += (c["pending"] ?? 0) + (c["processing"] ?? 0)
+                }
+                progressDone = done
+                progressFailed = failed
+                if pending == 0 && done + failed >= total {
+                    progressActive = false
+                    status = "Done — \(done) added to Library" + (failed > 0 ? ", \(failed) had no captions." : ".")
+                }
+            }
+        }
     }
 
     private func ingest(_ body: [String: Any]) async throws -> [String: Any] {
