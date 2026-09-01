@@ -264,7 +264,14 @@ struct IngestSection: View {
                                     Text("· \(progressFailed) failed").font(.system(size: 12)).foregroundColor(.orange)
                                 }
                                 Spacer()
-                                if progressActive { ProgressView().controlSize(.small).tint(P.accent) }
+                                if progressActive {
+                                    Button {
+                                        Task { await cancelBatch() }
+                                    } label: {
+                                        Text("Cancel").font(.system(size: 12, weight: .semibold)).foregroundColor(.red)
+                                    }
+                                    ProgressView().controlSize(.small).tint(P.accent)
+                                }
                             }
                         }.padding(.horizontal, 16)
                     }
@@ -384,6 +391,19 @@ struct IngestSection: View {
                 startProgress(collection: cid, total: n)
             }
         } catch { status = error.localizedDescription }
+    }
+
+    /// Stops a running batch: everything still queued is parked server-side;
+    /// the handful already in flight finish, then the workers go idle.
+    private func cancelBatch() async {
+        guard let cid = progressCollection else { return }
+        if let r = try? await ingest(["action": "cancel-collection", "collectionId": cid]) {
+            let n = (r["cancelled"] as? Int) ?? 0
+            progressActive = false
+            status = "Cancelled — \(n) videos stopped, \(progressDone) already saved."
+        } else {
+            status = "Couldn't cancel — try again."
+        }
     }
 
     private func startProgress(collection: String, total: Int) {
