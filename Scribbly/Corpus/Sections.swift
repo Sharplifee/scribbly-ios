@@ -223,6 +223,7 @@ struct IngestSection: View {
     @State private var status: String?
     @State private var showPicker = false
     @ObservedObject private var files = FileIngestModel.shared
+    @ObservedObject private var up = Uploader.shared
 
     var body: some View {
         ScrollView {
@@ -275,7 +276,7 @@ struct IngestSection: View {
                         Button { showPicker = true } label: {
                             VStack(spacing: 8) {
                                 if files.working {
-                                    ProgressView(value: Uploader.shared.progress).tint(P.accent).padding(.horizontal, 24)
+                                    ProgressView(value: up.progress).tint(P.accent).padding(.horizontal, 24)
                                 }
                                 else { Image(systemName: "arrow.up").font(.system(size: 22)).foregroundColor(P.accent) }
                                 Text(files.working ? "Working…" : "Tap to upload")
