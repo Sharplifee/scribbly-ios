@@ -65,7 +65,14 @@ struct RootView: View {
             }
             .tint(P.accent)
         }
-        .onOpenURL { url in if url.scheme == "scribbly" && url.host == "record" { arm() } }
+        .onOpenURL { url in
+            if url.scheme == "scribbly" && url.host == "record" { arm(); return }
+            // Files shared/opened into Scribbly (share sheet, Files app, AirDrop) → ingest.
+            if url.isFileURL {
+                tab = 1
+                Task { await FileIngestModel.shared.handle(url) }
+            }
+        }
     }
 
     private func arm() {
@@ -142,6 +149,25 @@ struct RecordView: View {
                     Label(t, systemImage: "checkmark.circle.fill")
                         .font(.system(size: 13)).foregroundColor(P.good)
                         .padding(.horizontal, 24).multilineTextAlignment(.center)
+                    Button {
+                        Task {
+                            // Newest voice entry is the one just saved; hand it to Claude.
+                            if let e = try? await CorpusAPI.latestVoiceEntry() {
+                                let transcript = e.transcript ?? ""
+                                let body = transcript.count <= 13_000
+                                    ? "Here's a recording I just made, \"\(e.title)\". Let's discuss it before I file it.\n\n\(transcript)"
+                                    : "Here's the summary of a recording I just made, \"\(e.title)\" (full transcript too long to paste). Let's discuss it.\n\n\(e.summary ?? "")"
+                                var c = URLComponents(string: "https://claude.ai/new")!
+                                c.queryItems = [URLQueryItem(name: "q", value: body)]
+                                if let u = c.url { await MainActor.run { UIApplication.shared.open(u) } }
+                            }
+                        }
+                    } label: {
+                        Label("Discuss with Claude", systemImage: "bubble.left.and.text.bubble.right")
+                            .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                            .padding(.horizontal, 18).padding(.vertical, 10)
+                            .background(P.brand).clipShape(Capsule())
+                    }
                 }
                 if up.pendingCount > 0 && !up.isUploading {
                     Label("\(up.pendingCount) recording\(up.pendingCount == 1 ? "" : "s") waiting to upload — tap to retry",

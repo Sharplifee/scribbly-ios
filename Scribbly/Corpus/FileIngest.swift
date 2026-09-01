@@ -15,6 +15,7 @@ import AVFoundation
 /// /api/voice, so nothing here is bound by Vercel's 4.5 MB body limit.
 @MainActor
 final class FileIngestModel: ObservableObject {
+    static let shared = FileIngestModel()
     @Published var picking = false
     @Published var working = false
     @Published var status: String?

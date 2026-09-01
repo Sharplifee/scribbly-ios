@@ -222,7 +222,7 @@ struct IngestSection: View {
     @State private var text = ""
     @State private var status: String?
     @State private var showPicker = false
-    @StateObject private var files = FileIngestModel()
+    @ObservedObject private var files = FileIngestModel.shared
 
     var body: some View {
         ScrollView {
@@ -274,7 +274,9 @@ struct IngestSection: View {
                             .kerning(0.4)
                         Button { showPicker = true } label: {
                             VStack(spacing: 8) {
-                                if files.working { ProgressView().tint(P.accent) }
+                                if files.working {
+                                    ProgressView(value: Uploader.shared.progress).tint(P.accent).padding(.horizontal, 24)
+                                }
                                 else { Image(systemName: "arrow.up").font(.system(size: 22)).foregroundColor(P.accent) }
                                 Text(files.working ? "Working…" : "Tap to upload")
                                     .font(.system(size: 16, weight: .semibold)).foregroundColor(.white)
@@ -350,17 +352,34 @@ struct IngestSection: View {
             } else {
                 // Individual links: one URL per line.
                 let urls = payload.split(whereSeparator: \.isNewline).map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                let podcasts = urls.filter { $0.contains("podcasts.apple.com") }
+                var podcastNote = ""
+                if !podcasts.isEmpty {
+                    status = "Processing \(podcasts.count) podcast link(s)…"
+                    var okCount = 0
+                    for pu in podcasts {
+                        if let r = try? await ingest(["action": "process-podcast", "podcastUrl": pu]),
+                           (r["success"] as? Bool) == true || r["skipped"] == nil { okCount += 1 }
+                    }
+                    podcastNote = " \(okCount) podcast(s) saved."
+                }
                 let videos: [[String: Any]] = urls.compactMap { u in
                     guard let id = CorpusAPI.youtubeID(from: u) else { return nil }
                     return ["videoId": id, "title": u, "url": u]
                 }
-                guard !videos.isEmpty else { status = "No YouTube links recognised."; return }
+                let unknown = urls.filter { CorpusAPI.youtubeID(from: $0) == nil && !$0.contains("podcasts.apple.com") }
+                guard !videos.isEmpty else {
+                    status = podcasts.isEmpty
+                        ? "No YouTube or Apple Podcast links recognised."
+                        : "Done —\(podcastNote)" + (unknown.isEmpty ? "" : " \(unknown.count) unsupported link(s) skipped.")
+                    return
+                }
                 status = "Queuing \(videos.count) link(s)…"
                 let col = try await ingest(["action": "create-collection", "name": "Links — \(Date().formatted(date: .abbreviated, time: .shortened))", "videos": videos])
                 guard let cid = col["collectionId"] as? String else { status = "Could not create collection."; return }
                 let q = try await ingest(["action": "enqueue", "videos": videos, "collectionId": cid])
                 let n = (q["queued"] as? Int) ?? 0
-                status = "Queued \(n) link(s)."
+                status = "Queued \(n) YouTube link(s)." + podcastNote + (unknown.isEmpty ? "" : " \(unknown.count) unsupported skipped.")
                 startProgress(collection: cid, total: n)
             }
         } catch { status = error.localizedDescription }

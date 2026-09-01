@@ -22,6 +22,18 @@ enum CorpusAPI {
         ["apikey": anonKey, "Authorization": "Bearer \(anonKey)"]
     }
 
+    /// The most recently saved voice recording (used right after Finish).
+    static func latestVoiceEntry() async throws -> Entry? {
+        var c = URLComponents(string: "\(restBase)/scribbly_entries")!
+        c.queryItems = [
+            .init(name: "select", value: "id,title,type,tags,summary,transcript,date,created_at,collection_id"),
+            .init(name: "id", value: "like.voice_*"),
+            .init(name: "order", value: "created_at.desc"),
+            .init(name: "limit", value: "1")
+        ]
+        return try await getJSON(c.url!, as: [Entry].self).first
+    }
+
     // MARK: - Ingest helpers
 
     /// Which of these YouTube ids are already saved as entries (id = yt_<videoId>).

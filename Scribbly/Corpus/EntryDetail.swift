@@ -42,6 +42,7 @@ struct EntryDetail: View {
                         Text(t).font(.system(size: 14)).foregroundColor(P.textSec.opacity(0.85))
                     }
 
+                    sendToClaudeButton(e)
                     AskBox(entry: e)
                 }
                 .padding(18)
@@ -58,6 +59,29 @@ struct EntryDetail: View {
         }
     }
 
+    /// Opens a brand-new chat in the Claude app with this entry pre-loaded.
+    /// claude.ai/new?q= is capped ~14k chars, so long transcripts send the
+    /// summary instead of a truncated transcript.
+    private func sendToClaudeButton(_ e: Entry) -> some View {
+        Button {
+            let transcript = e.transcript ?? ""
+            let body: String
+            if transcript.count <= 13_000 {
+                body = "Here's a transcript titled \"\(e.title)\" from my Scribbly library. Let's discuss it.\n\n\(transcript)"
+            } else {
+                body = "Here's a summary of \"\(e.title)\" from my Scribbly library (the full transcript is \(transcript.count) characters, too long to paste). Let's discuss it.\n\n\(e.summary ?? "")"
+            }
+            var comps = URLComponents(string: "https://claude.ai/new")!
+            comps.queryItems = [URLQueryItem(name: "q", value: body)]
+            if let url = comps.url { UIApplication.shared.open(url) }
+        } label: {
+            Label("Send to Claude", systemImage: "bubble.left.and.text.bubble.right")
+                .font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
+                .frame(maxWidth: .infinity).padding(.vertical, 12)
+                .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
     private func sectionLabel(_ t: String) -> some View {
         Text(t.uppercased()).font(.system(size: 12, weight: .bold)).foregroundColor(P.textDim).kerning(0.5)
     }
@@ -69,6 +93,8 @@ struct AskBox: View {
     @State private var question = ""
     @State private var turns: [(role: String, text: String)] = []
     @State private var asking = false
+    @State private var saving = false
+    @State private var savedNote: String?
 
     private var title: String {
         switch entry.type {
@@ -101,9 +127,38 @@ struct AskBox: View {
                     else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 26)).foregroundColor(P.accent) }
                 }.disabled(asking)
             }
+            if !turns.isEmpty {
+                Button {
+                    Task { await saveDiscussion() }
+                } label: {
+                    Label(saving ? "Saving…" : (savedNote ?? "Save discussion to library"),
+                          systemImage: savedNote == nil ? "tray.and.arrow.down" : "checkmark")
+                        .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                        .frame(maxWidth: .infinity).padding(.vertical, 11)
+                        .background(P.accent).clipShape(RoundedRectangle(cornerRadius: 12))
+                }.disabled(saving || savedNote != nil)
+            }
         }
         .padding(14).background(P.surface.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
+    }
+
+    /// Appends this Q&A to the entry's transcript, re-summarises, and saves —
+    /// the "discuss, then commit the enriched version to the corpus" flow.
+    private func saveDiscussion() async {
+        saving = true; defer { saving = false }
+        do {
+            var req = URLRequest(url: URL(string: "\(CorpusAPI.appBase)/api/ingest")!)
+            req.httpMethod = "POST"; req.timeoutInterval = 180
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let body: [String: Any] = ["action": "append-discussion", "id": entry.id,
+                                       "turns": turns.map { ["role": $0.role, "text": $0.text] }]
+            req.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            let ok = ((resp as? HTTPURLResponse)?.statusCode ?? 0) == 200
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            savedNote = ok ? "Saved to library" : ((json?["error"] as? String) ?? "Save failed")
+        } catch { savedNote = error.localizedDescription }
     }
 
     private func ask() async {
