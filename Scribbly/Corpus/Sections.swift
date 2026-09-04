@@ -654,11 +654,15 @@ struct IngestSection: View {
                 progressDone = done
                 progressFailed = failed
                 progressSkipped = skipped
-                batchChips = byLabel
-                    .map { (label: "Batch \($0.key)",
-                            done: ($0.value["done"] ?? 0) + ($0.value["skipped"] ?? 0) + ($0.value["failed"] ?? 0),
-                            total: $0.value.values.reduce(0, +)) }
-                    .sorted { $0.label < $1.label }
+                var chips: [(label: String, done: Int, total: Int)] = []
+                for (key, c) in byLabel {
+                    let d: Int = (c["done"] ?? 0) + (c["skipped"] ?? 0) + (c["failed"] ?? 0)
+                    var t = 0
+                    for v in c.values { t += v }
+                    chips.append((label: "Batch \(key)", done: d, total: t))
+                }
+                chips.sort { $0.label < $1.label }
+                batchChips = chips
                 nowProcessing = (st["nowProcessing"] as? [String])?.first ?? ""
                 skippedNoCaptions = ((st["skippedNoCaptions"] as? [[String: Any]]) ?? []).map { d in
                     ["videoId": (d["videoId"] as? String) ?? "", "title": (d["title"] as? String) ?? ""]
