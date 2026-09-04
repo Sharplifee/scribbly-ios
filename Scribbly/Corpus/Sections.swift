@@ -258,12 +258,12 @@ struct IngestSection: View {
                         Text(mode == 0 ? "Fetch Videos" : "Queue URLs")
                             .font(.system(size: 16, weight: .semibold)).foregroundColor(.white)
                             .frame(maxWidth: .infinity).padding(.vertical, 15)
-                            .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 14))
+                            .background(P.accent).clipShape(RoundedRectangle(cornerRadius: 14))
                     }.padding(.horizontal, 16)
 
                     if !previewVideos.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text(previewName).font(.system(size: 15, weight: .bold)).foregroundColor(P.text)
+                            Text(previewName).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
                             Text("\(previewVideos.count) to process" + (previewExisting > 0 ? " · \(previewExisting) already in your Library" : ""))
                                 .font(.system(size: 12)).foregroundColor(P.textSec)
                             ScrollView {
@@ -298,10 +298,10 @@ struct IngestSection: View {
                     if progressActive || progressTotal > 0 {
                         VStack(spacing: 6) {
                             ProgressView(value: Double(progressDone + progressFailed), total: Double(max(progressTotal, 1)))
-                                .tint(P.brand)
+                                .tint(P.accent)
                             if progressActive && !nowProcessing.isEmpty {
                                 Text("Now: \(nowProcessing)")
-                                    .font(.system(size: 12)).foregroundColor(P.text).lineLimit(1)
+                                    .font(.system(size: 12)).foregroundColor(.white).lineLimit(1)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             HStack {
@@ -329,7 +329,7 @@ struct IngestSection: View {
                     if !progressActive && !skippedNoCaptions.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Skipped — no captions (\(skippedNoCaptions.count))")
-                                .font(.system(size: 13, weight: .bold)).foregroundColor(P.text)
+                                .font(.system(size: 13, weight: .bold)).foregroundColor(.white)
                             ForEach(skippedNoCaptions.prefix(8), id: \.self) { v in
                                 Text(v["title"] ?? v["videoId"] ?? "").font(.system(size: 12)).foregroundColor(P.textSec).lineLimit(1)
                             }
@@ -339,7 +339,7 @@ struct IngestSection: View {
                                         .compactMap { $0["videoId"].map { "https://www.youtube.com/watch?v=\($0)" } }
                                         .joined(separator: "\n")
                                 } label: {
-                                    Text("Copy URLs").font(.system(size: 13, weight: .semibold)).foregroundColor(P.text)
+                                    Text("Copy URLs").font(.system(size: 13, weight: .semibold)).foregroundColor(P.textSec)
                                         .frame(maxWidth: .infinity).padding(.vertical, 10)
                                         .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 10))
                                 }
