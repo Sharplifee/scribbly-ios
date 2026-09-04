@@ -240,12 +240,29 @@ final class Uploader: NSObject, ObservableObject {
                 }
             } catch {
                 AudioSplitter.cleanUp(segments)
+                // A format/transcoding rejection is PERMANENT: the file itself is
+                // damaged (crash mid-write), so no retry will ever succeed. Discard
+                // it honestly instead of wedging the queue on a corpse.
+                let msg = error.localizedDescription
+                let permanent = ["Transcoding failed", "may be unsupported", "unsupported",
+                                 "could not decode", "Invalid file", "corrupt"]
+                    .contains { msg.localizedCaseInsensitiveContains($0) }
+                if permanent {
+                    let bytes = (try? audio.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                    let mb = String(format: "%.1f", Double(bytes) / 1_048_576)
+                    finishJob(job, audio: audio)
+                    lastOK = true
+                    lastMessage = nil
+                    setState(uploading: false,
+                             error: "One recording (\(mb) MB) was damaged in a crash and can't be recovered — discarded.")
+                    continue
+                }
                 job.attempts += 1
                 try? write(job)              // partial transcripts survive for the retry
                 lastOK = false
-                lastMessage = error.localizedDescription
+                lastMessage = msg
                 setState(uploading: false,
-                         error: "\(error.localizedDescription) — kept on device, will retry.")
+                         error: "\(msg) — kept on device, will retry.")
                 break
             }
         }
