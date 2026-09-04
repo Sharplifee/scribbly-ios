@@ -173,7 +173,25 @@ final class Uploader: NSObject, ObservableObject {
 
             var segments: [AudioSplitter.Segment] = []
             do {
-                segments = try await AudioSplitter.segments(for: audio)
+                do {
+                    segments = try await AudioSplitter.segments(for: audio)
+                } catch {
+                    // AVFoundation can't parse the file ("Cannot Open"): a crash
+                    // mid-write or an interrupted copy left it damaged. A husk
+                    // under 25 KB holds no speech — discard it instead of
+                    // wedging the retry loop forever. Anything bigger goes up
+                    // whole; the server transcribes it fine without splitting.
+                    let bytes = (try? audio.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                    if bytes < 25_000 {
+                        finishJob(job, audio: audio)
+                        lastOK = true
+                        lastMessage = nil
+                        setState(uploading: false,
+                                 error: "One damaged recording (\(bytes) bytes — no audio) was discarded.")
+                        continue
+                    }
+                    segments = [AudioSplitter.Segment(url: audio, index: 0, isTemporary: false)]
+                }
                 job.totalParts = segments.count
                 try? write(job)
 
