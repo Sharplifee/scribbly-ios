@@ -205,12 +205,17 @@ final class Recorder: NSObject, ObservableObject {
     private func beginSegment() throws {
         let url = Self.liveDir
             .appendingPathComponent("scribbly-seg-\(segments.count)-\(UUID().uuidString).caf")
+        // Linear PCM inside CAF: every sample already written is readable no
+        // matter where the file is cut — the canonical crash-safe capture pair.
+        // (AAC-in-CAF dies at the first buffer flush on device; the encoder
+        // aborts silently after record() returns true. Never use it here.)
         let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 44100,
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: 22050,
             AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-            AVEncoderBitRateKey: 64000
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false
         ]
         let r = try AVAudioRecorder(url: url, settings: settings)
         r.delegate = self
@@ -266,7 +271,21 @@ final class Recorder: NSObject, ObservableObject {
     private func startTimer() {
         stopTimer()
         let t = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
-            guard let self, let r = self.recorder, r.isRecording else { return }
+            guard let self else { return }
+            guard let r = self.recorder, r.isRecording else {
+                // The recorder died under us (encode error, media reset) while
+                // the UI still says Recording. Rotate to a fresh segment so the
+                // session heals instead of silently freezing.
+                if self.state == .recording && !self.interrupted {
+                    self.closeSegment()
+                    if (try? self.beginSegment()) == nil {
+                        self.lastError = "Recording stopped unexpectedly — what was captured is safe. Tap Finish to save it."
+                        self.stopTimer()
+                        self.state = .paused
+                    }
+                }
+                return
+            }
             r.updateMeters()
             // dBFS (-160...0) -> 0...1, weighted so normal speech fills the bar
             let db = r.averagePower(forChannel: 0)
