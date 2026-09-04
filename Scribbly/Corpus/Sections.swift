@@ -465,11 +465,23 @@ struct IngestSection: View {
                     guard let id = CorpusAPI.youtubeID(from: u) else { return nil }
                     return ["videoId": id, "title": u, "url": u]
                 }
-                let unknown = urls.filter { CorpusAPI.youtubeID(from: $0) == nil && !$0.contains("podcasts.apple.com") }
+                // Instagram + any other direct URL: the pipeline endpoint fetches,
+                // transcribes, summarises and saves — same path the web app uses.
+                let others = urls.filter { CorpusAPI.youtubeID(from: $0) == nil && !$0.contains("podcasts.apple.com") }
+                var otherSaved = 0, otherFailed = 0
+                for u in others {
+                    status = "Processing \(u.contains("instagram.com") ? "Instagram" : "audio") link…"
+                    if await processDirectURL(u) { otherSaved += 1 } else { otherFailed += 1 }
+                }
+                let unknown: [String] = []
+                var otherNote = ""
+                if !others.isEmpty {
+                    otherNote = " \(otherSaved) link(s) saved" + (otherFailed > 0 ? ", \(otherFailed) failed" : "") + "."
+                }
                 guard !videos.isEmpty else {
-                    status = podcasts.isEmpty
-                        ? "No YouTube or Apple Podcast links recognised."
-                        : "Done —\(podcastNote)" + (unknown.isEmpty ? "" : " \(unknown.count) unsupported link(s) skipped.")
+                    status = (podcasts.isEmpty && others.isEmpty)
+                        ? "No links recognised."
+                        : "Done —\(podcastNote)\(otherNote)"
                     return
                 }
                 status = "Queuing \(videos.count) link(s)…"
@@ -477,7 +489,7 @@ struct IngestSection: View {
                 guard let cid = col["collectionId"] as? String else { status = "Could not create collection."; return }
                 let q = try await ingest(["action": "enqueue", "videos": videos, "collectionId": cid])
                 let n = (q["queued"] as? Int) ?? 0
-                status = "Queued \(n) YouTube link(s)." + podcastNote + (unknown.isEmpty ? "" : " \(unknown.count) unsupported skipped.")
+                status = "Queued \(n) YouTube link(s)." + podcastNote + otherNote
                 startProgress(collection: cid, total: n)
             }
         } catch { status = error.localizedDescription }
@@ -553,6 +565,41 @@ struct IngestSection: View {
                 }
             }
         }
+    }
+
+    /// Instagram / direct-audio URL: transcript -> summarize -> save, via /api/pipeline.
+    private func processDirectURL(_ url: String) async -> Bool {
+        func pipeline(_ body: [String: Any]) async throws -> [String: Any] {
+            var req = URLRequest(url: URL(string: "\(CorpusAPI.appBase)/api/pipeline")!)
+            req.httpMethod = "POST"; req.timeoutInterval = 300
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (d, r) = try await URLSession.shared.data(for: req)
+            let j = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] ?? [:]
+            if ((r as? HTTPURLResponse)?.statusCode ?? 0) != 200 {
+                throw NSError(domain: "Pipeline", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: (j["error"] as? String) ?? "Pipeline failed"])
+            }
+            return j
+        }
+        do {
+            let isIG = url.contains("instagram.com")
+            let t = try await pipeline(isIG ? ["action": "instagram-transcript", "instagramUrl": url]
+                                            : ["action": "transcribe-url", "audioUrl": url,
+                                               "sourceType": "Media"])
+            guard let transcript = t["transcript"] as? String, !transcript.isEmpty else { return false }
+            let sourceType = isIG ? "Instagram" : "Media"
+            let sum = try await pipeline(["action": "summarize", "transcript": transcript, "sourceType": sourceType, "title": ""])
+            var summary = (sum["summary"] as? String) ?? ""
+            if let kp = sum["key_points"] as? [String], !kp.isEmpty { summary += "\n\nKey Points:\n" + kp.map { "• " + $0 }.joined(separator: "\n") }
+            if let tp = sum["topics"] as? [String], !tp.isEmpty { summary += "\n\nTopics: " + tp.joined(separator: ", ") }
+            _ = try await pipeline(["action": "save",
+                                    "title": (sum["title"] as? String) ?? "Untitled",
+                                    "tags": (sum["tags"] as? String) ?? "",
+                                    "transcript": transcript, "summary": summary,
+                                    "sourceType": sourceType])
+            return true
+        } catch { return false }
     }
 
     private func ingest(_ body: [String: Any]) async throws -> [String: Any] {

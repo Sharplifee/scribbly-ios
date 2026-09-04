@@ -34,6 +34,14 @@ enum CorpusAPI {
         return try await getJSON(c.url!, as: [Entry].self).first
     }
 
+    /// Permanently removes an entry from the library.
+    static func deleteEntry(id: String) async throws {
+        var req = URLRequest(url: URL(string: "\(restBase)/scribbly_entries?id=eq.\(id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? id)")!)
+        req.httpMethod = "DELETE"
+        restHeaders.forEach { req.setValue($1, forHTTPHeaderField: $0) }
+        _ = try await URLSession.shared.data(for: req)
+    }
+
     // MARK: - Ingest helpers
 
     /// Which of these YouTube ids are already saved as entries (id = yt_<videoId>).

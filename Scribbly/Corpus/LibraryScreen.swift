@@ -123,6 +123,9 @@ struct LibrarySection: View {
         }
         .task { await store.loadFirstPageIfNeeded() }
         .refreshable { await store.refreshAll() }
+        .onReceive(NotificationCenter.default.publisher(for: .init("scribblyEntryDeleted"))) { _ in
+            Task { await store.refreshAll() }
+        }
     }
 
     private var searchBar: some View {

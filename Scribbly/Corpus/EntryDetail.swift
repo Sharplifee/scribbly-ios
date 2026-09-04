@@ -9,6 +9,16 @@ struct EntryDetail: View {
     @State private var loading = true
     @State private var copied = false
     @Environment(\.dismiss) private var dismiss
+    @State private var confirmDelete = false
+
+    private func exportText() -> String {
+        guard let e = entry else { return "" }
+        var out = "\(e.title)\n\(e.type ?? "") · \(e.date ?? "")\n"
+        if let t = e.tags, !t.isEmpty { out += "Tags: \(t)\n" }
+        if let s = e.summary, !s.isEmpty { out += "\nSUMMARY\n\(s)\n" }
+        if let tr = e.transcript, !tr.isEmpty { out += "\nTRANSCRIPT\n\(tr)\n" }
+        return out
+    }
 
     var body: some View {
         ScrollView {
@@ -50,6 +60,30 @@ struct EntryDetail: View {
         }
         .background(P.bg.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        UIPasteboard.general.string = exportText()
+                    } label: { Label("Copy entry", systemImage: "doc.on.doc") }
+                    ShareLink(item: exportText(), preview: SharePreview(entry?.title ?? "Entry")) {
+                        Label("Export…", systemImage: "square.and.arrow.up")
+                    }
+                    Button(role: .destructive) { confirmDelete = true } label: {
+                        Label("Delete entry", systemImage: "trash")
+                    }
+                } label: { Image(systemName: "ellipsis.circle").foregroundColor(P.textSec) }
+            }
+        }
+        .confirmationDialog("Delete this entry permanently?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                Task {
+                    try? await CorpusAPI.deleteEntry(id: entryID)
+                    NotificationCenter.default.post(name: .init("scribblyEntryDeleted"), object: nil)
+                    dismiss()
+                }
+            }
+        }
         .overlay { if loading && entry == nil { ProgressView().tint(P.accent) } }
         .task {
             entry = preloaded
