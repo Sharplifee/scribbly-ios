@@ -51,9 +51,21 @@ final class FileIngestModel: ObservableObject {
         let isVideo = ["mp4", "mov", "m4v", "webm"].contains(ext)
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
 
-        // Audio, or small video: send the container directly.
+        // Audio, or small video: copy into our sandbox FIRST. The picker URL is
+        // security-scoped — the scope is gone by the time a background upload
+        // task reads it, which sends zero bytes and comes back "no speech".
+        // A local copy made while the scope is held can be read forever.
         if !isVideo || size <= whisperCeilingBytes {
-            return (url, mime(for: ext), base, false)
+            let local = FileManager.default.temporaryDirectory
+                .appendingPathComponent("pick-\(UUID().uuidString).\(ext.isEmpty ? "m4a" : ext)")
+            try? FileManager.default.removeItem(at: local)
+            try FileManager.default.copyItem(at: url, to: local)
+            let copied = (try? local.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            guard copied > 0 else {
+                throw NSError(domain: "Ingest", code: 2, userInfo: [NSLocalizedDescriptionKey:
+                    "Couldn't read that file from Files (0 bytes) — try saving it locally (On My iPhone) first."])
+            }
+            return (local, mime(for: ext), base, true)
         }
 
         // Large video: extract audio to m4a to avoid uploading the video stream.

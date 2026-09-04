@@ -123,6 +123,14 @@ final class Uploader: NSObject, ObservableObject {
 
     private func enqueue(fileURL: URL, title: String, duration: TimeInterval?, mime: String) throws {
         let id = UUID().uuidString
+        let srcBytes = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+        for (job, audio) in jobs() {
+            let b = (try? audio.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -2
+            if job.title == title && b == srcBytes {
+                setState(uploading: false, error: "\"\(title)\" is already waiting to upload — not queued twice.")
+                return
+            }
+        }
         let ext = fileURL.pathExtension.lowercased() == "caf" ? "caf"
                 : mime.contains("wav") ? "wav"
                 : mime.contains("webm") ? "webm"
@@ -277,7 +285,8 @@ final class Uploader: NSObject, ObservableObject {
                 // damaged (crash mid-write), so no retry will ever succeed. Discard
                 // it honestly instead of wedging the queue on a corpse.
                 let msg = error.localizedDescription
-                let permanent = ["Transcoding failed", "may be unsupported", "unsupported",
+                let noSpeech = msg.localizedCaseInsensitiveContains("No speech")
+                let permanent = noSpeech || ["Transcoding failed", "may be unsupported", "unsupported",
                                  "could not decode", "Invalid file", "corrupt"]
                     .contains { msg.localizedCaseInsensitiveContains($0) }
                 if permanent {
@@ -287,7 +296,9 @@ final class Uploader: NSObject, ObservableObject {
                     lastOK = true
                     lastMessage = nil
                     setState(uploading: false,
-                             error: "One recording (\(mb) MB) was damaged in a crash and can't be recovered — discarded.")
+                             error: noSpeech
+                               ? "No speech was found in one recording (\(mb) MB) — discarded. Retrying can't add speech to it."
+                               : "One recording (\(mb) MB) was damaged in a crash and can't be recovered — discarded.")
                     continue
                 }
                 job.attempts += 1
