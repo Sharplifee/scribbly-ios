@@ -123,7 +123,8 @@ final class Uploader: NSObject, ObservableObject {
 
     private func enqueue(fileURL: URL, title: String, duration: TimeInterval?, mime: String) throws {
         let id = UUID().uuidString
-        let ext = mime.contains("wav") ? "wav"
+        let ext = fileURL.pathExtension.lowercased() == "caf" ? "caf"
+                : mime.contains("wav") ? "wav"
                 : mime.contains("webm") ? "webm"
                 : mime.contains("video") ? "mp4" : "m4a"
         let dest = pendingDir.appendingPathComponent("\(id).\(ext)")

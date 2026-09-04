@@ -31,7 +31,14 @@ enum AudioSplitter {
         // CAF is our crash-safe capture container; the backend's transcribers
         // don't accept it, so caf is always re-encoded to AAC segments even
         // when it is small enough to send untouched.
-        let mustTranscode = url.pathExtension.lowercased() == "caf"
+        var mustTranscode = url.pathExtension.lowercased() == "caf"
+        if !mustTranscode, let fh = try? FileHandle(forReadingFrom: url) {
+            // CAF files open with the magic bytes "caff" regardless of what
+            // the filename claims — trust the bytes, not the label.
+            let head = try? fh.read(upToCount: 4)
+            try? fh.close()
+            if head == Data("caff".utf8) { mustTranscode = true }
+        }
         let asset = AVURLAsset(url: url)
         let duration = try await durationSeconds(of: asset)
 

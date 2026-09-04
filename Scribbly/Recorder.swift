@@ -233,7 +233,10 @@ final class Recorder: NSObject, ObservableObject {
     private func merge(_ urls: [URL]) -> URL? {
         let existing = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
         guard !existing.isEmpty else { return nil }
-        if existing.count == 1 { return existing[0] }
+        // A lone segment can only be returned as-is when it is already a clean
+        // m4a. CAF (our crash-safe capture format) always goes through the
+        // export below, which writes a proper indexed .m4a.
+        if existing.count == 1 && existing[0].pathExtension.lowercased() != "caf" { return existing[0] }
 
         let comp = AVMutableComposition()
         guard let track = comp.addMutableTrack(withMediaType: .audio,
