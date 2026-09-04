@@ -53,6 +53,7 @@ final class Recorder: NSObject, ObservableObject {
                        name: AVAudioSession.mediaServicesWereResetNotification, object: session)
         nc.addObserver(self, selector: #selector(appDidEnterBackground),
                        name: UIApplication.didEnterBackgroundNotification, object: nil)
+            recoverOrphanedRecording()
     }
 
     // MARK: - Session
@@ -161,11 +162,49 @@ final class Recorder: NSObject, ObservableObject {
         try? session.setActive(false, options: [.notifyOthersOnDeactivation])
     }
 
+    /// Rescues a recording the OS killed mid-write. CAF segments left behind by
+    /// a dead session are merged (the export writes a clean .m4a) and handed to
+    /// the uploader, so the audio is SAVED — never silently lost, never a corpse.
+    func recoverOrphanedRecording() {
+        guard state == .idle, recorder == nil else { return }
+        let fm = FileManager.default
+        let leftovers = ((try? fm.contentsOfDirectory(at: Self.liveDir, includingPropertiesForKeys: [.creationDateKey])) ?? [])
+            .filter { $0.lastPathComponent.hasPrefix("scribbly-seg-") }
+            .filter { (((try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast)
+                        .timeIntervalSinceNow) < -10 }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        guard !leftovers.isEmpty else { return }
+        let created = (try? leftovers[0].resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()
+        let fmt = DateFormatter(); fmt.dateFormat = "MMM d, h:mm a"
+        let title = "Recovered recording — \(fmt.string(from: created))"
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let merged = self.merge(leftovers) ?? leftovers[0]
+            Uploader.shared.upload(fileURL: merged, title: title, duration: nil) { _, _ in }
+            for u in leftovers { try? fm.removeItem(at: u) }
+            DispatchQueue.main.async {
+                self.lastError = "A recording interrupted by a crash was recovered and is uploading."
+            }
+        }
+    }
+
     // MARK: - Segments
 
+    /// Segments live in Application Support (never purged by iOS) as CAF —
+    /// a container that is valid at ANY truncation point. A crash, force-quit,
+    /// or battery death mid-recording leaves a readable file, not a corpse.
+    static var liveDir: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("LiveRecording", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: base.path) {
+            try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        }
+        return base
+    }
+
     private func beginSegment() throws {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("scribbly-seg-\(segments.count)-\(UUID().uuidString).m4a")
+        let url = Self.liveDir
+            .appendingPathComponent("scribbly-seg-\(segments.count)-\(UUID().uuidString).caf")
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
             AVSampleRateKey: 44100,

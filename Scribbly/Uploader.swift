@@ -46,10 +46,16 @@ final class Uploader: NSObject, ObservableObject {
     func upload(fileURL: URL, duration: TimeInterval, completion: @escaping (Bool, String?) -> Void) {
         let fmt = DateFormatter()
         fmt.dateFormat = "MMM d, h:mm a"
-        let title = "Voice Memo — \(fmt.string(from: Date()))"
+        upload(fileURL: fileURL, title: "Voice Memo — \(fmt.string(from: Date()))",
+               duration: duration, completion: completion)
+    }
+
+    /// Same as upload(fileURL:duration:) but with a caller-chosen title —
+    /// used by crash recovery so rescued audio is labelled honestly.
+    func upload(fileURL: URL, title: String, duration: TimeInterval?, completion: @escaping (Bool, String?) -> Void) {
 
         do {
-            try enqueue(fileURL: fileURL, title: title, duration: duration, mime: "audio/m4a")
+            try enqueue(fileURL: fileURL, title: title, duration: duration ?? 0, mime: "audio/m4a")
         } catch {
             setState(uploading: false, error: "Could not save the recording locally: \(error.localizedDescription)")
             completion(false, error.localizedDescription)
@@ -66,6 +72,32 @@ final class Uploader: NSObject, ObservableObject {
         await drain { ok, msg in if !ok { failure = msg ?? "Upload failed" } }
         if let failure { throw AudioUpload.Failure.server(-1, failure) }
         return title
+    }
+
+    /// One row of the pending queue, for the recovery sheet.
+    struct PendingItem: Identifiable {
+        let id: String
+        let title: String
+        let createdAt: Date
+        let attempts: Int
+        let bytes: Int
+        let fileURL: URL
+    }
+
+    /// Everything waiting to upload, oldest first — with the raw file so the
+    /// user can always export the bytes even when nothing can decode them.
+    func pendingItems() -> [PendingItem] {
+        jobs().map { job, audio in
+            PendingItem(id: job.id, title: job.title, createdAt: job.createdAt,
+                        attempts: job.attempts,
+                        bytes: (try? audio.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0,
+                        fileURL: audio)
+        }
+    }
+
+    /// User-chosen discard from the recovery sheet.
+    func discard(id: String) {
+        for (job, audio) in jobs() where job.id == id { finishJob(job, audio: audio) }
     }
 
     /// Called on launch and on every foreground: finishes anything left over.

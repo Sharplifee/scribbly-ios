@@ -28,10 +28,14 @@ enum AudioSplitter {
     /// Returns the pieces to upload. One element means "send it as-is".
     static func segments(for url: URL) async throws -> [Segment] {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        // CAF is our crash-safe capture container; the backend's transcribers
+        // don't accept it, so caf is always re-encoded to AAC segments even
+        // when it is small enough to send untouched.
+        let mustTranscode = url.pathExtension.lowercased() == "caf"
         let asset = AVURLAsset(url: url)
         let duration = try await durationSeconds(of: asset)
 
-        if size <= singlePartMaxBytes && duration <= segmentSeconds * 1.5 {
+        if !mustTranscode && size <= singlePartMaxBytes && duration <= segmentSeconds * 1.5 {
             return [Segment(url: url, index: 0, isTemporary: false)]
         }
 

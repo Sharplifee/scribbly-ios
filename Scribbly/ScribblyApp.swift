@@ -86,6 +86,7 @@ struct RootView: View {
 struct RecordView: View {
     var armToken: Int = 0
     @StateObject private var rec = Recorder()
+    @State private var showPendingSheet = false
     @StateObject private var up = Uploader.shared
     @State private var savedTitle: String?
     @State private var showDiscardConfirm = false
@@ -170,11 +171,11 @@ struct RecordView: View {
                     }
                 }
                 if up.pendingCount > 0 && !up.isUploading {
-                    Label("\(up.pendingCount) recording\(up.pendingCount == 1 ? "" : "s") waiting to upload — tap to retry",
+                    Label("\(up.pendingCount) recording\(up.pendingCount == 1 ? "" : "s") waiting to upload — tap to manage",
                           systemImage: "arrow.clockwise.circle")
                         .font(.system(size: 12)).foregroundColor(.orange)
                         .padding(.horizontal, 24).multilineTextAlignment(.center)
-                        .onTapGesture { up.resumePending() }
+                        .onTapGesture { showPendingSheet = true }
                 }
                 if let e = rec.lastError ?? up.lastError {
                     Text(e).font(.system(size: 13)).foregroundColor(P.danger)
@@ -186,6 +187,9 @@ struct RecordView: View {
         }
         .onChange(of: armToken) { _ in
             if rec.state == .idle && !up.isUploading { savedTitle = nil; rec.start() }
+        }
+        .sheet(isPresented: $showPendingSheet) {
+            PendingRecoverySheet(uploader: up).presentationDetents([.medium, .large])
         }
         .alert("Discard this recording?", isPresented: $showDiscardConfirm) {
             Button("Keep recording", role: .cancel) {}
@@ -289,6 +293,50 @@ struct WaveBars: View {
                     .frame(width: 4, height: h)
                     .animation(.linear(duration: 0.08), value: level)
             }
+        }
+    }
+}
+
+
+/// Every stuck upload is actionable: retry it, export the raw bytes, or
+/// discard it knowingly. Nothing is ever lost silently.
+struct PendingRecoverySheet: View {
+    @ObservedObject var uploader: Uploader
+    @Environment(\.dismiss) private var dismiss
+    @State private var items: [Uploader.PendingItem] = []
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let e = uploader.lastError {
+                    Text(e).font(.system(size: 12)).foregroundColor(.orange)
+                }
+                ForEach(items) { item in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(item.title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                        Text("\(ByteCountFormatter.string(fromByteCount: Int64(item.bytes), countStyle: .file)) · \(item.createdAt.formatted(.relative(presentation: .named)))"
+                             + (item.attempts > 0 ? " · \(item.attempts) attempt\(item.attempts == 1 ? "" : "s")" : ""))
+                            .font(.system(size: 12)).foregroundColor(P.textSec)
+                        HStack(spacing: 14) {
+                            Button("Retry") {
+                                uploader.resumePending(); dismiss()
+                            }.font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                            ShareLink(item: item.fileURL) {
+                                Text("Export file").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                            }
+                            Button("Discard", role: .destructive) {
+                                uploader.discard(id: item.id)
+                                items = uploader.pendingItems()
+                                if items.isEmpty { dismiss() }
+                            }.font(.system(size: 13, weight: .semibold))
+                        }.buttonStyle(.borderless)
+                    }.padding(.vertical, 4)
+                }
+            }
+            .navigationTitle("Waiting to upload")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } } }
+            .onAppear { items = uploader.pendingItems() }
         }
     }
 }
