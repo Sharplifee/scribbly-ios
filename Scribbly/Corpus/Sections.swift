@@ -569,7 +569,7 @@ struct IngestSection: View {
                 let others = urls.filter { CorpusAPI.youtubeID(from: $0) == nil && !$0.contains("podcasts.apple.com") }
                 var otherSaved = 0, otherFailed = 0
                 for u in others {
-                    status = "Processing \(u.contains("instagram.com") ? "Instagram" : "audio") link…"
+                    status = "Processing \(u.contains("instagram.com") ? "Instagram" : "web") link…"
                     if await processDirectURL(u) { otherSaved += 1 } else { otherFailed += 1 }
                 }
                 let unknown: [String] = []
@@ -692,17 +692,22 @@ struct IngestSection: View {
         }
         do {
             let isIG = url.contains("instagram.com")
-            let t = try await pipeline(isIG ? ["action": "instagram-transcript", "instagramUrl": url]
-                                            : ["action": "transcribe-url", "audioUrl": url,
-                                               "sourceType": "Media"])
+            let low = url.lowercased()
+            let audioExts = [".mp3", ".m4a", ".wav", ".aac", ".ogg", ".mp4", ".mov", ".m4v", ".flac"]
+            let isAudio = audioExts.contains { low.split(separator: "?").first?.hasSuffix($0) ?? false }
+            let body: [String: Any] = isIG ? ["action": "instagram-transcript", "instagramUrl": url]
+                     : isAudio            ? ["action": "transcribe-url", "audioUrl": url, "sourceType": "Media"]
+                                          : ["action": "article-text", "url": url]
+            let t = try await pipeline(body)
             guard let transcript = t["transcript"] as? String, !transcript.isEmpty else { return false }
-            let sourceType = isIG ? "Instagram" : "Media"
-            let sum = try await pipeline(["action": "summarize", "transcript": transcript, "sourceType": sourceType, "title": ""])
+            let sourceType = isIG ? "Instagram" : (isAudio ? "Media" : "Article")
+            let pageTitle = (t["title"] as? String) ?? ""
+            let sum = try await pipeline(["action": "summarize", "transcript": transcript, "sourceType": sourceType, "title": pageTitle])
             var summary = (sum["summary"] as? String) ?? ""
             if let kp = sum["key_points"] as? [String], !kp.isEmpty { summary += "\n\nKey Points:\n" + kp.map { "• " + $0 }.joined(separator: "\n") }
             if let tp = sum["topics"] as? [String], !tp.isEmpty { summary += "\n\nTopics: " + tp.joined(separator: ", ") }
             _ = try await pipeline(["action": "save",
-                                    "title": (sum["title"] as? String) ?? "Untitled",
+                                    "title": (sum["title"] as? String) ?? (pageTitle.isEmpty ? "Untitled" : pageTitle),
                                     "tags": (sum["tags"] as? String) ?? "",
                                     "transcript": transcript, "summary": summary,
                                     "sourceType": sourceType])
