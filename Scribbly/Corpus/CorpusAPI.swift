@@ -73,6 +73,32 @@ enum CorpusAPI {
         return out
     }
 
+    /// Writes an entry the same way the web does: scribbly_entries + master_corpus,
+    /// merge-duplicates. (The pipeline "save" action only makes a Notion page and
+    /// reports success unconditionally — it is NOT a library write.)
+    static func saveEntry(id: String, title: String, type: String, tags: String,
+                          summary: String, transcript: String) async throws {
+        let date = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        func post(_ table: String, _ body: [String: Any?]) async throws {
+            var req = URLRequest(url: URL(string: "\(restBase)/\(table)")!)
+            req.httpMethod = "POST"
+            restHeaders.forEach { req.setValue($1, forHTTPHeaderField: $0) }
+            req.setValue("resolution=merge-duplicates,return=representation", forHTTPHeaderField: "Prefer")
+            req.httpBody = try JSONSerialization.data(withJSONObject: body.compactMapValues { $0 })
+            let (d, r) = try await URLSession.shared.data(for: req)
+            let code = (r as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200...299).contains(code) else {
+                throw NSError(domain: "Save", code: code,
+                              userInfo: [NSLocalizedDescriptionKey: String(data: d, encoding: .utf8) ?? "save failed"])
+            }
+        }
+        try await post("scribbly_entries", ["id": id, "title": title, "type": type, "tags": tags,
+                                            "summary": summary, "transcript": transcript, "date": String(date)])
+        try await post("master_corpus", ["id": "notes_\(id)", "title": title, "type": type, "tags": tags,
+                                          "summary": summary, "transcript": transcript, "date": String(date),
+                                          "origin": "Scribbly", "collection": "Scribbly — \(type)"])
+    }
+
     // MARK: - Ingest helpers
 
     /// Which of these YouTube ids are already saved as entries (id = yt_<videoId>).

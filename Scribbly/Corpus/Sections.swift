@@ -706,11 +706,11 @@ struct IngestSection: View {
             var summary = (sum["summary"] as? String) ?? ""
             if let kp = sum["key_points"] as? [String], !kp.isEmpty { summary += "\n\nKey Points:\n" + kp.map { "• " + $0 }.joined(separator: "\n") }
             if let tp = sum["topics"] as? [String], !tp.isEmpty { summary += "\n\nTopics: " + tp.joined(separator: ", ") }
-            _ = try await pipeline(["action": "save",
-                                    "title": (sum["title"] as? String) ?? (pageTitle.isEmpty ? "Untitled" : pageTitle),
-                                    "tags": (sum["tags"] as? String) ?? "",
-                                    "transcript": transcript, "summary": summary,
-                                    "sourceType": sourceType])
+            let finalTitle = (sum["title"] as? String) ?? (pageTitle.isEmpty ? "Untitled" : pageTitle)
+            try await CorpusAPI.saveEntry(id: "entry_\(Int(Date().timeIntervalSince1970 * 1000))",
+                                          title: finalTitle, type: sourceType,
+                                          tags: (sum["tags"] as? String) ?? "",
+                                          summary: summary, transcript: transcript)
             return true
         } catch { return false }
     }
