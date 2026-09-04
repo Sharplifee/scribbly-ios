@@ -106,6 +106,7 @@ struct LibrarySection: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 searchBar
+                exportAllRow
                 ForEach(shown) { entry in
                     NavigationLink { EntryDetail(entryID: entry.id, preloaded: entry) } label: {
                         EntryRow(entry: entry)
@@ -126,6 +127,48 @@ struct LibrarySection: View {
         .onReceive(NotificationCenter.default.publisher(for: .init("scribblyEntryDeleted"))) { _ in
             Task { await store.refreshAll() }
         }
+    }
+
+    @State private var exportURL: URL?
+    @State private var exporting = false
+
+    private var exportAllRow: some View {
+        HStack {
+            Spacer()
+            if let u = exportURL {
+                ShareLink(item: u) {
+                    Label("Share export", systemImage: "square.and.arrow.up")
+                        .font(.system(size: 12, weight: .semibold)).foregroundColor(P.good)
+                }
+            } else {
+                Button {
+                    exporting = true
+                    Task {
+                        // Titles, tags and summaries for the whole library; transcripts
+                        // stay per-entry (Export… on an entry) to keep the file sane.
+                        let all = (try? await CorpusAPI.allEntriesLight()) ?? []
+                        var text = "SCRIBBLY LIBRARY EXPORT — \(all.count) entries\n\n"
+                        for e in all {
+                            text += "— \(e.title)\n  \(e.type ?? "") · \(e.date ?? "")\n"
+                            if let t = e.tags, !t.isEmpty { text += "  Tags: \(t)\n" }
+                            if let s = e.summary, !s.isEmpty { text += "  \(s.replacingOccurrences(of: "\n", with: "\n  "))\n" }
+                            text += "\n"
+                        }
+                        let url = FileManager.default.temporaryDirectory
+                            .appendingPathComponent("Scribbly Library \(Date().formatted(.dateTime.year().month().day())).txt")
+                        try? text.write(to: url, atomically: true, encoding: .utf8)
+                        await MainActor.run { exportURL = url; exporting = false }
+                    }
+                } label: {
+                    if exporting { ProgressView().controlSize(.mini).tint(P.accent) }
+                    else {
+                        Label("Export all", systemImage: "square.and.arrow.up")
+                            .font(.system(size: 12, weight: .semibold)).foregroundColor(P.textSec)
+                    }
+                }.disabled(exporting)
+            }
+        }
+        .padding(.horizontal, 18).padding(.bottom, 2)
     }
 
     private var searchBar: some View {

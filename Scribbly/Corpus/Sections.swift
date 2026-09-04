@@ -288,6 +288,8 @@ struct IngestSection: View {
     @State private var nowProcessing = ""
     @State private var progressSkipped = 0
     @State private var skippedNoCaptions: [[String: String]] = []
+    @State private var batchChips: [(label: String, done: Int, total: Int)] = []
+    @State private var showWalkAway = true
     private let modes = ["Channel", "Links", "Audio"]
     @State private var text = ""
     @State private var status: String?
@@ -322,6 +324,20 @@ struct IngestSection: View {
                             .frame(maxWidth: .infinity).padding(.vertical, 15)
                             .background(P.accent).clipShape(RoundedRectangle(cornerRadius: 14))
                     }.padding(.horizontal, 16)
+
+                    if progressActive && showWalkAway {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.seal.fill").foregroundColor(P.good).font(.system(size: 13))
+                            Text("Queue and walk away — processing runs on the server. Lock the phone, close the app; it keeps going.")
+                                .font(.system(size: 12)).foregroundColor(P.textSec)
+                            Spacer()
+                            Button { showWalkAway = false } label: {
+                                Image(systemName: "xmark").font(.system(size: 11)).foregroundColor(P.textDim)
+                            }
+                        }
+                        .padding(10).background(P.surface.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(.horizontal, 16)
+                    }
 
                     if !previewVideos.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
@@ -361,6 +377,19 @@ struct IngestSection: View {
                         VStack(spacing: 6) {
                             ProgressView(value: Double(progressDone + progressFailed), total: Double(max(progressTotal, 1)))
                                 .tint(P.accent)
+                            if progressActive && batchChips.count > 1 {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 6) {
+                                        ForEach(batchChips, id: \.label) { c in
+                                            Text("\(c.label) · \(c.done)/\(c.total)")
+                                                .font(.system(size: 11, weight: .semibold))
+                                                .foregroundColor(c.done >= c.total ? P.good : P.textSec)
+                                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                                .background(P.surface).clipShape(Capsule())
+                                        }
+                                    }
+                                }
+                            }
                             if progressActive && !nowProcessing.isEmpty {
                                 Text("Now: \(nowProcessing)")
                                     .font(.system(size: 12)).foregroundColor(.white).lineLimit(1)
@@ -433,7 +462,7 @@ struct IngestSection: View {
                                     ProgressView(value: up.progress).tint(P.accent).padding(.horizontal, 24)
                                 }
                                 else { Image(systemName: "arrow.up").font(.system(size: 22)).foregroundColor(P.accent) }
-                                Text(files.working ? "Working…" : "Tap to upload")
+                                Text(files.working ? (files.status ?? "Working…") : "Tap to upload")
                                     .font(.system(size: 16, weight: .semibold)).foregroundColor(.white)
                                 Text("any audio or video — the audio is transcribed")
                                     .font(.system(size: 12)).foregroundColor(P.textDim)
@@ -445,6 +474,14 @@ struct IngestSection: View {
                         }
                         .disabled(files.working)
                         .padding(.horizontal, 16)
+                        Button {
+                            // Open Voice Memos so the user can share a memo straight back
+                            // into Scribbly (share sheet → Scribbly, wired in build 144).
+                            if let u = URL(string: "voicememos://") { UIApplication.shared.open(u) }
+                        } label: {
+                            Label("Open Voice Memos", systemImage: "waveform")
+                                .font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                        }
                         if let s = files.status {
                             Text(s).font(.system(size: 13)).foregroundColor(P.textSec)
                                 .multilineTextAlignment(.center).padding(.horizontal, 24)
@@ -617,6 +654,11 @@ struct IngestSection: View {
                 progressDone = done
                 progressFailed = failed
                 progressSkipped = skipped
+                batchChips = byLabel
+                    .map { (label: "Batch \($0.key)",
+                            done: ($0.value["done"] ?? 0) + ($0.value["skipped"] ?? 0) + ($0.value["failed"] ?? 0),
+                            total: $0.value.values.reduce(0, +)) }
+                    .sorted { $0.label < $1.label }
                 nowProcessing = (st["nowProcessing"] as? [String])?.first ?? ""
                 skippedNoCaptions = ((st["skippedNoCaptions"] as? [[String: Any]]) ?? []).map { d in
                     ["videoId": (d["videoId"] as? String) ?? "", "title": (d["title"] as? String) ?? ""]

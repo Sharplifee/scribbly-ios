@@ -53,6 +53,26 @@ enum CorpusAPI {
         _ = try await URLSession.shared.data(for: req)
     }
 
+    /// Every entry's metadata + summary (no transcripts — that would be tens of MB).
+    static func allEntriesLight() async throws -> [Entry] {
+        var out: [Entry] = []
+        var page = 0
+        while true {
+            var c = URLComponents(string: "\(restBase)/scribbly_entries")!
+            c.queryItems = [
+                .init(name: "select", value: "id,title,type,tags,summary,date,created_at,collection_id"),
+                .init(name: "order", value: "created_at.desc"),
+                .init(name: "limit", value: "1000"),
+                .init(name: "offset", value: String(page * 1000))
+            ]
+            let batch = try await getJSON(c.url!, as: [Entry].self)
+            out += batch
+            if batch.count < 1000 || page > 30 { break }
+            page += 1
+        }
+        return out
+    }
+
     // MARK: - Ingest helpers
 
     /// Which of these YouTube ids are already saved as entries (id = yt_<videoId>).
