@@ -218,6 +218,14 @@ struct IngestSection: View {
     @State private var progressFailed = 0
     @State private var progressActive = false
     @State private var progressCollection: String? = nil
+    @State private var previewName = ""
+    @State private var previewVideos: [[String: Any]] = []
+    @State private var previewExisting = 0
+    @State private var countdown = -1
+    @State private var countdownTask: Task<Void, Never>? = nil
+    @State private var nowProcessing = ""
+    @State private var progressSkipped = 0
+    @State private var skippedNoCaptions: [[String: String]] = []
     private let modes = ["Channel", "Links", "Audio"]
     @State private var text = ""
     @State private var status: String?
@@ -253,13 +261,55 @@ struct IngestSection: View {
                             .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 14))
                     }.padding(.horizontal, 16)
 
+                    if !previewVideos.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(previewName).font(.system(size: 15, weight: .bold)).foregroundColor(P.text)
+                            Text("\(previewVideos.count) to process" + (previewExisting > 0 ? " · \(previewExisting) already in your Library" : ""))
+                                .font(.system(size: 12)).foregroundColor(P.textSec)
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    ForEach(Array(previewVideos.prefix(60).enumerated()), id: \.offset) { i, v in
+                                        Text("\(i + 1).  \((v["title"] as? String) ?? (v["videoId"] as? String) ?? "")")
+                                            .font(.system(size: 12)).foregroundColor(P.textSec).lineLimit(1)
+                                    }
+                                    if previewVideos.count > 60 {
+                                        Text("… and \(previewVideos.count - 60) more").font(.system(size: 12)).foregroundColor(P.textSec)
+                                    }
+                                }
+                            }.frame(maxHeight: 190)
+                            HStack(spacing: 10) {
+                                Button { cancelPreview() } label: {
+                                    Text("Cancel").font(.system(size: 14, weight: .semibold)).foregroundColor(.red)
+                                        .frame(maxWidth: .infinity).padding(.vertical, 11)
+                                        .background(Color.red.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 12))
+                                }
+                                Button { Task { await startQueue() } } label: {
+                                    Text(countdown > 0 ? "Starting in \(countdown)…" : "Start now")
+                                        .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                                        .frame(maxWidth: .infinity).padding(.vertical, 11)
+                                        .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 12))
+                                }
+                            }
+                        }
+                        .padding(14).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 14))
+                        .padding(.horizontal, 16)
+                    }
+
                     if progressActive || progressTotal > 0 {
                         VStack(spacing: 6) {
                             ProgressView(value: Double(progressDone + progressFailed), total: Double(max(progressTotal, 1)))
                                 .tint(P.brand)
+                            if progressActive && !nowProcessing.isEmpty {
+                                Text("Now: \(nowProcessing)")
+                                    .font(.system(size: 12)).foregroundColor(P.text).lineLimit(1)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
                             HStack {
                                 Text(progressActive ? "Processing \(progressDone)/\(progressTotal)" : "Finished \(progressDone)/\(progressTotal)")
                                     .font(.system(size: 12, weight: .semibold)).foregroundColor(P.textSec)
+                                if progressSkipped > 0 {
+                                    Text("· \(progressSkipped) skipped").font(.system(size: 12)).foregroundColor(.yellow)
+                                }
                                 if progressFailed > 0 {
                                     Text("· \(progressFailed) failed").font(.system(size: 12)).foregroundColor(.orange)
                                 }
@@ -274,6 +324,41 @@ struct IngestSection: View {
                                 }
                             }
                         }.padding(.horizontal, 16)
+                    }
+
+                    if !progressActive && !skippedNoCaptions.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Skipped — no captions (\(skippedNoCaptions.count))")
+                                .font(.system(size: 13, weight: .bold)).foregroundColor(P.text)
+                            ForEach(skippedNoCaptions.prefix(8), id: \.self) { v in
+                                Text(v["title"] ?? v["videoId"] ?? "").font(.system(size: 12)).foregroundColor(P.textSec).lineLimit(1)
+                            }
+                            HStack(spacing: 10) {
+                                Button {
+                                    UIPasteboard.general.string = skippedNoCaptions
+                                        .compactMap { $0["videoId"].map { "https://www.youtube.com/watch?v=\($0)" } }
+                                        .joined(separator: "\n")
+                                } label: {
+                                    Text("Copy URLs").font(.system(size: 13, weight: .semibold)).foregroundColor(P.text)
+                                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                                        .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                                Button {
+                                    Task {
+                                        guard let cid = progressCollection else { return }
+                                        _ = try? await ingest(["action": "resume-collection", "collectionId": cid])
+                                        skippedNoCaptions = []
+                                        startProgress(collection: cid, total: progressTotal)
+                                    }
+                                } label: {
+                                    Text("Retry").font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                                        .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                            }
+                        }
+                        .padding(14).background(P.surface.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius: 14))
+                        .padding(.horizontal, 16)
                     }
                 } else {
                     VStack(spacing: 12) {
@@ -333,7 +418,7 @@ struct IngestSection: View {
         guard !payload.isEmpty else { return }
         do {
             if mode == 0 {
-                // Channel / playlist: resolve -> dedupe against Library -> collection -> enqueue.
+                // Channel / playlist: resolve -> preview with countdown -> queue.
                 status = "Fetching video list…"
                 let resolved = try await ingest(["action": "resolve", "url": payload])
                 guard let videos = resolved["videos"] as? [[String: Any]], !videos.isEmpty else {
@@ -347,16 +432,21 @@ struct IngestSection: View {
                     return !existing.contains(id)
                 }
                 if fresh.isEmpty { status = "All \(videos.count) videos are already in your Library."; return }
-                status = "Queuing \(fresh.count) new of \(videos.count)…"
-                let col = try await ingest(["action": "create-collection", "name": name, "videos": fresh])
-                guard let cid = col["collectionId"] as? String else { status = "Could not create collection."; return }
-                var queued = 0
-                for chunk in stride(from: 0, to: fresh.count, by: 100).map({ Array(fresh[$0..<min($0 + 100, fresh.count)]) }) {
-                    let q = try await ingest(["action": "enqueue", "videos": chunk, "collectionId": cid])
-                    queued += (q["queued"] as? Int) ?? 0
+                // Preview + a 3-2-1 auto-start the user can stop or skip.
+                previewName = name
+                previewVideos = fresh
+                previewExisting = videos.count - fresh.count
+                status = nil
+                countdown = 3
+                countdownTask = Task {
+                    for t in stride(from: 3, through: 1, by: -1) {
+                        await MainActor.run { countdown = t }
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                        if Task.isCancelled { return }
+                    }
+                    await MainActor.run { countdown = 0 }
+                    await startQueue()
                 }
-                status = "Queued \(queued) new videos from \(name)."
-                startProgress(collection: cid, total: queued)
             } else {
                 // Individual links: one URL per line.
                 let urls = payload.split(whereSeparator: \.isNewline).map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -406,6 +496,32 @@ struct IngestSection: View {
         }
     }
 
+    private func startQueue() async {
+        countdownTask?.cancel(); countdownTask = nil; countdown = -1
+        let fresh = previewVideos
+        guard !fresh.isEmpty else { return }
+        let name = previewName
+        previewVideos = []
+        do {
+            status = "Queuing \(fresh.count) new videos…"
+            let col = try await ingest(["action": "create-collection", "name": name, "videos": fresh])
+            guard let cid = col["collectionId"] as? String else { status = "Could not create collection."; return }
+            var queued = 0
+            for chunk in stride(from: 0, to: fresh.count, by: 100).map({ Array(fresh[$0..<min($0 + 100, fresh.count)]) }) {
+                let q = try await ingest(["action": "enqueue", "videos": chunk, "collectionId": cid])
+                queued += (q["queued"] as? Int) ?? 0
+            }
+            status = "Queued \(queued) new videos from \(name)."
+            startProgress(collection: cid, total: queued)
+        } catch { status = error.localizedDescription }
+    }
+
+    private func cancelPreview() {
+        countdownTask?.cancel(); countdownTask = nil; countdown = -1
+        previewVideos = []; previewName = ""
+        status = "Cancelled before starting — nothing was queued."
+    }
+
     private func startProgress(collection: String, total: Int) {
         progressCollection = collection
         progressTotal = total
@@ -417,14 +533,20 @@ struct IngestSection: View {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 guard let st = try? await ingest(["action": "queue-status", "collectionId": collection]),
                       let byLabel = st["byLabel"] as? [String: [String: Int]] else { continue }
-                var done = 0, failed = 0, pending = 0
+                var done = 0, failed = 0, pending = 0, skipped = 0
                 for (_, c) in byLabel {
                     done += c["done"] ?? 0
                     failed += c["failed"] ?? 0
+                    skipped += c["skipped"] ?? 0
                     pending += (c["pending"] ?? 0) + (c["processing"] ?? 0)
                 }
                 progressDone = done
                 progressFailed = failed
+                progressSkipped = skipped
+                nowProcessing = (st["nowProcessing"] as? [String])?.first ?? ""
+                skippedNoCaptions = ((st["skippedNoCaptions"] as? [[String: Any]]) ?? []).map { d in
+                    ["videoId": (d["videoId"] as? String) ?? "", "title": (d["title"] as? String) ?? ""]
+                }
                 if pending == 0 && done + failed >= total {
                     progressActive = false
                     status = "Done — \(done) added to Library" + (failed > 0 ? ", \(failed) had no captions." : ".")
