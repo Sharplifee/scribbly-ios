@@ -42,6 +42,17 @@ enum CorpusAPI {
         _ = try await URLSession.shared.data(for: req)
     }
 
+    /// Moves every collection in a group under a new channel name.
+    static func reassignCollections(ids: [String], to channel: String) async throws {
+        let list = ids.joined(separator: ",")
+        var req = URLRequest(url: URL(string: "\(restBase)/scribbly_collections?id=in.(\(list))")!)
+        req.httpMethod = "PATCH"
+        restHeaders.forEach { req.setValue($1, forHTTPHeaderField: $0) }
+        req.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["channel": channel])
+        _ = try await URLSession.shared.data(for: req)
+    }
+
     // MARK: - Ingest helpers
 
     /// Which of these YouTube ids are already saved as entries (id = yt_<videoId>).

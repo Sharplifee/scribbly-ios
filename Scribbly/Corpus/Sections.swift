@@ -14,7 +14,7 @@ struct GroupsSection: View {
                         .padding(.horizontal, 18).padding(.top, 12)
                 }
                 ForEach(store.groups) { group in
-                    NavigationLink { GroupDetail(group: group) } label: { GroupCard(group: group) }
+                    NavigationLink { GroupDetail(group: group, store: store) } label: { GroupCard(group: group) }
                         .buttonStyle(.plain)
                 }
             }
@@ -53,6 +53,9 @@ struct GroupCard: View {
 
 struct GroupDetail: View {
     let group: Group
+    @ObservedObject var store: LibraryStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var showReassign = false
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
@@ -64,6 +67,65 @@ struct GroupDetail: View {
         }
         .background(P.bg.ignoresSafeArea())
         .navigationTitle(group.channel).navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Reassign") { showReassign = true }
+                    .font(.system(size: 14, weight: .semibold)).foregroundColor(P.accent)
+            }
+        }
+        .sheet(isPresented: $showReassign) {
+            ReassignSheet(group: group, groups: store.groups) { newChannel in
+                Task {
+                    try? await CorpusAPI.reassignCollections(ids: group.collections.map(\.id), to: newChannel)
+                    await store.refreshAll()
+                    dismiss()
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
+    }
+}
+
+/// Move an entire group's collections under another group, or a new name.
+struct ReassignSheet: View {
+    let group: Group
+    let groups: [Group]
+    let onPick: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var custom = ""
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Move \"\(group.channel)\" into…") {
+                    ForEach(groups.filter { $0.channel != group.channel }) { g in
+                        Button {
+                            onPick(g.channel); dismiss()
+                        } label: {
+                            HStack {
+                                Text(g.channel).foregroundColor(.white)
+                                Spacer()
+                                Text("\(g.totalVideos)").foregroundColor(P.textSec).font(.system(size: 13))
+                            }
+                        }
+                    }
+                }
+                Section("Or a new group name") {
+                    HStack {
+                        TextField("New group name", text: $custom)
+                            .textInputAutocapitalization(.words)
+                        Button("Move") {
+                            let t = custom.trimmingCharacters(in: .whitespaces)
+                            guard !t.isEmpty else { return }
+                            onPick(t); dismiss()
+                        }
+                        .disabled(custom.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+            }
+            .navigationTitle("Reassign group")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } } }
+        }
     }
 }
 
