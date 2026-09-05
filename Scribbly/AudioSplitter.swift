@@ -60,6 +60,12 @@ enum AudioSplitter {
             try await export(asset: asset, from: start, length: length, to: piece)
             out.append(Segment(url: piece, index: i, isTemporary: true))
         }
+        guard !out.isEmpty else {
+            // A sub-half-second capture yields nothing to send. Returning an
+            // empty list would finalize an empty transcript and retry forever;
+            // throwing routes it into drain's discard branch instead.
+            throw SplitError.exportFailed("no speech could be extracted — the recording is under half a second")
+        }
         return out
     }
 
