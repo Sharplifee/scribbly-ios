@@ -13,7 +13,9 @@ enum AudioSplitter {
 
     /// Twelve minutes of AAC is roughly 6-12 MB. Comfortably inside every limit
     /// while keeping the number of round trips small.
-    static let segmentSeconds: TimeInterval = 12 * 60
+    // 5-minute parts: each transcribe call stays far below any serverless
+    // ceiling (a 12-min part once hit Vercel's 60s FUNCTION_INVOCATION_TIMEOUT).
+    static let segmentSeconds: TimeInterval = 5 * 60
 
     /// Files at or under this go up untouched — no re-encode, no quality loss,
     /// no wasted battery.
