@@ -22,6 +22,10 @@ final class Uploader: NSObject, ObservableObject {
 
     @Published var isUploading = false
     @Published var progress: Double = 0
+    /// Honest description of what is happening right now ("Uploading… 62%",
+    /// "Transcribing part 2 of 4…"). The bar label binds to this, so the UI can
+    /// never say "Uploading" while the server is actually transcribing.
+    @Published var stage: String = ""
     @Published var lastResultTitle: String?
     @Published var lastError: String?
     @Published var pendingCount: Int = 0
@@ -236,28 +240,47 @@ final class Uploader: NSObject, ObservableObject {
                 job.totalParts = segments.count
                 try? write(job)
 
-                for segment in segments {
+                let totalSegs = Double(max(segments.count, 1))
+                for (segNo, segment) in segments.enumerated() {
                     // Skip work already done in an earlier attempt.
                     if job.partTexts[segment.index]?.isEmpty == false { continue }
+                    let base = 0.05 + 0.85 * (Double(segNo) / totalSegs)
+                    let slice = 0.85 / totalSegs
 
                     let path = job.uploadedPaths[segment.index]
                         ?? "voice/\(job.id)/part-\(String(format: "%03d", segment.index)).\(segment.url.pathExtension)"
                     if job.uploadedPaths[segment.index] == nil {
+                        DispatchQueue.main.async { self.stage = segments.count > 1
+                            ? "Uploading part \(segNo + 1) of \(segments.count)…" : "Uploading…" }
                         _ = try await AudioUpload.putToStorage(fileURL: segment.url, path: path,
-                                                               mime: segment.isTemporary ? "audio/m4a" : job.mime)
+                                                               mime: segment.isTemporary ? "audio/m4a" : job.mime,
+                                                               onProgress: { frac in
+                            DispatchQueue.main.async {
+                                // Bytes fill the first 70% of this segment's slice.
+                                self.progress = base + slice * 0.7 * frac
+                                self.stage = (segments.count > 1
+                                    ? "Uploading part \(segNo + 1) of \(segments.count)"
+                                    : "Uploading") + "… \(Int(frac * 100))%"
+                            }
+                        })
                         job.uploadedPaths[segment.index] = path
                         try? write(job)
                     }
 
+                    DispatchQueue.main.async {
+                        self.progress = base + slice * 0.7
+                        self.stage = segments.count > 1
+                            ? "Transcribing part \(segNo + 1) of \(segments.count)…" : "Transcribing…"
+                    }
                     let text = try await AudioUpload.transcribePart(
                         storagePath: path, mime: segment.isTemporary ? "audio/m4a" : job.mime)
                     job.partTexts[segment.index] = text
                     try? write(job)          // durable: never transcribe the same minute twice
 
                     let done = Double(job.partTexts.count)
-                    let total = Double(max(segments.count, 1))
-                    DispatchQueue.main.async { self.progress = 0.05 + 0.85 * (done / total) }
+                    DispatchQueue.main.async { self.progress = 0.05 + 0.85 * (done / totalSegs) }
                 }
+                DispatchQueue.main.async { self.stage = "Summarizing…" }
 
                 let transcript = job.partTexts.keys.sorted()
                     .compactMap { job.partTexts[$0]?.trimmingCharacters(in: .whitespacesAndNewlines) }

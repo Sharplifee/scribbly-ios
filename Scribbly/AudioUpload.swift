@@ -40,23 +40,58 @@ enum AudioUpload {
 
     // MARK: - Storage
 
-    /// Uploads one file into the private bucket. Returns the object path.
-    static func putToStorage(fileURL: URL, path: String, mime: String = "audio/m4a") async throws -> String {
+    /// Session tuned for cellular reality: 30s of silence on the wire fails the
+    /// attempt (instead of a 10-minute frozen bar), the whole transfer gets 5
+    /// minutes, and iOS waits for connectivity rather than erroring instantly.
+    private static let uploadSession: URLSession = {
+        let c = URLSessionConfiguration.default
+        c.timeoutIntervalForRequest = 30
+        c.timeoutIntervalForResource = 300
+        c.waitsForConnectivity = true
+        return URLSession(configuration: c)
+    }()
+
+    /// Uploads one file into the private bucket with live byte progress and
+    /// three attempts. Returns the object path.
+    static func putToStorage(fileURL: URL, path: String, mime: String = "audio/m4a",
+                             onProgress: (@Sendable (Double) -> Void)? = nil) async throws -> String {
         let url = URL(string: "\(CorpusAPI.supabaseURL)/storage/v1/object/\(bucket)/\(path)")!
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
-        req.timeoutInterval = 600
         req.setValue(CorpusAPI.anonKey, forHTTPHeaderField: "apikey")
         req.setValue("Bearer \(CorpusAPI.anonKey)", forHTTPHeaderField: "Authorization")
         req.setValue(mime, forHTTPHeaderField: "Content-Type")
         req.setValue("true", forHTTPHeaderField: "x-upsert")
 
-        let (data, resp) = try await URLSession.shared.upload(for: req, fromFile: fileURL)
-        let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
-        guard (200..<300).contains(code) else {
-            throw Failure.storage(code, String(data: data, encoding: .utf8) ?? "")
+        var lastError: Error = Failure.storage(-1, "upload never started")
+        for attempt in 0..<3 {
+            if attempt > 0 { try? await Task.sleep(nanoseconds: UInt64(attempt) * 3_000_000_000) }
+            do {
+                let (data, resp) = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<(Data, URLResponse), Error>) in
+                    let task = uploadSession.uploadTask(with: req, fromFile: fileURL) { d, r, e in
+                        if let e { cont.resume(throwing: e) }
+                        else { cont.resume(returning: (d ?? Data(), r ?? URLResponse())) }
+                    }
+                    var obs: NSKeyValueObservation?
+                    if let onProgress {
+                        obs = task.progress.observe(\.fractionCompleted) { pr, _ in onProgress(pr.fractionCompleted) }
+                    }
+                    task.resume()
+                    // Keep the observation alive for the task's lifetime.
+                    if obs != nil { objc_setAssociatedObject(task, "scribblyProgressObs", obs, .OBJC_ASSOCIATION_RETAIN) }
+                }
+                let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+                guard (200..<300).contains(code) else {
+                    throw Failure.storage(code, String(data: data, encoding: .utf8) ?? "")
+                }
+                return path
+            } catch {
+                lastError = error
+                // 4xx server verdicts won't change on retry — only retry transport/5xx.
+                if case Failure.storage(let c, _) = error, (400..<500).contains(c) { throw error }
+            }
         }
-        return path
+        throw lastError
     }
 
     // MARK: - Server calls

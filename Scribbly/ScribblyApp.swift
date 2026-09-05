@@ -137,7 +137,7 @@ struct RecordView: View {
                         ProgressView(value: up.progress)
                             .tint(P.accent)
                             .frame(width: 200)
-                        Text(up.progress < 1 ? "Uploading…" : "Transcribing…")
+                        Text(up.stage.isEmpty ? (up.progress < 1 ? "Uploading…" : "Transcribing…") : up.stage)
                             .font(.system(size: 14, weight: .medium))
                         Text("Safe to leave — this finishes in the background.")
                             .font(.system(size: 12)).foregroundColor(P.textDim)

@@ -134,7 +134,19 @@ final class Recorder: NSObject, ObservableObject {
         let segs = segments
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let merged = self?.merge(segs)
+            var merged = self?.merge(segs)
+            if merged == nil, let first = segs.first {
+                // Export failed: nothing is dropped — every raw segment goes to
+                // the uploader on its own; the splitter transcodes each caf.
+                let fmt = DateFormatter(); fmt.dateFormat = "MMM d, h:mm a"
+                let stamp = fmt.string(from: Date())
+                for (i, seg) in segs.enumerated() where i > 0 {
+                    Uploader.shared.upload(fileURL: seg,
+                                           title: "Voice Memo — \(stamp) (part \(i + 1))",
+                                           duration: nil) { _, _ in }
+                }
+                merged = first
+            }
             DispatchQueue.main.async {
                 try? self?.session.setActive(false, options: [.notifyOthersOnDeactivation])
                 self?.state = .idle
@@ -179,9 +191,17 @@ final class Recorder: NSObject, ObservableObject {
         let title = "Recovered recording — \(fmt.string(from: created))"
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
-            let merged = self.merge(leftovers) ?? leftovers[0]
-            Uploader.shared.upload(fileURL: merged, title: title, duration: nil) { _, _ in }
-            for u in leftovers { try? fm.removeItem(at: u) }
+            if let merged = self.merge(leftovers) {
+                Uploader.shared.upload(fileURL: merged, title: title, duration: nil) { _, _ in }
+                for u in leftovers { try? fm.removeItem(at: u) }
+            } else {
+                // Can't compose: rescue every segment individually; the pending
+                // store owns copies, so the originals can go.
+                for (i, u) in leftovers.enumerated() {
+                    Uploader.shared.upload(fileURL: u, title: "\(title) (part \(i + 1))", duration: nil) { _, _ in }
+                }
+                for u in leftovers { try? fm.removeItem(at: u) }
+            }
             DispatchQueue.main.async {
                 self.lastError = "A recording interrupted by a crash was recovered and is uploading."
             }
@@ -262,8 +282,11 @@ final class Recorder: NSObject, ObservableObject {
         ex.outputFileType = .m4a
         let sem = DispatchSemaphore(value: 0)
         ex.exportAsynchronously { sem.signal() }
-        _ = sem.wait(timeout: .now() + 120)
-        return ex.status == .completed ? out : existing[0]
+        // Long recordings legitimately take a while to encode — give them the
+        // time. On failure return nil so callers upload EVERY segment instead
+        // of silently shipping only the first twelve minutes.
+        _ = sem.wait(timeout: .now() + 600)
+        return ex.status == .completed ? out : nil
     }
 
     // MARK: - Timer / metering
