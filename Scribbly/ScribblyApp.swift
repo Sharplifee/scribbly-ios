@@ -139,7 +139,7 @@ struct RecordView: View {
                             .frame(width: 200)
                         Text(up.stage.isEmpty ? (up.progress < 1 ? "Uploading…" : "Transcribing…") : up.stage)
                             .font(.system(size: 14, weight: .medium))
-                        Text("Safe to leave — this finishes in the background.")
+                        Text("Safe to close the app — the server finishes this on its own.")
                             .font(.system(size: 12)).foregroundColor(P.textDim)
                     }
                 } else {

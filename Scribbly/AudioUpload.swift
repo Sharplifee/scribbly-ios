@@ -75,17 +75,21 @@ enum AudioUpload {
         let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
         let body = String(data: data, encoding: .utf8) ?? ""
         guard (200..<300).contains(code) else { throw Failure.server(code, body) }
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw Failure.server(code, body)
+        let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+
+        // New async box: upload is accepted the instant bytes land (202) and the
+        // box finishes transcription + save on its own clock. The phone is done.
+        if let obj, obj["accepted"] as? Bool == true, let jobId = obj["jobId"] as? String {
+            return Result(entryID: jobId, title: title ?? "Voice Note")
         }
-        if let entry = obj["entry"] as? [String: Any], let id = entry["id"] as? String {
+        // Back-compat: an older synchronous box returns the finished entry inline.
+        if let entry = obj?["entry"] as? [String: Any], let id = entry["id"] as? String {
             return Result(entryID: id, title: (entry["title"] as? String) ?? title ?? "Voice Note")
         }
-        if let id = obj["entryId"] as? String {
+        if let id = obj?["entryId"] as? String {
             return Result(entryID: id, title: title ?? "Voice Note")
         }
-        // Server kept the audio but couldn't finish — surface its message.
-        throw Failure.server(code, (obj["error"] as? String) ?? body)
+        throw Failure.server(code, (obj?["error"] as? String) ?? body)
     }
 
     // MARK: - Storage

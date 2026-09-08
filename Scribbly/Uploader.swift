@@ -240,7 +240,7 @@ final class Uploader: NSObject, ObservableObject {
                             // transcription is the final sliver.
                             self.progress = 0.05 + 0.85 * frac
                             self.stage = frac < 1 ? "Uploading… \(Int(frac * 100))%"
-                                                  : "Transcribing…"
+                                                  : "Handed off — finishing on server"
                         }
                     })
 
