@@ -113,7 +113,7 @@ struct RecordBar: View {
             }
 
             // The bar itself: a slim capsule when idle, an expanded panel when live.
-            Group {
+            SwiftUI.Group {
                 if up.isUploading {
                     uploadingPanel
                 } else if rec.state == .idle {
