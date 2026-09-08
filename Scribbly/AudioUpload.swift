@@ -50,6 +50,10 @@ enum AudioUpload {
         var req = URLRequest(url: URL(string: CorpusAPI.voiceIngestURL)!)
         req.httpMethod = "POST"
         req.setValue(mime, forHTTPHeaderField: "Content-Type")
+        // Tell the box the true container so it names the temp file correctly and
+        // ffmpeg/Groq see the real format — otherwise everything looks like m4a.
+        let ext = fileURL.pathExtension.lowercased()
+        if !ext.isEmpty { req.setValue(ext, forHTTPHeaderField: "x-ext") }
         if let title, let enc = title.addingPercentEncoding(withAllowedCharacters: .alphanumerics) {
             req.setValue(enc, forHTTPHeaderField: "x-title")
         }

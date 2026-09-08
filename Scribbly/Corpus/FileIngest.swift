@@ -102,9 +102,11 @@ final class FileIngestModel: ObservableObject {
         }
     }
 
-    /// Accepted content types for the picker: all audio + common video.
+    /// Accepted content types for the picker: any audio or video the server can
+    /// normalize. The box runs ffmpeg on whatever arrives, so we accept broadly
+    /// (all audio + all movie/video UTTypes) rather than a hand-picked list.
     static var contentTypes: [UTType] {
-        [.audio, .mpeg4Audio, .mp3, .wav, .movie, .mpeg4Movie, .quickTimeMovie, .video]
+        [.audio, .mpeg4Audio, .mp3, .wav, .aiff, .movie, .mpeg4Movie, .quickTimeMovie, .video, .mpeg2Video, .avi]
     }
 }
 
