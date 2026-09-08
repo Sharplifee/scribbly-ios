@@ -23,7 +23,7 @@ struct JobsSection: View {
                                 Image(systemName: "iphone").foregroundColor(.orange).padding(.top, 2)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
-                                    Text("\(ByteCountFormatter.string(fromByteCount: Int64(item.bytes), countStyle: .file)) · \(item.createdAt.formatted(.relative(presentation: .named)))" + (item.attempts > 0 ? " · \(item.attempts) attempt\(item.attempts == 1 ? "" : "s")" : ""))
+                                    Text(pendingSubtitle(item))
                                         .font(.system(size: 12)).foregroundColor(P.textSec)
                                     HStack(spacing: 14) {
                                         action("Retry", tint: P.accent) { up.resumePending() }
@@ -46,9 +46,7 @@ struct JobsSection: View {
                             stateIcon(j.state)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(j.title ?? j.id).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(2)
-                                Text(stateLabel(j.state) + " · " + ByteCountFormatter.string(fromByteCount: Int64(j.bytes), countStyle: .file)
-                                     + (j.attempts > 1 ? " · \(j.attempts) attempts" : "")
-                                     + " · " + Date(timeIntervalSince1970: j.createdAt / 1000).formatted(.relative(presentation: .named)))
+                                Text(voiceSubtitle(j))
                                     .font(.system(size: 12)).foregroundColor(P.textSec)
                                 if let e = j.error, j.state == "failed" || j.state == "no_speech" {
                                     Text(e).font(.system(size: 11)).foregroundColor(P.danger).lineLimit(3)
@@ -87,7 +85,7 @@ struct JobsSection: View {
                                 Spacer()
                             }
                             ProgressView(value: Double(b.done), total: Double(max(b.total, 1))).tint(P.accent)
-                            Text("\(b.done)/\(b.total) done · \(b.pending) queued" + (b.failed > 0 ? " · \(b.failed) failed" : "") + (b.skipped > 0 ? " · \(b.skipped) skipped" : ""))
+                            Text(batchSubtitle(b))
                                 .font(.system(size: 12)).foregroundColor(P.textSec)
                             if let now = b.now, !now.isEmpty {
                                 Text("Now: \(now)").font(.system(size: 12)).foregroundColor(P.textDim).lineLimit(1)
@@ -163,6 +161,26 @@ struct JobsSection: View {
             }
         }()
         return Image(systemName: name).foregroundColor(color).padding(.top, 2)
+    }
+    private func voiceSubtitle(_ j: JobsModel.VoiceJob) -> String {
+        var parts: [String] = [stateLabel(j.state)]
+        parts.append(ByteCountFormatter.string(fromByteCount: Int64(j.bytes), countStyle: .file))
+        if j.attempts > 1 { parts.append("\(j.attempts) attempts") }
+        let when = Date(timeIntervalSince1970: j.createdAt / 1000)
+        parts.append(when.formatted(.relative(presentation: .named)))
+        return parts.joined(separator: " · ")
+    }
+    private func pendingSubtitle(_ item: Uploader.PendingItem) -> String {
+        var parts: [String] = [ByteCountFormatter.string(fromByteCount: Int64(item.bytes), countStyle: .file)]
+        parts.append(item.createdAt.formatted(.relative(presentation: .named)))
+        if item.attempts > 0 { parts.append("\(item.attempts) attempt" + (item.attempts == 1 ? "" : "s")) }
+        return parts.joined(separator: " · ")
+    }
+    private func batchSubtitle(_ b: JobsModel.Batch) -> String {
+        var parts: [String] = ["\(b.done)/\(b.total) done", "\(b.pending) queued"]
+        if b.failed > 0 { parts.append("\(b.failed) failed") }
+        if b.skipped > 0 { parts.append("\(b.skipped) skipped") }
+        return parts.joined(separator: " · ")
     }
     private func stateLabel(_ s: String) -> String {
         switch s {
