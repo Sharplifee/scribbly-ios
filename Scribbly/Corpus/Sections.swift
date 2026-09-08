@@ -274,7 +274,6 @@ struct HitRow: View {
 // MARK: - Ingest (native shell; submission still goes through the server routes)
 
 struct IngestSection: View {
-    @State private var mode = 0
     @State private var progressTotal = 0
     @State private var progressDone = 0
     @State private var progressFailed = 0
@@ -290,7 +289,6 @@ struct IngestSection: View {
     @State private var skippedNoCaptions: [[String: String]] = []
     @State private var batchChips: [(label: String, done: Int, total: Int)] = []
     @State private var showWalkAway = true
-    private let modes = ["Channel", "Links", "Audio"]
     @State private var text = ""
     @State private var status: String?
     @State private var showPicker = false
@@ -306,24 +304,43 @@ struct IngestSection: View {
                     .font(.system(size: 14)).foregroundColor(P.textSec).multilineTextAlignment(.center)
                     .padding(.horizontal, 30)
 
-                Picker("", selection: $mode) {
-                    ForEach(modes.indices, id: \.self) { Text(modes[$0]).tag($0) }
-                }.pickerStyle(.segmented).padding(.horizontal, 16)
-
-                if mode < 2 {
-                    TextField(mode == 0 ? "Paste a channel or playlist URL…" : "One URL per line…",
-                              text: $text, axis: .vertical)
-                        .lineLimit(3...8).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        .submitLabel(.go)
-                        .onSubmit { Task { await submit() } }
-                        .padding(14).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 14))
-                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(P.border)).padding(.horizontal, 16)
+                // ── Card 1: paste ANY link. No mode to choose — the app detects
+                // channel / playlist / video / podcast / article itself. Return on the
+                // keyboard fires exactly what the button does.
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("PASTE A LINK").font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).kerning(0.4)
+                    HStack(spacing: 10) {
+                        Image(systemName: "link").foregroundColor(P.accent)
+                        TextField("Channel, playlist, video, podcast, or article URL…", text: $text)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .keyboardType(.URL)
+                            .submitLabel(.go)
+                            .onSubmit { Task { await submit() } }
+                        if !text.isEmpty {
+                            Button { text = "" } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundColor(P.textDim)
+                            }
+                        }
+                    }
+                    .padding(14).background(P.bg).clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(P.border))
                     Button { Task { await submit() } } label: {
-                        Text(mode == 0 ? "Fetch Videos" : "Queue URLs")
+                        Text("Fetch")
                             .font(.system(size: 16, weight: .semibold)).foregroundColor(.white)
-                            .frame(maxWidth: .infinity).padding(.vertical, 15)
-                            .background(P.accent).clipShape(RoundedRectangle(cornerRadius: 14))
-                    }.padding(.horizontal, 16)
+                            .frame(maxWidth: .infinity).padding(.vertical, 14)
+                            .background(P.accent).clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .opacity(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
+                    Text("Paste several links at once — any separator works.")
+                        .font(.system(size: 11)).foregroundColor(P.textDim)
+                }
+                .padding(16)
+                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(P.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(P.border)))
+                .padding(.horizontal, 16)
+
+                SwiftUI.Group {
 
                     if progressActive && showWalkAway {
                         HStack(spacing: 8) {
@@ -451,9 +468,12 @@ struct IngestSection: View {
                         .padding(14).background(P.surface.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius: 14))
                         .padding(.horizontal, 16)
                     }
-                } else {
+                }
+
+                // ── Card 2: upload a file. Its own bubble, always visible.
+                SwiftUI.Group {
                     VStack(spacing: 12) {
-                        Text("AUDIO & VIDEO · MP3 · M4A · WAV · MP4 · MOV · M4V")
+                        Text("UPLOAD AUDIO OR VIDEO · ANY FORMAT")
                             .font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim)
                             .kerning(0.4)
                         Button { showPicker = true } label: {
@@ -473,7 +493,6 @@ struct IngestSection: View {
                                 .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [6])).foregroundColor(P.border))
                         }
                         .disabled(files.working)
-                        .padding(.horizontal, 16)
                         Button {
                             // Open Voice Memos so the user can share a memo straight back
                             // into Scribbly (share sheet → Scribbly, wired in build 144).
@@ -491,7 +510,10 @@ struct IngestSection: View {
                                 .multilineTextAlignment(.center).padding(.horizontal, 24)
                         }
                     }
-                    .padding(.top, 6)
+                    .padding(16)
+                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(P.surface)
+                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(P.border)))
+                    .padding(.horizontal, 16)
                     .fileImporter(isPresented: $showPicker,
                                   allowedContentTypes: FileIngestModel.contentTypes,
                                   allowsMultipleSelection: false) { result in
@@ -512,9 +534,39 @@ struct IngestSection: View {
         }
     }
 
+    /// Pull every URL out of whatever was pasted — newlines, spaces, commas,
+    /// surrounding prose, it doesn't matter.
+    private func extractURLs(_ raw: String) -> [String] {
+        let det = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+        let ns = raw as NSString
+        var out: [String] = []
+        det?.enumerateMatches(in: raw, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+            if let r = m?.range, let u = m?.url?.absoluteString, !u.hasPrefix("mailto:") { out.append(u); _ = r }
+        }
+        if out.isEmpty {
+            // Bare YouTube id or a URL without scheme — still try.
+            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty { out = [t.contains("://") ? t : (t.contains(".") ? "https://" + t : t)] }
+        }
+        var seen = Set<String>()
+        return out.filter { seen.insert($0).inserted }
+    }
+
+    /// A channel or playlist link means "fetch the whole list"; anything else is
+    /// handled link-by-link. Detected, never chosen.
+    private func isChannelOrPlaylist(_ u: String) -> Bool {
+        let l = u.lowercased()
+        guard l.contains("youtube.com") || l.contains("youtu.be") else { return false }
+        if l.contains("list=") { return true }
+        if l.contains("/@") || l.contains("/channel/") || l.contains("/c/") || l.contains("/user/") { return true }
+        return CorpusAPI.youtubeID(from: u) == nil
+    }
+
     private func submit() async {
-        let payload = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !payload.isEmpty else { return }
+        let urls = extractURLs(text)
+        guard !urls.isEmpty else { return }
+        let payload = urls.count == 1 ? urls[0] : urls.joined(separator: "\n")
+        let mode = (urls.count == 1 && isChannelOrPlaylist(urls[0])) ? 0 : 1
         do {
             if mode == 0 {
                 // Channel / playlist: resolve -> preview with countdown -> queue.
