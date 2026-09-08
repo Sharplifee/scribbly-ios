@@ -54,13 +54,15 @@ struct RootView: View {
     @State private var armToken = 0
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack {
             P.bg.ignoresSafeArea()
-            // Home = the ingest/library screen, opening on Ingest.
+            // Home = the ingest/library screen, opening on Ingest. The recorder is
+            // a bottom safe-area INSET, so iOS reserves exactly its live height —
+            // content can never sit underneath it, however tall it grows.
             NavigationStack { LibraryScreen(initial: .ingest) }
-            // The recorder rides along the bottom as a compact overlaid control
-            // that expands in place while recording — not a separate page.
-            RecordBar(armToken: armToken)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    RecordBar(armToken: armToken)
+                }
         }
         .onOpenURL { url in
             if url.scheme == "scribbly" && url.host == "record" { arm(); return }
@@ -134,6 +136,16 @@ struct RecordBar: View {
             .padding(.bottom, 8)
             .animation(.spring(response: 0.34, dampingFraction: 0.86), value: isActive)
         }
+        .padding(.top, 8)
+        .background(
+            // Solid floor + a short fade above it so the scroll content dims out
+            // instead of ever showing through the bar.
+            VStack(spacing: 0) {
+                LinearGradient(colors: [P.bg.opacity(0), P.bg], startPoint: .top, endPoint: .bottom).frame(height: 14)
+                P.bg
+            }
+            .ignoresSafeArea(edges: .bottom)
+        )
         .onChange(of: armToken) { _ in
             if rec.state == .idle && !up.isUploading { savedTitle = nil; rec.start() }
         }

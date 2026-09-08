@@ -21,7 +21,6 @@ struct LibraryScreen: View {
                 sectionBar
                 Divider().overlay(P.border)
                 content
-                    .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 96) }
             }
         }
         .task { await store.loadCounts() }
