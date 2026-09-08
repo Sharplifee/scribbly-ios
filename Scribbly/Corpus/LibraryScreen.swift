@@ -8,7 +8,7 @@ struct LibraryScreen: View {
     init(initial: Section = .library) { _section = State(initialValue: initial) }
 
     enum Section: String, CaseIterable, Identifiable {
-        case ingest = "Ingest", groups = "Groups", collections = "Collections",
+        case ingest = "Ingest", jobs = "Jobs", groups = "Groups", collections = "Collections",
              library = "Library", query = "Query"
         var id: String { rawValue }
     }
@@ -75,6 +75,7 @@ struct LibraryScreen: View {
     @ViewBuilder private var content: some View {
         switch section {
         case .ingest:      IngestSection()
+        case .jobs:        JobsSection()
         case .groups:      GroupsSection(store: store)
         case .collections: CollectionsSection(store: store)
         case .library:     LibrarySection(store: store)
