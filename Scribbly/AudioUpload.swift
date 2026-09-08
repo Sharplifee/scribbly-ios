@@ -1,4 +1,5 @@
 import Foundation
+import ObjectiveC
 
 /// The transport for every recording and audio file Scribbly sends.
 ///
@@ -36,6 +37,55 @@ enum AudioUpload {
             case .emptyTranscript:       return "No speech was found in that recording."
             }
         }
+    }
+
+    // MARK: - One-shot server pipeline
+
+    /// Streams one audio file to the box, which transcribes + summarizes + saves
+    /// it whole — no client-side splitting, no per-part calls, no length ceiling.
+    /// Returns the saved entry. Progress reflects real bytes on the wire; once
+    /// the upload completes the work continues on the server even if the app dies.
+    static func ingestWhole(fileURL: URL, title: String?, mime: String = "audio/m4a",
+                            onProgress: (@Sendable (Double) -> Void)? = nil) async throws -> Result {
+        var req = URLRequest(url: URL(string: CorpusAPI.voiceIngestURL)!)
+        req.httpMethod = "POST"
+        req.setValue(mime, forHTTPHeaderField: "Content-Type")
+        if let title, let enc = title.addingPercentEncoding(withAllowedCharacters: .alphanumerics) {
+            req.setValue(enc, forHTTPHeaderField: "x-title")
+        }
+        // The server transcribes before answering, so a long recording legitimately
+        // holds the response open for minutes — no per-request idle cap here.
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 0
+        cfg.timeoutIntervalForResource = 3600
+        cfg.waitsForConnectivity = true
+        let session = URLSession(configuration: cfg)
+
+        let (data, resp) = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<(Data, URLResponse), Error>) in
+            let task = session.uploadTask(with: req, fromFile: fileURL) { d, r, e in
+                if let e { cont.resume(throwing: e) }
+                else { cont.resume(returning: (d ?? Data(), r ?? URLResponse())) }
+            }
+            if let onProgress {
+                let obs = task.progress.observe(\.fractionCompleted) { pr, _ in onProgress(pr.fractionCompleted) }
+                objc_setAssociatedObject(task, "scribblyIngestObs", obs, .OBJC_ASSOCIATION_RETAIN)
+            }
+            task.resume()
+        }
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+        let body = String(data: data, encoding: .utf8) ?? ""
+        guard (200..<300).contains(code) else { throw Failure.server(code, body) }
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw Failure.server(code, body)
+        }
+        if let entry = obj["entry"] as? [String: Any], let id = entry["id"] as? String {
+            return Result(entryID: id, title: (entry["title"] as? String) ?? title ?? "Voice Note")
+        }
+        if let id = obj["entryId"] as? String {
+            return Result(entryID: id, title: title ?? "Voice Note")
+        }
+        // Server kept the audio but couldn't finish — surface its message.
+        throw Failure.server(code, (obj["error"] as? String) ?? body)
     }
 
     // MARK: - Storage

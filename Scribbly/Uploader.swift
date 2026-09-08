@@ -216,84 +216,34 @@ final class Uploader: NSObject, ObservableObject {
             setState(uploading: true, error: nil)
             DispatchQueue.main.async { self.progress = 0.05 }
 
-            var segments: [AudioSplitter.Segment] = []
             do {
-                do {
-                    segments = try await AudioSplitter.segments(for: audio)
-                } catch {
-                    // AVFoundation can't parse the file ("Cannot Open"): a crash
-                    // mid-write or an interrupted copy left it damaged. A husk
-                    // under 25 KB holds no speech — discard it instead of
-                    // wedging the retry loop forever. Anything bigger goes up
-                    // whole; the server transcribes it fine without splitting.
-                    let bytes = (try? audio.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                    if bytes < 25_000 {
-                        finishJob(job, audio: audio)
-                        lastOK = true
-                        lastMessage = nil
-                        setState(uploading: false,
-                                 error: "One damaged recording (\(bytes) bytes — no audio) was discarded.")
-                        continue
-                    }
-                    segments = [AudioSplitter.Segment(url: audio, index: 0, isTemporary: false)]
+                // Upload the recording ONCE; the box transcribes, summarizes and
+                // saves it — any length, and it finishes even if the app is closed
+                // the instant the bytes land. No client-side splitting or parts.
+                let bytes = (try? audio.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                if bytes < 25_000 {
+                    // A husk under 25 KB holds no speech (a crash mid-write or an
+                    // accidental sub-second tap). Discard instead of looping.
+                    finishJob(job, audio: audio)
+                    lastOK = true; lastMessage = nil
+                    setState(uploading: false,
+                             error: "One damaged recording (\(bytes) bytes — no audio) was discarded.")
+                    continue
                 }
-                job.totalParts = segments.count
-                try? write(job)
 
-                let totalSegs = Double(max(segments.count, 1))
-                for (segNo, segment) in segments.enumerated() {
-                    // Skip work already done in an earlier attempt.
-                    if job.partTexts[segment.index]?.isEmpty == false { continue }
-                    let base = 0.05 + 0.85 * (Double(segNo) / totalSegs)
-                    let slice = 0.85 / totalSegs
+                DispatchQueue.main.async { self.stage = "Uploading…" }
+                let result = try await AudioUpload.ingestWhole(
+                    fileURL: audio, title: job.title, mime: job.mime,
+                    onProgress: { frac in
+                        DispatchQueue.main.async {
+                            // Bytes are 90% of the visible bar; the server's
+                            // transcription is the final sliver.
+                            self.progress = 0.05 + 0.85 * frac
+                            self.stage = frac < 1 ? "Uploading… \(Int(frac * 100))%"
+                                                  : "Transcribing…"
+                        }
+                    })
 
-                    let path = job.uploadedPaths[segment.index]
-                        ?? "voice/\(job.id)/part-\(String(format: "%03d", segment.index)).\(segment.url.pathExtension)"
-                    if job.uploadedPaths[segment.index] == nil {
-                        DispatchQueue.main.async { self.stage = segments.count > 1
-                            ? "Uploading part \(segNo + 1) of \(segments.count)…" : "Uploading…" }
-                        _ = try await AudioUpload.putToStorage(fileURL: segment.url, path: path,
-                                                               mime: segment.isTemporary ? "audio/m4a" : job.mime,
-                                                               onProgress: { frac in
-                            DispatchQueue.main.async {
-                                // Bytes fill the first 70% of this segment's slice.
-                                self.progress = base + slice * 0.7 * frac
-                                self.stage = (segments.count > 1
-                                    ? "Uploading part \(segNo + 1) of \(segments.count)"
-                                    : "Uploading") + "… \(Int(frac * 100))%"
-                            }
-                        })
-                        job.uploadedPaths[segment.index] = path
-                        try? write(job)
-                    }
-
-                    DispatchQueue.main.async {
-                        self.progress = base + slice * 0.7
-                        self.stage = segments.count > 1
-                            ? "Transcribing part \(segNo + 1) of \(segments.count)…" : "Transcribing…"
-                    }
-                    let text = try await AudioUpload.transcribePart(
-                        storagePath: path, mime: segment.isTemporary ? "audio/m4a" : job.mime)
-                    job.partTexts[segment.index] = text
-                    try? write(job)          // durable: never transcribe the same minute twice
-
-                    let done = Double(job.partTexts.count)
-                    DispatchQueue.main.async { self.progress = 0.05 + 0.85 * (done / totalSegs) }
-                }
-                DispatchQueue.main.async { self.stage = "Summarizing…" }
-
-                let transcript = job.partTexts.keys.sorted()
-                    .compactMap { job.partTexts[$0]?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty }
-                    .joined(separator: "\n")
-
-                let result = try await AudioUpload.finalize(
-                    transcript: transcript, title: job.title,
-                    audioPath: job.uploadedPaths[0], duration: job.duration)
-
-                try await AudioUpload.verify(entryID: result.entryID)
-
-                AudioSplitter.cleanUp(segments)
                 finishJob(job, audio: audio)
                 lastOK = true
                 lastMessage = result.title
@@ -303,25 +253,19 @@ final class Uploader: NSObject, ObservableObject {
                     self.lastError = nil
                 }
             } catch {
-                AudioSplitter.cleanUp(segments)
-                // A format/transcoding rejection is PERMANENT: the file itself is
-                // damaged (crash mid-write), so no retry will ever succeed. Discard
-                // it honestly instead of wedging the queue on a corpse.
+                // A server verdict of "no speech" is permanent — the file has no
+                // words in it; retrying can't add any. Everything else is kept
+                // for retry (the audio never leaves the device until it saves).
                 let msg = error.localizedDescription
                 let noSpeech = msg.localizedCaseInsensitiveContains("No speech")
-                let permanent = noSpeech || ["Transcoding failed", "may be unsupported", "unsupported",
-                                 "could not decode", "Invalid file", "corrupt"]
-                    .contains { msg.localizedCaseInsensitiveContains($0) }
-                if permanent {
+                    || msg.localizedCaseInsensitiveContains("empty transcript")
+                if noSpeech {
                     let bytes = (try? audio.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
                     let mb = String(format: "%.1f", Double(bytes) / 1_048_576)
                     finishJob(job, audio: audio)
-                    lastOK = true
-                    lastMessage = nil
+                    lastOK = true; lastMessage = nil
                     setState(uploading: false,
-                             error: noSpeech
-                               ? "No speech was found in one recording (\(mb) MB) — discarded. Retrying can't add speech to it."
-                               : "One recording (\(mb) MB) was damaged in a crash and can't be recovered — discarded.")
+                             error: "No speech was found in one recording (\(mb) MB) — discarded.")
                     continue
                 }
                 job.attempts += 1
