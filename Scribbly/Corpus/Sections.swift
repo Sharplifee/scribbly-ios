@@ -493,14 +493,6 @@ struct IngestSection: View {
                                 .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [6])).foregroundColor(P.border))
                         }
                         .disabled(files.working)
-                        Button {
-                            // Open Voice Memos so the user can share a memo straight back
-                            // into Scribbly (share sheet → Scribbly, wired in build 144).
-                            if let u = URL(string: "voicememos://") { UIApplication.shared.open(u) }
-                        } label: {
-                            Label("Open Voice Memos", systemImage: "waveform")
-                                .font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
-                        }
                         if let s = files.status {
                             Text(s).font(.system(size: 13)).foregroundColor(P.textSec)
                                 .multilineTextAlignment(.center).padding(.horizontal, 24)

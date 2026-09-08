@@ -164,16 +164,15 @@ struct RecordBar: View {
             savedTitle = nil
             rec.start()
         } label: {
-            HStack(spacing: 12) {
+            VStack(spacing: 6) {
                 ZStack {
-                    Circle().fill(P.brand).frame(width: 44, height: 44)
-                        .shadow(color: P.accent.opacity(0.5), radius: 12, y: 3)
-                    Image(systemName: "mic.fill").font(.system(size: 18)).foregroundColor(.white)
+                    Circle().fill(P.brand).frame(width: 56, height: 56)
+                        .shadow(color: P.accent.opacity(0.5), radius: 14, y: 4)
+                    Image(systemName: "mic.fill").font(.system(size: 22)).foregroundColor(.white)
                 }
-                Text("Record").font(.system(size: 16, weight: .semibold)).foregroundColor(.white)
-                Spacer()
-                Text("keeps going in your pocket").font(.system(size: 12)).foregroundColor(P.textDim)
+                Text("Record").font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
             }
+            .frame(maxWidth: .infinity)
         }
     }
 
