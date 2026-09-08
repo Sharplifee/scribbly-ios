@@ -4,7 +4,8 @@ import SwiftUI
 /// segmented bar, five sections: Ingest · Groups · Collections · Library · Query.
 struct LibraryScreen: View {
     @StateObject private var store = LibraryStore()
-    @State private var section: Section = .library
+    @State private var section: Section
+    init(initial: Section = .library) { _section = State(initialValue: initial) }
 
     enum Section: String, CaseIterable, Identifiable {
         case ingest = "Ingest", groups = "Groups", collections = "Collections",
@@ -20,6 +21,7 @@ struct LibraryScreen: View {
                 sectionBar
                 Divider().overlay(P.border)
                 content
+                    .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 96) }
             }
         }
         .task { await store.loadCounts() }

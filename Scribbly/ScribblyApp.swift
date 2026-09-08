@@ -51,39 +51,34 @@ enum P {
 // MARK: - Root
 
 struct RootView: View {
-    @State private var tab = 0
     @State private var armToken = 0
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             P.bg.ignoresSafeArea()
-            TabView(selection: $tab) {
-                RecordView(armToken: armToken)
-                    .tabItem { Label("Record", systemImage: "mic.fill") }.tag(0)
-                NavigationStack { LibraryScreen() }
-                    .tabItem { Label("Library", systemImage: "books.vertical.fill") }.tag(1)
-            }
-            .tint(P.accent)
+            // Home = the ingest/library screen, opening on Ingest.
+            NavigationStack { LibraryScreen(initial: .ingest) }
+            // The recorder rides along the bottom as a compact overlaid control
+            // that expands in place while recording — not a separate page.
+            RecordBar(armToken: armToken)
         }
         .onOpenURL { url in
             if url.scheme == "scribbly" && url.host == "record" { arm(); return }
             // Files shared/opened into Scribbly (share sheet, Files app, AirDrop) → ingest.
             if url.isFileURL {
-                tab = 1
                 Task { await FileIngestModel.shared.handle(url) }
             }
         }
     }
 
     private func arm() {
-        tab = 0
-        armToken += 1   // change triggers RecordView to auto-start
+        armToken += 1   // change triggers RecordBar to auto-start
     }
 }
 
 // MARK: - Record
 
-struct RecordView: View {
+struct RecordBar: View {
     var armToken: Int = 0
     @StateObject private var rec = Recorder()
     @State private var showPendingSheet = false
@@ -96,94 +91,48 @@ struct RecordView: View {
         return String(format: "%02d:%02d", t / 60, t % 60)
     }
 
+    private var isActive: Bool { rec.state != .idle || up.isUploading }
+
     var body: some View {
-        ZStack {
-            P.bg.ignoresSafeArea()
-            VStack(spacing: 26) {
-                Spacer()
-
-                Text("Scribbly")
-                    .font(.system(size: 30, weight: .heavy, design: .default))
-                    .kerning(-0.8)
-
-                if rec.state == .idle && !up.isUploading {
-                    Text("Record anything. It keeps going in your pocket,\nthrough calls, until you tap Finish.")
-                        .font(.system(size: 14))
-                        .foregroundColor(P.textSec)
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(3)
-                }
-
-                // Timer + status
-                if rec.state != .idle {
-                    VStack(spacing: 6) {
-                        Text(timeString)
-                            .font(.system(size: 54, weight: .semibold, design: .monospaced))
-                            .kerning(-1)
-                        Text(statusText)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(statusColor)
-                    }
-                }
-
-                WaveBars(level: rec.level, active: rec.state == .recording)
-                    .frame(height: 58)
-                    .padding(.horizontal, 30)
-
-                Spacer()
-
-                if up.isUploading {
-                    VStack(spacing: 10) {
-                        ProgressView(value: up.progress)
-                            .tint(P.accent)
-                            .frame(width: 200)
-                        Text(up.stage.isEmpty ? (up.progress < 1 ? "Uploading…" : "Transcribing…") : up.stage)
-                            .font(.system(size: 14, weight: .medium))
-                        Text("Safe to close the app — the server finishes this on its own.")
-                            .font(.system(size: 12)).foregroundColor(P.textDim)
-                    }
-                } else {
-                    controls
-                }
-
-                if let t = savedTitle {
-                    Label(t, systemImage: "checkmark.circle.fill")
-                        .font(.system(size: 13)).foregroundColor(P.good)
-                        .padding(.horizontal, 24).multilineTextAlignment(.center)
-                    Button {
-                        Task {
-                            // Newest voice entry is the one just saved; hand it to Claude.
-                            if let e = try? await CorpusAPI.latestVoiceEntry() {
-                                let transcript = e.transcript ?? ""
-                                let body = transcript.count <= 13_000
-                                    ? "Here's a recording I just made, \"\(e.title)\". Let's discuss it before I file it.\n\n\(transcript)"
-                                    : "Here's the summary of a recording I just made, \"\(e.title)\" (full transcript too long to paste). Let's discuss it.\n\n\(e.summary ?? "")"
-                                var c = URLComponents(string: "https://claude.ai/new")!
-                                c.queryItems = [URLQueryItem(name: "q", value: body)]
-                                if let u = c.url { await MainActor.run { UIApplication.shared.open(u) } }
-                            }
-                        }
-                    } label: {
-                        Label("Discuss with Claude", systemImage: "bubble.left.and.text.bubble.right")
-                            .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
-                            .padding(.horizontal, 18).padding(.vertical, 10)
-                            .background(P.brand).clipShape(Capsule())
-                    }
-                }
-                if up.pendingCount > 0 && !up.isUploading {
-                    Label("\(up.pendingCount) recording\(up.pendingCount == 1 ? "" : "s") waiting to upload — tap to manage",
-                          systemImage: "arrow.clockwise.circle")
-                        .font(.system(size: 12)).foregroundColor(.orange)
-                        .padding(.horizontal, 24).multilineTextAlignment(.center)
-                        .onTapGesture { showPendingSheet = true }
-                }
-                if let e = rec.lastError ?? up.lastError {
-                    Text(e).font(.system(size: 13)).foregroundColor(P.danger)
-                        .multilineTextAlignment(.center).padding(.horizontal, 28)
-                }
-
-                Spacer().frame(height: 12)
+        VStack(spacing: 10) {
+            // Transient status lines float just above the bar.
+            if let t = savedTitle, !up.isUploading {
+                Label(t, systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 13)).foregroundColor(P.good)
+                    .padding(.horizontal, 20).multilineTextAlignment(.center)
             }
+            if up.pendingCount > 0 && !up.isUploading {
+                Label("\(up.pendingCount) recording\(up.pendingCount == 1 ? "" : "s") waiting — tap to manage",
+                      systemImage: "arrow.clockwise.circle")
+                    .font(.system(size: 12)).foregroundColor(.orange)
+                    .onTapGesture { showPendingSheet = true }
+            }
+            if let e = rec.lastError ?? up.lastError {
+                Text(e).font(.system(size: 12)).foregroundColor(P.danger)
+                    .multilineTextAlignment(.center).padding(.horizontal, 24)
+            }
+
+            // The bar itself: a slim capsule when idle, an expanded panel when live.
+            Group {
+                if up.isUploading {
+                    uploadingPanel
+                } else if rec.state == .idle {
+                    idleBar
+                } else {
+                    activePanel
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, isActive ? 16 : 10)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(P.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(P.border))
+                    .shadow(color: .black.opacity(0.4), radius: 18, y: 6)
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+            .animation(.spring(response: 0.34, dampingFraction: 0.86), value: isActive)
         }
         .onChange(of: armToken) { _ in
             if rec.state == .idle && !up.isUploading { savedTitle = nil; rec.start() }
@@ -195,6 +144,50 @@ struct RecordView: View {
             Button("Keep recording", role: .cancel) {}
             Button("Discard", role: .destructive) { rec.discard() }
         } message: { Text("The audio will be deleted and cannot be recovered.") }
+    }
+
+    // Slim idle capsule: tap the mic to start.
+    private var idleBar: some View {
+        Button {
+            savedTitle = nil
+            rec.start()
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().fill(P.brand).frame(width: 44, height: 44)
+                        .shadow(color: P.accent.opacity(0.5), radius: 12, y: 3)
+                    Image(systemName: "mic.fill").font(.system(size: 18)).foregroundColor(.white)
+                }
+                Text("Record").font(.system(size: 16, weight: .semibold)).foregroundColor(.white)
+                Spacer()
+                Text("keeps going in your pocket").font(.system(size: 12)).foregroundColor(P.textDim)
+            }
+        }
+    }
+
+    // Expanded live panel: timer, waveform, transport.
+    private var activePanel: some View {
+        VStack(spacing: 14) {
+            HStack {
+                Text(timeString)
+                    .font(.system(size: 34, weight: .semibold, design: .monospaced)).kerning(-1)
+                Spacer()
+                Text(statusText).font(.system(size: 12, weight: .medium)).foregroundColor(statusColor)
+            }
+            WaveBars(level: rec.level, active: rec.state == .recording).frame(height: 40)
+            controls
+        }
+    }
+
+    // Upload/handoff panel.
+    private var uploadingPanel: some View {
+        VStack(spacing: 8) {
+            ProgressView(value: up.progress).tint(P.accent)
+            Text(up.stage.isEmpty ? (up.progress < 1 ? "Uploading…" : "Transcribing…") : up.stage)
+                .font(.system(size: 14, weight: .medium))
+            Text("Safe to close the app — the server finishes this on its own.")
+                .font(.system(size: 11)).foregroundColor(P.textDim).multilineTextAlignment(.center)
+        }
     }
 
     private var statusText: String {
@@ -215,46 +208,30 @@ struct RecordView: View {
     @ViewBuilder private var controls: some View {
         switch rec.state {
         case .idle:
-            Button {
-                savedTitle = nil
-                rec.start()
-            } label: {
-                ZStack {
-                    Circle().fill(P.brand)
-                        .frame(width: 96, height: 96)
-                        .shadow(color: P.accent.opacity(0.55), radius: 24, y: 8)
-                    Image(systemName: "mic.fill").font(.system(size: 36)).foregroundColor(.white)
-                }
-            }
+            EmptyView()
 
         case .recording, .paused:
-            VStack(spacing: 16) {
-                HStack(spacing: 14) {
-                    // Discard
-                    Button { showDiscardConfirm = true } label: {
-                        circleButton(icon: "trash", tint: P.danger)
-                    }
-                    // Pause / Resume
-                    Button {
-                        rec.state == .recording ? rec.pause() : rec.resume()
-                    } label: {
-                        circleButton(icon: rec.state == .recording ? "pause.fill" : "play.fill",
-                                     tint: .white, size: 76)
-                    }
-                    // Finish — the ONLY thing that ends a recording
-                    Button {
-                        rec.finish { url, dur in
-                            guard let url else { return }
-                            up.upload(fileURL: url, duration: dur) { ok, msg in
-                                savedTitle = ok ? (msg ?? "Saved to your library") : nil
-                            }
-                        }
-                    } label: {
-                        circleButton(icon: "checkmark", tint: P.good)
-                    }
+            HStack(spacing: 18) {
+                Button { showDiscardConfirm = true } label: {
+                    circleButton(icon: "trash", tint: P.danger, size: 48)
                 }
-                Text("Only Finish stops the recording")
-                    .font(.system(size: 11)).foregroundColor(P.textDim)
+                Button {
+                    rec.state == .recording ? rec.pause() : rec.resume()
+                } label: {
+                    circleButton(icon: rec.state == .recording ? "pause.fill" : "play.fill",
+                                 tint: .white, size: 60)
+                }
+                // Finish — the ONLY thing that ends a recording
+                Button {
+                    rec.finish { url, dur in
+                        guard let url else { return }
+                        up.upload(fileURL: url, duration: dur) { ok, msg in
+                            savedTitle = ok ? (msg ?? "Saved to your library") : nil
+                        }
+                    }
+                } label: {
+                    circleButton(icon: "checkmark", tint: P.good, size: 48)
+                }
             }
 
         case .finishing:
