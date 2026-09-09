@@ -47,19 +47,23 @@ final class Uploader: NSObject, ObservableObject {
 
     // MARK: - Public entry points
 
-    func upload(fileURL: URL, duration: TimeInterval, completion: @escaping (Bool, String?) -> Void) {
+    func upload(fileURL: URL, duration: TimeInterval, location: String? = nil,
+                completion: @escaping (Bool, String?) -> Void) {
         let fmt = DateFormatter()
         fmt.dateFormat = "MMM d, h:mm a"
-        upload(fileURL: fileURL, title: "Voice Memo — \(fmt.string(from: Date()))",
-               duration: duration, completion: completion)
+        // Provisional title; the server replaces it with "<topic> · <place>" once
+        // it has the transcript. If no place is known, the time stays.
+        let title = location.map { "\($0) — \(fmt.string(from: Date()))" } ?? "Voice Memo — \(fmt.string(from: Date()))"
+        upload(fileURL: fileURL, title: title, duration: duration, location: location, completion: completion)
     }
 
     /// Same as upload(fileURL:duration:) but with a caller-chosen title —
     /// used by crash recovery so rescued audio is labelled honestly.
-    func upload(fileURL: URL, title: String, duration: TimeInterval?, completion: @escaping (Bool, String?) -> Void) {
+    func upload(fileURL: URL, title: String, duration: TimeInterval?, location: String? = nil,
+                completion: @escaping (Bool, String?) -> Void) {
 
         do {
-            try enqueue(fileURL: fileURL, title: title, duration: duration ?? 0, mime: "audio/m4a")
+            try enqueue(fileURL: fileURL, title: title, duration: duration ?? 0, mime: "audio/m4a", location: location)
         } catch {
             setState(uploading: false, error: "Could not save the recording locally: \(error.localizedDescription)")
             completion(false, error.localizedDescription)
@@ -86,6 +90,7 @@ final class Uploader: NSObject, ObservableObject {
         let attempts: Int
         let bytes: Int
         let fileURL: URL
+        let held: Bool
     }
 
     /// Everything waiting to upload, oldest first — with the raw file so the
@@ -95,7 +100,7 @@ final class Uploader: NSObject, ObservableObject {
             PendingItem(id: job.id, title: job.title, createdAt: job.createdAt,
                         attempts: job.attempts,
                         bytes: (try? audio.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0,
-                        fileURL: audio)
+                        fileURL: audio, held: job.held == true)
         }
     }
 
@@ -123,9 +128,29 @@ final class Uploader: NSObject, ObservableObject {
         var totalParts: Int? = nil
         var createdAt: Date
         var attempts: Int
+        /// Recovered-from-crash audio waits here until the user approves it.
+        var held: Bool? = nil
+        /// Where the recording was made ("Thanksgiving Point, Lehi") — sent to
+        /// the server so the saved note gets a real title, not "Voice Memo 152".
+        var location: String? = nil
     }
 
-    private func enqueue(fileURL: URL, title: String, duration: TimeInterval?, mime: String) throws {
+    /// Queue audio WITHOUT uploading — shown in Jobs as "needs your OK".
+    func hold(fileURL: URL, title: String) {
+        try? enqueue(fileURL: fileURL, title: title, duration: nil, mime: "audio/m4a", held: true)
+    }
+
+    /// Approve a held item: clears the hold and drains.
+    func approve(id: String) {
+        for (var job, _) in jobs() where job.id == id {
+            job.held = false
+            try? write(job)
+        }
+        resumePending()
+    }
+
+    private func enqueue(fileURL: URL, title: String, duration: TimeInterval?, mime: String,
+                         held: Bool = false, location: String? = nil) throws {
         let id = UUID().uuidString
         let srcBytes = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
         for (job, audio) in jobs() {
@@ -144,7 +169,7 @@ final class Uploader: NSObject, ObservableObject {
         try fm.copyItem(at: fileURL, to: dest)
 
         try write(Job(id: id, title: title, mime: mime, duration: duration,
-                      createdAt: Date(), attempts: 0))
+                      createdAt: Date(), attempts: 0, held: held ? true : nil, location: location))
         refreshPendingCount()
     }
 
@@ -212,6 +237,7 @@ final class Uploader: NSObject, ObservableObject {
         var lastMessage: String?
 
         for (storedJob, audio) in jobs() {
+            if storedJob.held == true { continue }   // waits for the user's OK in Jobs
             var job = storedJob
             setState(uploading: true, error: nil)
             DispatchQueue.main.async { self.progress = 0.05 }
@@ -233,7 +259,7 @@ final class Uploader: NSObject, ObservableObject {
 
                 DispatchQueue.main.async { self.stage = "Uploading…" }
                 let result = try await AudioUpload.ingestWhole(
-                    fileURL: audio, title: job.title, mime: job.mime,
+                    fileURL: audio, title: job.title, mime: job.mime, location: job.location,
                     onProgress: { frac in
                         DispatchQueue.main.async {
                             // Bytes are 90% of the visible bar; the server's

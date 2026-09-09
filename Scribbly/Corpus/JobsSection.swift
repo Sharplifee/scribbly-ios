@@ -25,8 +25,16 @@ struct JobsSection: View {
                                     Text(item.title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
                                     Text(pendingSubtitle(item))
                                         .font(.system(size: 12)).foregroundColor(P.textSec)
+                                    if item.held {
+                                        Text("Recovered after a crash — on hold until you approve it")
+                                            .font(.system(size: 11)).foregroundColor(.orange)
+                                    }
                                     HStack(spacing: 14) {
-                                        action("Retry", tint: P.accent) { up.resumePending() }
+                                        if item.held {
+                                            action("Approve & upload", tint: P.good) { up.approve(id: item.id); model.bump() }
+                                        } else {
+                                            action("Retry", tint: P.accent) { up.resumePending() }
+                                        }
                                         action("Discard", tint: P.danger) { up.discard(id: item.id); model.bump() }
                                     }
                                 }

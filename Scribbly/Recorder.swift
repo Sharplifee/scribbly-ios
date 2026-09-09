@@ -147,6 +147,10 @@ final class Recorder: NSObject, ObservableObject {
                 }
                 merged = first
             }
+            // The merged m4a (or the per-segment copies in the pending store) now
+            // own the audio. Delete the raw segments so the crash-recovery sweep
+            // can never mistake a FINISHED recording for an orphan and re-upload it.
+            for u in segs where u != merged { try? FileManager.default.removeItem(at: u) }
             DispatchQueue.main.async {
                 try? self?.session.setActive(false, options: [.notifyOthersOnDeactivation])
                 self?.state = .idle
@@ -192,18 +196,18 @@ final class Recorder: NSObject, ObservableObject {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
             if let merged = self.merge(leftovers) {
-                Uploader.shared.upload(fileURL: merged, title: title, duration: nil) { _, _ in }
+                Uploader.shared.hold(fileURL: merged, title: title)
                 for u in leftovers { try? fm.removeItem(at: u) }
             } else {
                 // Can't compose: rescue every segment individually; the pending
                 // store owns copies, so the originals can go.
                 for (i, u) in leftovers.enumerated() {
-                    Uploader.shared.upload(fileURL: u, title: "\(title) (part \(i + 1))", duration: nil) { _, _ in }
+                    Uploader.shared.hold(fileURL: u, title: "\(title) (part \(i + 1))")
                 }
                 for u in leftovers { try? fm.removeItem(at: u) }
             }
             DispatchQueue.main.async {
-                self.lastError = "A recording interrupted by a crash was recovered and is uploading."
+                self.lastError = "A recording cut off by a crash was recovered — it's on hold in Jobs until you approve it."
             }
         }
     }

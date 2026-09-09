@@ -87,6 +87,7 @@ struct RecordBar: View {
     @StateObject private var up = Uploader.shared
     @State private var savedTitle: String?
     @State private var showDiscardConfirm = false
+    @State private var place: String?
 
     private var timeString: String {
         let t = Int(rec.elapsed)
@@ -147,7 +148,11 @@ struct RecordBar: View {
             .ignoresSafeArea(edges: .bottom)
         )
         .onChange(of: armToken) { _ in
-            if rec.state == .idle && !up.isUploading { savedTitle = nil; rec.start() }
+            if rec.state == .idle && !up.isUploading {
+                savedTitle = nil; place = nil
+                PlaceTagger.shared.tag { place = $0 }
+                rec.start()
+            }
         }
         .sheet(isPresented: $showPendingSheet) {
             PendingRecoverySheet(uploader: up).presentationDetents([.medium, .large])
@@ -162,6 +167,8 @@ struct RecordBar: View {
     private var idleBar: some View {
         Button {
             savedTitle = nil
+            place = nil
+            PlaceTagger.shared.tag { place = $0 }
             rec.start()
         } label: {
             VStack(spacing: 6) {
@@ -236,7 +243,7 @@ struct RecordBar: View {
                 Button {
                     rec.finish { url, dur in
                         guard let url else { return }
-                        up.upload(fileURL: url, duration: dur) { ok, msg in
+                        up.upload(fileURL: url, duration: dur, location: place) { ok, msg in
                             savedTitle = ok ? (msg ?? "Saved to your library") : nil
                         }
                     }
