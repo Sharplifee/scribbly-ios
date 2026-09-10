@@ -297,21 +297,15 @@ struct IngestSection: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                Text("One link.\nOne library.").font(.system(size: 32, weight: .heavy))
-                    .multilineTextAlignment(.center).kerning(-1).padding(.top, 20)
-                Text("Channels, playlists, videos, and audio — transcribed, summarized, and searchable.")
-                    .font(.system(size: 14)).foregroundColor(P.textSec).multilineTextAlignment(.center)
-                    .padding(.horizontal, 30)
+            VStack(spacing: 14) {
 
                 // ── Card 1: paste ANY link. No mode to choose — the app detects
                 // channel / playlist / video / podcast / article itself. Return on the
                 // keyboard fires exactly what the button does.
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("PASTE A LINK").font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).kerning(0.4)
                     HStack(spacing: 10) {
                         Image(systemName: "link").foregroundColor(P.accent)
-                        TextField("Channel, playlist, video, podcast, or article URL…", text: $text)
+                        TextField("Paste a link…", text: $text)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
                             .keyboardType(.URL)
                             .submitLabel(.go)
@@ -332,8 +326,6 @@ struct IngestSection: View {
                     }
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .opacity(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
-                    Text("Paste several links at once — any separator works.")
-                        .font(.system(size: 11)).foregroundColor(P.textDim)
                 }
                 .padding(16)
                 .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(P.surface)
@@ -473,21 +465,16 @@ struct IngestSection: View {
                 // ── Card 2: upload a file. Its own bubble, always visible.
                 SwiftUI.Group {
                     VStack(spacing: 12) {
-                        Text("UPLOAD AUDIO OR VIDEO · ANY FORMAT")
-                            .font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim)
-                            .kerning(0.4)
                         Button { showPicker = true } label: {
                             VStack(spacing: 8) {
                                 if files.working {
                                     ProgressView(value: up.progress).tint(P.accent).padding(.horizontal, 24)
                                 }
                                 else { Image(systemName: "arrow.up").font(.system(size: 22)).foregroundColor(P.accent) }
-                                Text(files.working ? (files.status ?? "Working…") : "Tap to upload")
+                                Text(files.working ? (files.status ?? "Working…") : "Upload audio or video")
                                     .font(.system(size: 16, weight: .semibold)).foregroundColor(.white)
-                                Text("any audio or video — the audio is transcribed")
-                                    .font(.system(size: 12)).foregroundColor(P.textDim)
                             }
-                            .frame(maxWidth: .infinity).padding(.vertical, 34)
+                            .frame(maxWidth: .infinity).padding(.vertical, 26)
                             .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
                             .overlay(RoundedRectangle(cornerRadius: 16)
                                 .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [6])).foregroundColor(P.border))
@@ -502,9 +489,6 @@ struct IngestSection: View {
                                 .multilineTextAlignment(.center).padding(.horizontal, 24)
                         }
                     }
-                    .padding(16)
-                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(P.surface)
-                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(P.border)))
                     .padding(.horizontal, 16)
                     .fileImporter(isPresented: $showPicker,
                                   allowedContentTypes: FileIngestModel.contentTypes,
@@ -519,8 +503,6 @@ struct IngestSection: View {
                     Text(s).font(.system(size: 13)).foregroundColor(P.textSec)
                         .multilineTextAlignment(.center).padding(.horizontal, 20)
                 }
-                Text("Already-saved videos are skipped automatically.")
-                    .font(.system(size: 12)).foregroundColor(P.textDim).padding(.top, 4)
             }
             .padding(.bottom, 30)
         }

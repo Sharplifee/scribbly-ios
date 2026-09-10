@@ -1,79 +1,61 @@
 import SwiftUI
 
-/// The native replacement for the embedded web Library. One screen, a scrollable
-/// segmented bar, five sections: Ingest · Groups · Collections · Library · Query.
+/// Native iOS tab shell. Home · Library · Collections · Groups · Query · Activity
+/// (Activity is last on purpose — it's the utility page). On iPhone iOS puts
+/// anything past the 4th tab under "More", which is native behaviour.
 struct LibraryScreen: View {
     @StateObject private var store = LibraryStore()
-    @State private var section: Section
-    init(initial: Section = .library) { _section = State(initialValue: initial) }
+    @ObservedObject private var chrome = BottomChrome.shared
+    init(initial: Section = .home) { BottomChrome.shared.currentTab = initial }
 
     enum Section: String, CaseIterable, Identifiable {
-        case ingest = "Ingest", jobs = "Jobs", groups = "Groups", collections = "Collections",
-             library = "Library", query = "Query"
+        case home = "Home", library = "Library", collections = "Collections",
+             groups = "Groups", query = "Query", jobs = "Activity"
         var id: String { rawValue }
+        var icon: String {
+            switch self {
+            case .home:        return "house.fill"
+            case .library:     return "books.vertical.fill"
+            case .collections: return "square.stack.fill"
+            case .groups:      return "person.2.fill"
+            case .query:       return "sparkle.magnifyingglass"
+            case .jobs:        return "waveform.path.ecg"
+            }
+        }
     }
 
     var body: some View {
-        ZStack {
-            P.bg.ignoresSafeArea()
-            VStack(spacing: 0) {
-                header
-                sectionBar
-                Divider().overlay(P.border)
-                content
+        TabView(selection: $chrome.currentTab) {
+            ForEach(Section.allCases) { s in
+                NavigationStack {
+                    ZStack {
+                        P.bg.ignoresSafeArea()
+                        content(for: s)
+                    }
+                    .navigationTitle(s == .home ? "Scribbly" : s.rawValue)
+                    .navigationBarTitleDisplayMode(s == .home ? .large : .inline)
+                    .toolbarBackground(P.bg, for: .navigationBar)
+                }
+                .tabItem { Label(s.rawValue, systemImage: s.icon) }
+                .badge(badgeInt(for: s))
+                .tag(s)
             }
         }
+        .tint(P.accent)
         .task { await store.loadCounts() }
     }
 
-    private var header: some View {
-        HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(P.brand).frame(width: 34, height: 34)
-                .overlay(Image(systemName: "diamond.fill").font(.system(size: 14)).foregroundColor(.white))
-            Text("Scribbly").font(.system(size: 26, weight: .heavy)).kerning(-0.6)
-            Spacer()
-        }
-        .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 10)
-    }
-
-    private var sectionBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(Section.allCases) { s in
-                    let count = badge(for: s)
-                    Button { section = s } label: {
-                        HStack(spacing: 6) {
-                            Text(s.rawValue)
-                            if let count { Text(count).foregroundColor(P.textDim) }
-                        }
-                        .font(.system(size: 15, weight: section == s ? .semibold : .regular))
-                        .foregroundColor(section == s ? .white : P.textSec)
-                        .padding(.horizontal, 14).padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(section == s ? P.surface : .clear)
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(section == s ? P.border : .clear))
-                        )
-                    }
-                }
-            }
-            .padding(.horizontal, 16).padding(.vertical, 10)
-        }
-    }
-
-    private func badge(for s: Section) -> String? {
+    private func badgeInt(for s: Section) -> Int {
         switch s {
-        case .groups:      return store.groupCount > 0 ? "\(store.groupCount)" : nil
-        case .collections: return store.collectionCount > 0 ? "\(store.collectionCount)" : nil
-        case .library:     return store.libraryCount > 0 ? fmt(store.libraryCount) : nil
-        default:           return nil
+        case .groups:      return store.groupCount
+        case .collections: return store.collectionCount
+        default:           return 0
         }
     }
 
-    @ViewBuilder private var content: some View {
-        switch section {
-        case .ingest:      IngestSection()
+    @ViewBuilder private func content(for s: Section) -> some View {
+        switch s {
+        case .home:        IngestSection()
         case .jobs:        JobsSection()
         case .groups:      GroupsSection(store: store)
         case .collections: CollectionsSection(store: store)

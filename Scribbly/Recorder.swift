@@ -35,6 +35,7 @@ final class Recorder: NSObject, ObservableObject {
     private var segments: [URL] = []
     private var timer: Timer?
     private var accumulated: TimeInterval = 0            // completed segments
+    private var segmentStartedAt: Date?                 // wall-clock guard for currentTime
     private var bgTask: UIBackgroundTaskIdentifier = .invalid
     private let session = AVAudioSession.sharedInstance()
 
@@ -247,15 +248,27 @@ final class Recorder: NSObject, ObservableObject {
         guard r.record() else { throw NSError(domain: "Scribbly", code: 1,
               userInfo: [NSLocalizedDescriptionKey: "AVAudioRecorder refused to start"]) }
         recorder = r
+        segmentStartedAt = Date()
         segments.append(url)
+    }
+
+    /// AVAudioRecorder.currentTime returns garbage (often a huge negative
+    /// number) after an interruption or route change. Never trust it raw:
+    /// clamp to [0, wall-clock length of this segment].
+    private func sanePosition(_ r: AVAudioRecorder) -> TimeInterval {
+        let wall = max(0, -(segmentStartedAt?.timeIntervalSinceNow ?? 0))
+        let t = r.currentTime
+        guard t.isFinite, t >= 0 else { return wall }
+        return min(t, wall + 1)
     }
 
     private func closeSegment() {
         if let r = recorder {
-            accumulated += r.currentTime
+            accumulated += sanePosition(r)
             r.stop()
         }
         recorder = nil
+        segmentStartedAt = nil
     }
 
     /// Concatenate segments into one m4a. Single segment is returned as-is.
@@ -318,7 +331,8 @@ final class Recorder: NSObject, ObservableObject {
             let db = r.averagePower(forChannel: 0)
             let norm = max(0, min(1, (db + 50) / 50))
             self.level = norm
-            self.elapsed = self.accumulated + r.currentTime
+            // Monotonic: the clock can only move forward while recording.
+            self.elapsed = max(self.elapsed, self.accumulated + self.sanePosition(r))
         }
         // .common so the timer keeps firing while the user scrolls
         RunLoop.main.add(t, forMode: .common)

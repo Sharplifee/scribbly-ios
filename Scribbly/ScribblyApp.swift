@@ -56,13 +56,16 @@ struct RootView: View {
     var body: some View {
         ZStack {
             P.bg.ignoresSafeArea()
-            // Home = the ingest/library screen, opening on Ingest. The recorder is
-            // a bottom safe-area INSET, so iOS reserves exactly its live height —
-            // content can never sit underneath it, however tall it grows.
-            NavigationStack { LibraryScreen(initial: .ingest) }
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    RecordBar(armToken: armToken)
-                }
+            // Native tab shell. The recorder lives in the system's bottom
+            // accessory slot (the "mini player" position above the tab bar) on
+            // iOS 26; older systems get it as a safe-area inset above the tabs.
+            if #available(iOS 26.0, *) {
+                LibraryScreen(initial: .home)
+                    .tabViewBottomAccessory { RecordBar(armToken: armToken) }
+            } else {
+                LibraryScreen(initial: .home)
+                    .safeAreaInset(edge: .bottom, spacing: 0) { RecordBar(armToken: armToken) }
+            }
         }
         .onOpenURL { url in
             if url.scheme == "scribbly" && url.host == "record" { arm(); return }
@@ -85,6 +88,7 @@ struct RootView: View {
 final class BottomChrome: ObservableObject {
     static let shared = BottomChrome()
     @Published var hideRecordBar = false
+    @Published var currentTab: LibraryScreen.Section = .home
 }
 
 struct RecordBar: View {
@@ -113,12 +117,12 @@ struct RecordBar: View {
     }
 
     private var barBody: some View {
-        VStack(spacing: 10) {
-            // Transient status lines float just above the bar.
-            if let t = savedTitle, !up.isUploading {
+        VStack(spacing: 6) {
+            // The "saved" line shows on Home only, and never follows you around.
+            if let t = savedTitle, !up.isUploading, chrome.currentTab == .home {
                 Label(t, systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 13)).foregroundColor(P.good)
-                    .padding(.horizontal, 20).multilineTextAlignment(.center)
+                    .font(.system(size: 12)).foregroundColor(P.good)
+                    .padding(.horizontal, 20).lineLimit(1)
             }
             if up.pendingCount > 0 && !up.isUploading {
                 Label("\(up.pendingCount) recording\(up.pendingCount == 1 ? "" : "s") waiting — tap to manage",
@@ -142,27 +146,10 @@ struct RecordBar: View {
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, isActive ? 14 : 6)
-            .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(P.surface)
-                    .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(P.border))
-                    .shadow(color: .black.opacity(0.4), radius: 18, y: 6)
-            )
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-            .animation(.spring(response: 0.34, dampingFraction: 0.86), value: isActive)
+            .padding(.vertical, 6)
+            .animation(.spring(response: 0.3, dampingFraction: 0.88), value: isActive)
         }
-        .padding(.top, 8)
-        .background(
-            // Solid floor + a short fade above it so the scroll content dims out
-            // instead of ever showing through the bar.
-            VStack(spacing: 0) {
-                LinearGradient(colors: [P.bg.opacity(0), P.bg], startPoint: .top, endPoint: .bottom).frame(height: 14)
-                P.bg
-            }
-            .ignoresSafeArea(edges: .bottom)
-        )
+        .padding(.top, 4)
         .onChange(of: armToken) { _ in
             if rec.state == .idle && !up.isUploading {
                 savedTitle = nil; place = nil
@@ -201,26 +188,24 @@ struct RecordBar: View {
 
     // Expanded live panel: timer, waveform, transport.
     private var activePanel: some View {
-        VStack(spacing: 14) {
-            HStack {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(timeString)
-                    .font(.system(size: 34, weight: .semibold, design: .monospaced)).kerning(-1)
-                Spacer()
-                Text(statusText).font(.system(size: 12, weight: .medium)).foregroundColor(statusColor)
+                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                Text(statusText).font(.system(size: 9, weight: .medium)).foregroundColor(statusColor)
             }
-            WaveBars(level: rec.level, active: rec.state == .recording).frame(height: 40)
+            .frame(width: 58, alignment: .leading)
+            WaveBars(level: rec.level, active: rec.state == .recording).frame(height: 18)
             controls
         }
     }
 
     // Upload/handoff panel.
     private var uploadingPanel: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 4) {
             ProgressView(value: up.progress).tint(P.accent)
             Text(up.stage.isEmpty ? (up.progress < 1 ? "Uploading…" : "Transcribing…") : up.stage)
-                .font(.system(size: 14, weight: .medium))
-            Text("Safe to close the app — the server finishes this on its own.")
-                .font(.system(size: 11)).foregroundColor(P.textDim).multilineTextAlignment(.center)
+                .font(.system(size: 12, weight: .medium)).lineLimit(1)
         }
     }
 
@@ -245,15 +230,15 @@ struct RecordBar: View {
             EmptyView()
 
         case .recording, .paused:
-            HStack(spacing: 18) {
+            HStack(spacing: 8) {
                 Button { showDiscardConfirm = true } label: {
-                    circleButton(icon: "trash", tint: P.danger, size: 48)
+                    circleButton(icon: "trash", tint: P.danger, size: 30)
                 }
                 Button {
                     rec.state == .recording ? rec.pause() : rec.resume()
                 } label: {
                     circleButton(icon: rec.state == .recording ? "pause.fill" : "play.fill",
-                                 tint: .white, size: 60)
+                                 tint: .white, size: 34)
                 }
                 // Finish — the ONLY thing that ends a recording
                 Button {
@@ -264,7 +249,7 @@ struct RecordBar: View {
                         }
                     }
                 } label: {
-                    circleButton(icon: "checkmark", tint: P.good, size: 48)
+                    circleButton(icon: "checkmark", tint: P.good, size: 30)
                 }
             }
 
