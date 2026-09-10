@@ -85,6 +85,8 @@ struct EntryDetail: View {
             }
         }
         .overlay { if loading && entry == nil { ProgressView().tint(P.accent) } }
+        .onAppear { BottomChrome.shared.hideRecordBar = true }
+        .onDisappear { BottomChrome.shared.hideRecordBar = false }
         .task {
             entry = preloaded
             // Always refetch to get the transcript, which list rows omit.
@@ -96,23 +98,80 @@ struct EntryDetail: View {
     /// Opens a brand-new chat in the Claude app with this entry pre-loaded.
     /// claude.ai/new?q= is capped ~14k chars, so long transcripts send the
     /// summary instead of a truncated transcript.
-    private func sendToClaudeButton(_ e: Entry) -> some View {
-        Button {
-            let transcript = e.transcript ?? ""
-            let body: String
-            if transcript.count <= 13_000 {
-                body = "Here's a transcript titled \"\(e.title)\" from my Scribbly library. Let's discuss it.\n\n\(transcript)"
-            } else {
-                body = "Here's a summary of \"\(e.title)\" from my Scribbly library (the full transcript is \(transcript.count) characters, too long to paste). Let's discuss it.\n\n\(e.summary ?? "")"
-            }
-            var comps = URLComponents(string: "https://claude.ai/new")!
-            comps.queryItems = [URLQueryItem(name: "q", value: body)]
+    /// One body, several destinations. Claude/ChatGPT/Grok take a prompt in the
+    /// URL (?q= — all three verified 2026-09); Codex has no prefill parameter,
+    /// so the body is put on the clipboard and Codex is opened for a paste.
+    private func discussionBody(_ e: Entry, cap: Int) -> String {
+        let transcript = e.transcript ?? ""
+        if transcript.count <= cap {
+            return "Here's a transcript titled \"\(e.title)\" from my Scribbly library. Let's discuss it.\n\n\(transcript)"
+        }
+        return "Here's a summary of \"\(e.title)\" from my Scribbly library (the full transcript is \(transcript.count) characters, too long to paste). Let's discuss it.\n\n\(e.summary ?? "")"
+    }
+
+    private func send(_ e: Entry, to dest: Destination) {
+        switch dest {
+        case .claude, .chatgpt, .grok:
+            var comps = URLComponents(string: dest.base)!
+            comps.queryItems = [URLQueryItem(name: "q", value: discussionBody(e, cap: dest.cap))]
             if let url = comps.url { UIApplication.shared.open(url) }
-        } label: {
-            Label("Send to Claude", systemImage: "bubble.left.and.text.bubble.right")
-                .font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
-                .frame(maxWidth: .infinity).padding(.vertical, 12)
-                .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 12))
+        case .codex:
+            UIPasteboard.general.string = discussionBody(e, cap: 60_000)
+            if let url = URL(string: dest.base) { UIApplication.shared.open(url) }
+        }
+    }
+
+    private enum Destination: String, CaseIterable, Identifiable {
+        case claude = "Claude", chatgpt = "ChatGPT", grok = "Grok", codex = "Codex"
+        var id: String { rawValue }
+        var base: String {
+            switch self {
+            case .claude:  return "https://claude.ai/new"
+            case .chatgpt: return "https://chatgpt.com/"
+            case .grok:    return "https://grok.com/"
+            case .codex:   return "https://chatgpt.com/codex"
+            }
+        }
+        /// URL length ceilings differ per site; over the cap the summary is sent.
+        var cap: Int {
+            switch self {
+            case .claude:  return 13_000
+            case .chatgpt: return 8_000
+            case .grok:    return 2_000
+            case .codex:   return 0
+            }
+        }
+        var icon: String {
+            switch self {
+            case .claude:  return "bubble.left.and.text.bubble.right"
+            case .chatgpt: return "sparkles"
+            case .grok:    return "bolt.fill"
+            case .codex:   return "chevron.left.forwardslash.chevron.right"
+            }
+        }
+    }
+
+    private func sendToClaudeButton(_ e: Entry) -> some View {
+        VStack(spacing: 8) {
+            Button { send(e, to: .claude) } label: {
+                Label("Send to Claude", systemImage: "bubble.left.and.text.bubble.right")
+                    .font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
+                    .frame(maxWidth: .infinity).padding(.vertical, 12)
+                    .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            HStack(spacing: 8) {
+                ForEach([Destination.chatgpt, .grok, .codex]) { d in
+                    Button { send(e, to: d) } label: {
+                        Label(d.rawValue, systemImage: d.icon)
+                            .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                            .frame(maxWidth: .infinity).padding(.vertical, 10)
+                            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 10))
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(P.border))
+                    }
+                }
+            }
+            Text("Codex has no link-prefill — the text is copied for you to paste.")
+                .font(.system(size: 10)).foregroundColor(P.textDim)
         }
     }
 

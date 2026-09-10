@@ -80,6 +80,13 @@ struct RootView: View {
 
 // MARK: - Record
 
+/// Screens that own the bottom edge (an entry's Ask box) raise this so the
+/// record bar steps aside instead of covering them.
+final class BottomChrome: ObservableObject {
+    static let shared = BottomChrome()
+    @Published var hideRecordBar = false
+}
+
 struct RecordBar: View {
     var armToken: Int = 0
     @StateObject private var rec = Recorder()
@@ -95,8 +102,17 @@ struct RecordBar: View {
     }
 
     private var isActive: Bool { rec.state != .idle || up.isUploading }
+    @ObservedObject private var chrome = BottomChrome.shared
 
     var body: some View {
+        if chrome.hideRecordBar && !isActive {
+            EmptyView()
+        } else {
+            barBody
+        }
+    }
+
+    private var barBody: some View {
         VStack(spacing: 10) {
             // Transient status lines float just above the bar.
             if let t = savedTitle, !up.isUploading {
@@ -126,7 +142,7 @@ struct RecordBar: View {
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, isActive ? 16 : 10)
+            .padding(.vertical, isActive ? 14 : 6)
             .background(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(P.surface)
@@ -171,13 +187,13 @@ struct RecordBar: View {
             PlaceTagger.shared.tag { place = $0 }
             rec.start()
         } label: {
-            VStack(spacing: 6) {
+            HStack(spacing: 10) {
                 ZStack {
-                    Circle().fill(P.brand).frame(width: 56, height: 56)
-                        .shadow(color: P.accent.opacity(0.5), radius: 14, y: 4)
-                    Image(systemName: "mic.fill").font(.system(size: 22)).foregroundColor(.white)
+                    Circle().fill(P.brand).frame(width: 36, height: 36)
+                        .shadow(color: P.accent.opacity(0.45), radius: 10, y: 3)
+                    Image(systemName: "mic.fill").font(.system(size: 15)).foregroundColor(.white)
                 }
-                Text("Record").font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                Text("Record").font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
             }
             .frame(maxWidth: .infinity)
         }
