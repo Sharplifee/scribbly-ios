@@ -24,6 +24,9 @@ final class Recorder: NSObject, ObservableObject {
     enum State: Equatable { case idle, recording, paused, finishing }
 
     @Published private(set) var state: State = .idle
+    static let shared = Recorder()
+    /// Where this recording started ("Riverside Country Club, Provo").
+    @Published var place: String?
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var level: Float = 0          // 0...1 for the waveform
     @Published private(set) var lastError: String?

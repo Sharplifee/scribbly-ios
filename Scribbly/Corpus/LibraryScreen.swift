@@ -6,7 +6,7 @@ import SwiftUI
 struct LibraryScreen: View {
     @StateObject private var store = LibraryStore()
     @ObservedObject private var chrome = BottomChrome.shared
-    init(initial: Section = .home) { BottomChrome.shared.currentTab = initial }
+    init(initial: Section = .home) {}
 
     enum Section: String, CaseIterable, Identifiable {
         case home = "Home", library = "Library", collections = "Collections",
@@ -32,9 +32,12 @@ struct LibraryScreen: View {
                         P.bg.ignoresSafeArea()
                         content(for: s)
                     }
+                    .safeAreaInset(edge: .bottom, spacing: 0) { RecordBar(armToken: chrome.armToken, tab: s) }
                     .navigationTitle(s == .home ? "Scribbly" : s.rawValue)
-                    .navigationBarTitleDisplayMode(s == .home ? .large : .inline)
+                    .navigationBarTitleDisplayMode(.inline)
                     .toolbarBackground(P.bg, for: .navigationBar)
+                    .toolbarBackground(.visible, for: .navigationBar)
+                    .toolbarColorScheme(.dark, for: .navigationBar)
                 }
                 .tabItem { Label(s.rawValue, systemImage: s.icon) }
                 .badge(badgeInt(for: s))

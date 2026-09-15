@@ -12,7 +12,6 @@ struct JobsSection: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                header
 
                 // ── Phone-side: not yet uploaded
                 let pending = up.pendingItems()

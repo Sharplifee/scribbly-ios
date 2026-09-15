@@ -59,13 +59,7 @@ struct RootView: View {
             // Native tab shell. The recorder lives in the system's bottom
             // accessory slot (the "mini player" position above the tab bar) on
             // iOS 26; older systems get it as a safe-area inset above the tabs.
-            if #available(iOS 26.0, *) {
-                LibraryScreen(initial: .home)
-                    .tabViewBottomAccessory { RecordBar(armToken: armToken) }
-            } else {
-                LibraryScreen(initial: .home)
-                    .safeAreaInset(edge: .bottom, spacing: 0) { RecordBar(armToken: armToken) }
-            }
+            LibraryScreen(initial: .home)
         }
         .onOpenURL { url in
             if url.scheme == "scribbly" && url.host == "record" { arm(); return }
@@ -77,7 +71,8 @@ struct RootView: View {
     }
 
     private func arm() {
-        armToken += 1   // change triggers RecordBar to auto-start
+        BottomChrome.shared.currentTab = .home
+        BottomChrome.shared.armToken += 1   // change triggers RecordBar to auto-start
     }
 }
 
@@ -89,16 +84,21 @@ final class BottomChrome: ObservableObject {
     static let shared = BottomChrome()
     @Published var hideRecordBar = false
     @Published var currentTab: LibraryScreen.Section = .home
+    @Published var armToken = 0
+    @Published var savedTitle: String?
 }
 
 struct RecordBar: View {
     var armToken: Int = 0
-    @StateObject private var rec = Recorder()
+    /// Which tab this instance lives on — only the visible one reacts to arm().
+    var tab: LibraryScreen.Section = .home
+    @ObservedObject private var rec = Recorder.shared
     @State private var showPendingSheet = false
-    @StateObject private var up = Uploader.shared
-    @State private var savedTitle: String?
+    @ObservedObject private var up = Uploader.shared
     @State private var showDiscardConfirm = false
-    @State private var place: String?
+    private var savedTitle: String? {
+        get { chrome.savedTitle } nonmutating set { chrome.savedTitle = newValue }
+    }
 
     private var timeString: String {
         let t = Int(rec.elapsed)
@@ -147,13 +147,21 @@ struct RecordBar: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(P.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(P.border))
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 6)
             .animation(.spring(response: 0.3, dampingFraction: 0.88), value: isActive)
         }
         .padding(.top, 4)
+        .background(P.bg)
         .onChange(of: armToken) { _ in
+            guard chrome.currentTab == tab else { return }
             if rec.state == .idle && !up.isUploading {
-                savedTitle = nil; place = nil
-                PlaceTagger.shared.tag { place = $0 }
+                savedTitle = nil; rec.place = nil
+                PlaceTagger.shared.tag { Recorder.shared.place = $0 }
                 rec.start()
             }
         }
@@ -170,8 +178,8 @@ struct RecordBar: View {
     private var idleBar: some View {
         Button {
             savedTitle = nil
-            place = nil
-            PlaceTagger.shared.tag { place = $0 }
+            rec.place = nil
+            PlaceTagger.shared.tag { Recorder.shared.place = $0 }
             rec.start()
         } label: {
             HStack(spacing: 10) {
@@ -244,7 +252,7 @@ struct RecordBar: View {
                 Button {
                     rec.finish { url, dur in
                         guard let url else { return }
-                        up.upload(fileURL: url, duration: dur, location: place) { ok, msg in
+                        up.upload(fileURL: url, duration: dur, location: rec.place) { ok, msg in
                             savedTitle = ok ? (msg ?? "Saved to your library") : nil
                         }
                     }
