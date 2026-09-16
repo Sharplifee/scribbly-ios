@@ -131,8 +131,16 @@ struct RecordBar: View {
                     .onTapGesture { showPendingSheet = true }
             }
             if let e = rec.lastError ?? up.lastError {
-                Text(e).font(.system(size: 12)).foregroundColor(P.danger)
-                    .multilineTextAlignment(.center).padding(.horizontal, 24)
+                VStack(spacing: 4) {
+                    Text(e).font(.system(size: 12)).foregroundColor(P.danger)
+                        .multilineTextAlignment(.center).padding(.horizontal, 24)
+                    if e.localizedCaseInsensitiveContains("Microphone access") {
+                        Button("Open Settings") {
+                            if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) }
+                        }
+                        .font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                    }
+                }
             }
 
             // The bar itself: a slim capsule when idle, an expanded panel when live.

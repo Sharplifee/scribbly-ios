@@ -53,15 +53,15 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Scribbly names each recording by where you made it (e.g. "Thanksgiving Point, Lehi") so your library is recognizable instead of numbered.</string>
+	<string>Used to title each recording with the place you made it.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Scribbly records your voice notes and transcribes them into your library. Recording continues in the background until you tap Finish.</string>
+	<string>Needed to record voice notes.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Scribbly transcribes your recordings into searchable notes.</string>
+	<string>Used to transcribe recordings.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
