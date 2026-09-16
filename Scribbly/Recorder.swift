@@ -101,7 +101,7 @@ final class Recorder: NSObject, ObservableObject {
                 self.state = .recording
                 self.startTimer()
             } catch {
-                self.lastError = "Could not start recording: \(error.localizedDescription)"
+                self.lastError = "Could not start recording (\(error.localizedDescription)). Tap Record to try again."
             }
         }
     }
@@ -211,7 +211,7 @@ final class Recorder: NSObject, ObservableObject {
                 for u in leftovers { try? fm.removeItem(at: u) }
             }
             DispatchQueue.main.async {
-                self.lastError = "A recording cut off by a crash was recovered — it's on hold in Jobs until you approve it."
+                self.lastError = "A recording cut off by a crash was recovered — open Activity to approve or discard it."
             }
         }
     }
@@ -379,7 +379,7 @@ final class Recorder: NSObject, ObservableObject {
 
     private func resumeAfterInterruption(attempt: Int) {
         guard attempt < 8 else {
-            lastError = "Recording was interrupted and could not restart. Audio up to that point was saved."
+            lastError = "Recording was interrupted and could not restart. Audio up to that point is safe — tap Finish to save it."
             return
         }
         do {

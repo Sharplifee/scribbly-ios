@@ -611,7 +611,7 @@ struct IngestSection: View {
                 }
                 status = "Queuing \(videos.count) link(s)…"
                 let col = try await ingest(["action": "create-collection", "name": "Links — \(Date().formatted(date: .abbreviated, time: .shortened))", "videos": videos])
-                guard let cid = col["collectionId"] as? String else { status = "Could not create collection."; return }
+                guard let cid = col["collectionId"] as? String else { status = "Could not create the collection (server). Tap Fetch again."; return }
                 let q = try await ingest(["action": "enqueue", "videos": videos, "collectionId": cid])
                 let n = (q["queued"] as? Int) ?? 0
                 status = "Queued \(n) YouTube link(s)." + podcastNote + otherNote
@@ -629,7 +629,7 @@ struct IngestSection: View {
             progressActive = false
             status = "Cancelled — \(n) videos stopped, \(progressDone) already saved."
         } else {
-            status = "Couldn't cancel — try again."
+            status = "Couldn't reach the server to cancel. Tap Stop again."
         }
     }
 
@@ -642,7 +642,7 @@ struct IngestSection: View {
         do {
             status = "Queuing \(fresh.count) new videos…"
             let col = try await ingest(["action": "create-collection", "name": name, "videos": fresh])
-            guard let cid = col["collectionId"] as? String else { status = "Could not create collection."; return }
+            guard let cid = col["collectionId"] as? String else { status = "Could not create the collection (server). Tap Fetch again."; return }
             var queued = 0
             for chunk in stride(from: 0, to: fresh.count, by: 100).map({ Array(fresh[$0..<min($0 + 100, fresh.count)]) }) {
                 let q = try await ingest(["action": "enqueue", "videos": chunk, "collectionId": cid])

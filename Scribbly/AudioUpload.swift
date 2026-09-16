@@ -28,10 +28,25 @@ enum AudioUpload {
         case unverified(String)
         case emptyTranscript
 
+        /// Plain-words cause. Strips JSON so a person never reads a raw server body.
+        static func human(_ code: Int, _ body: String) -> String {
+            var msg = body
+            if let d = body.data(using: .utf8), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+                msg = (o["error"] as? String) ?? (o["message"] as? String) ?? body
+            }
+            msg = msg.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            switch code {
+            case -1, 0:      return msg.isEmpty ? "no connection to the server." : String(msg.prefix(120)) + " (no connection)"
+            case 500...599:  return "the server had a problem (HTTP \(code))." + (msg.isEmpty ? "" : " " + String(msg.prefix(100)))
+            case 429:        return "the server is busy right now."
+            default:         return (msg.isEmpty ? "HTTP \(code)." : String(msg.prefix(140)))
+            }
+        }
+
         var errorDescription: String? {
             switch self {
-            case .storage(let c, let b): return "Upload failed (HTTP \(c)): \(b.prefix(140))"
-            case .server(let c, let b):  return "Transcription failed (HTTP \(c)): \(b.prefix(140))"
+            case .storage(let c, let b): return "Upload failed: " + Failure.human(c, b)
+            case .server(let c, let b):  return "Processing failed: " + Failure.human(c, b)
             case .noEntryID(let b):      return "Server did not confirm a saved note: \(b.prefix(140))"
             case .unverified(let id):    return "Note \(id) was not found in the library after saving."
             case .emptyTranscript:       return "No speech was found in that recording."

@@ -65,7 +65,7 @@ final class Uploader: NSObject, ObservableObject {
         do {
             try enqueue(fileURL: fileURL, title: title, duration: duration ?? 0, mime: "audio/m4a", location: location)
         } catch {
-            setState(uploading: false, error: "Could not save the recording locally: \(error.localizedDescription)")
+            setState(uploading: false, error: "Could not save the recording on this phone (\(error.localizedDescription)). Free up storage and tap Finish again.")
             completion(false, error.localizedDescription)
             return
         }
@@ -299,7 +299,7 @@ final class Uploader: NSObject, ObservableObject {
                 lastOK = false
                 lastMessage = msg
                 setState(uploading: false,
-                         error: "\(msg) — kept on device, will retry.")
+                         error: "\(msg) The recording is safe on this phone and will retry — or open Activity to retry, export, or discard it.")
                 break
             }
         }
