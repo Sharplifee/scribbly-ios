@@ -575,7 +575,7 @@ struct IngestSection: View {
             } else {
                 // Individual links: one URL per line.
                 let urls = payload.split(whereSeparator: \.isNewline).map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-                let podcasts = urls.filter { $0.contains("podcasts.apple.com") }
+                let podcasts = urls.filter { $0.contains("podcasts.apple.com") || $0.contains("open.spotify.com/episode") || $0.contains("open.spotify.com/show") }
                 var podcastNote = ""
                 if !podcasts.isEmpty {
                     status = "Processing \(podcasts.count) podcast link(s)…"
@@ -592,7 +592,7 @@ struct IngestSection: View {
                 }
                 // Instagram + any other direct URL: the pipeline endpoint fetches,
                 // transcribes, summarises and saves — same path the web app uses.
-                let others = urls.filter { CorpusAPI.youtubeID(from: $0) == nil && !$0.contains("podcasts.apple.com") }
+                let others = urls.filter { CorpusAPI.youtubeID(from: $0) == nil && !$0.contains("podcasts.apple.com") && !$0.contains("open.spotify.com") }
                 var otherSaved = 0, otherFailed = 0
                 for u in others {
                     status = "Processing \(u.contains("instagram.com") ? "Instagram" : "web") link…"
