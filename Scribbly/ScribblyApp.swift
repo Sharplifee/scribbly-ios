@@ -61,6 +61,7 @@ struct RootView: View {
             // iOS 26; older systems get it as a safe-area inset above the tabs.
             LibraryScreen(initial: .home)
         }
+        .onAppear { WatchBridge.shared.activate() }
         .onOpenURL { url in
             if url.scheme == "scribbly" && url.host == "record" { arm(); return }
             // Files shared/opened into Scribbly (share sheet, Files app, AirDrop) → ingest.

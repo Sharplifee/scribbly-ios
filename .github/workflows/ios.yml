@@ -66,6 +66,18 @@ jobs:
           echo "WIDGET_PROFILE_NAME=$WNAME" >> $GITHUB_ENV
           echo "Installed widget profile: $WNAME"
 
+      - name: Install watch provisioning profile
+        env:
+          XPROFILE: ${{ secrets.APPLE_WATCH_PROFILE }}
+        run: |
+          set -euo pipefail
+          echo "$XPROFILE" | base64 --decode > /tmp/xp.mobileprovision
+          XUUID=$(security cms -D -i /tmp/xp.mobileprovision | plutil -extract UUID raw -)
+          XNAME=$(security cms -D -i /tmp/xp.mobileprovision | plutil -extract Name raw -)
+          cp /tmp/xp.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$XUUID.mobileprovision
+          echo "WATCH_PROFILE_NAME=$XNAME" >> $GITHUB_ENV
+          echo "Installed watch profile: $XNAME"
+
       - name: Set build number
         run: |
           echo "BUILD_NUMBER=$((GITHUB_RUN_NUMBER + 100))" >> $GITHUB_ENV
@@ -101,6 +113,7 @@ jobs:
             <dict>
               <key>com.connor.scribbly</key><string>$PROFILE_NAME</string>
               <key>com.connor.scribbly.ScribblyControls</key><string>$WIDGET_PROFILE_NAME</string>
+              <key>com.connor.scribbly.watchkitapp</key><string>$WATCH_PROFILE_NAME</string>
             </dict>
           </dict></plist>
           PLIST
