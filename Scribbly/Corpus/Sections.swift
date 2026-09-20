@@ -620,13 +620,11 @@ struct IngestSection: View {
                         .padding(.horizontal, 16)
                     }
                 }
-
-                    .fileImporter(isPresented: $showPicker,
-                                  allowedContentTypes: FileIngestModel.contentTypes,
-                                  allowsMultipleSelection: false) { result in
-                        if case .success(let urls) = result, let url = urls.first {
-                            Task { await files.handle(url) }
-                        }
+                .fileImporter(isPresented: $showPicker,
+                              allowedContentTypes: FileIngestModel.contentTypes,
+                              allowsMultipleSelection: false) { result in
+                    if case .success(let urls) = result, let url = urls.first {
+                        Task { await files.handle(url) }
                     }
                 }
 
