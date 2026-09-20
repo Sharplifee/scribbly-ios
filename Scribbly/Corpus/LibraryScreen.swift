@@ -67,8 +67,13 @@ struct LibraryScreen: View {
             if newTab == .record { chrome.currentTab = lastRealTab; startRecording() }
             else { lastRealTab = newTab }
         }
-        .task { await store.loadCounts() }
-    }
+        .task {
+            // Screenshot/QA hook: SCRIBBLY_TAB=home|library|groups|more opens that page on launch.
+            if let t = ProcessInfo.processInfo.environment["SCRIBBLY_TAB"], let sec = Section(rawValue: t.capitalized) {
+                chrome.currentTab = sec
+            }
+            await store.loadCounts()
+        }
 
     private func startRecording() {
         let rec = Recorder.shared

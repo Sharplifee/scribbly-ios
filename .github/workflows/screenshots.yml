@@ -1,0 +1,37 @@
+name: screenshots
+on: [workflow_dispatch]
+jobs:
+  shots:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app || sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"; xcodebuild -version
+      - name: XcodeGen
+        run: brew install xcodegen >/dev/null 2>&1 || true; xcodegen generate
+      - name: Build for simulator
+        run: |
+          set -o pipefail
+          xcodebuild -project Scribbly.xcodeproj -scheme Scribbly -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build | tail -3
+      - name: Boot simulator + install
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import sys,json;d=json.load(sys.stdin)['devices'];print([x for k,v in d.items() if 'iOS' in k for x in v if x['name'] in ('iPhone 16 Pro','iPhone 16','iPhone 15 Pro','iPhone 15')][0]['udid'])")
+          echo "UDID=$UDID" >> $GITHUB_ENV
+          xcrun simctl boot $UDID || true
+          xcrun simctl bootstatus $UDID -b
+          APP=$(find build -name 'Scribbly.app' -path '*iphonesimulator*' | head -1)
+          xcrun simctl install $UDID "$APP"
+          xcrun simctl privacy $UDID grant microphone com.connor.scribbly || true
+      - name: Screenshot each page
+        run: |
+          mkdir -p shots
+          for tab in home library groups more; do
+            xcrun simctl terminate $UDID com.connor.scribbly 2>/dev/null || true
+            SIMCTL_CHILD_SCRIBBLY_TAB=$tab xcrun simctl launch $UDID com.connor.scribbly >/dev/null
+            sleep 9
+            xcrun simctl io $UDID screenshot shots/$tab.png
+          done
+      - uses: actions/upload-artifact@v4
+        with: { name: shots, path: shots }
