@@ -13,7 +13,7 @@ struct SettingsSection: View {
     @State private var entryCount: Int = 0
 
     private var micStatus: String {
-        switch AVAudioApplication.shared.recordPermission {
+        switch AVAudioSession.sharedInstance().recordPermission {
         case .granted: return "Allowed"; case .denied: return "Off · open Settings"; default: return "Not asked yet"
         }
     }
