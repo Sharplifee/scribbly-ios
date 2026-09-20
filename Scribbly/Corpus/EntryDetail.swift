@@ -176,7 +176,6 @@ struct EntryDetail: View {
             }
         }
     }
-    }
 
     private func sectionLabel(_ t: String) -> some View {
         Text(t.uppercased()).font(.system(size: 12, weight: .bold)).foregroundColor(P.textDim).kerning(0.5)
