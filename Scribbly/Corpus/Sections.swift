@@ -634,29 +634,7 @@ struct IngestSection: View {
                     Text(s).font(.system(size: 13)).foregroundColor(P.textSec)
                         .multilineTextAlignment(.center).padding(.horizontal, 20)
                 if let store, !store.entries.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("RECENT").font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).tracking(0.8)
-                        VStack(spacing: 0) {
-                            ForEach(Array(store.entries.prefix(4))) { e in
-                                NavigationLink { EntryDetail(entryID: e.id, preloaded: e) } label: {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(e.title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(2).multilineTextAlignment(.leading)
-                                        Text((e.date ?? "") + " · " + (e.type ?? "")).font(.system(size: 11)).foregroundColor(P.textDim)
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 11)
-                                }
-                                Divider().background(P.border)
-                            }
-                            Button { BottomChrome.shared.currentTab = .library } label: {
-                                Text("See all \(store.libraryCount.formatted()) ›").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
-                                    .frame(maxWidth: .infinity).padding(.vertical, 10)
-                            }
-                        }
-                        .padding(.horizontal, 14)
-                        .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
-                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
-                    }
-                    .padding(.horizontal, 16)
+                    RecentList(store: store)
                 }
             }
             .padding(.bottom, 30)
@@ -933,5 +911,39 @@ struct IngestSection: View {
                           userInfo: [NSLocalizedDescriptionKey: (json["error"] as? String) ?? "Ingest returned HTTP \(code)."])
         }
         return json
+    }
+}
+
+
+/// "Recent" on Home — the four newest entries, then a link to the whole library.
+private struct RecentList: View {
+    @ObservedObject var store: LibraryStore
+    private func meta(_ e: Entry) -> String { (e.date ?? "") + " · " + (e.type ?? "") }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("RECENT").font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).tracking(0.8)
+            VStack(spacing: 0) {
+                ForEach(Array(store.entries.prefix(4))) { e in
+                    NavigationLink { EntryDetail(entryID: e.id, preloaded: e) } label: { row(e) }
+                    Divider().background(P.border)
+                }
+                Button { BottomChrome.shared.currentTab = .library } label: {
+                    Text("See all \(store.libraryCount.formatted()) ›")
+                        .font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                }
+            }
+            .padding(.horizontal, 14)
+            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
+        }
+        .padding(.horizontal, 16)
+    }
+    private func row(_ e: Entry) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(e.title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(2).multilineTextAlignment(.leading)
+            Text(meta(e)).font(.system(size: 11)).foregroundColor(P.textDim)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 11)
     }
 }
