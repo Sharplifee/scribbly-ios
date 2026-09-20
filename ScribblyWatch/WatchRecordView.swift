@@ -13,7 +13,7 @@ struct WatchRecordView: View {
                 Text(time).font(.system(size: 30, weight: .semibold, design: .monospaced))
                 Text("Recording").font(.footnote).foregroundColor(.purple)
                 HStack(spacing: 14) {
-                    Button { rec.discard() } label: { Image(systemName: "trash").font(.title3) }
+                    Button { rec.discard() } label: { Image(systemName: "xmark").font(.title3) }
                         .tint(.red)
                     Button { rec.finish() } label: { Image(systemName: "checkmark").font(.title2) }
                         .tint(.green)

@@ -256,7 +256,7 @@ struct RecordBar: View {
         case .recording, .paused:
             HStack(spacing: 8) {
                 Button { showDiscardConfirm = true } label: {
-                    circleButton(icon: "trash", tint: P.danger, size: 30)
+                    circleButton(icon: "xmark", tint: P.danger, size: 30)
                 }
                 Button {
                     rec.state == .recording ? rec.pause() : rec.resume()
