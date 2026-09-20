@@ -13,7 +13,7 @@ struct LibraryScreen: View {
 
     enum Section: String, CaseIterable, Identifiable {
         case home = "Home", library = "Library", record = "Record",
-             groups = "Groups", collections = "Collections", query = "Query", jobs = "Activity"
+             groups = "Groups", more = "More", collections = "Collections", query = "Query", jobs = "Activity"
         var id: String { rawValue }
         var icon: String {
             switch self {
@@ -21,6 +21,7 @@ struct LibraryScreen: View {
             case .library:     return "books.vertical.fill"
             case .record:      return "mic.circle.fill"
             case .groups:      return "person.2.fill"
+            case .more:        return "ellipsis"
             case .collections: return "square.stack.fill"
             case .query:       return "sparkle.magnifyingglass"
             case .jobs:        return "waveform.path.ecg"
@@ -30,7 +31,6 @@ struct LibraryScreen: View {
     @State private var lastRealTab: Section = .home
 
     var body: some View {
-        let rec = Recorder.shared
         TabView(selection: $chrome.currentTab) {
             ForEach(Section.allCases) { s in
                 NavigationStack {
@@ -40,8 +40,17 @@ struct LibraryScreen: View {
                     }
                     // While recording/uploading the native bar hides and the
                     // recorder capsule takes its exact place.
-                    .safeAreaInset(edge: .bottom, spacing: 0) { RecordBar(armToken: chrome.armToken, tab: s) }
-                    .toolbar(recorderOwnsBar ? .hidden : .visible, for: .tabBar)
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        if recorderOwnsBar {
+                            RecordBar(armToken: chrome.armToken, tab: s)
+                        } else {
+                            VStack(spacing: 0) {
+                                RecordBar(armToken: chrome.armToken, tab: s)   // idle: only the saved line, if any
+                                if !chrome.hideRecordBar { GlassTabBar(selection: $chrome.currentTab, onRecord: startRecording) }
+                            }
+                        }
+                    }
+                    .toolbar(.hidden, for: .tabBar)
                     .navigationTitle(s == .home ? "Scribbly" : s.rawValue)
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbarBackground(P.bg, for: .navigationBar)
@@ -55,19 +64,17 @@ struct LibraryScreen: View {
         }
         .tint(P.accent)
         .onChange(of: chrome.currentTab) { newTab in
-            if newTab == .record {
-                // Not a destination: bounce back to where you were and start recording.
-                chrome.currentTab = lastRealTab
-                if rec.state == .idle && !Uploader.shared.isUploading {
-                    rec.place = nil
-                    PlaceTagger.shared.tag { Recorder.shared.place = $0 }
-                    rec.start()
-                }
-            } else {
-                lastRealTab = newTab
-            }
+            if newTab == .record { chrome.currentTab = lastRealTab; startRecording() }
+            else { lastRealTab = newTab }
         }
         .task { await store.loadCounts() }
+    }
+
+    private func startRecording() {
+        guard rec.state == .idle, !Uploader.shared.isUploading else { return }
+        rec.place = nil
+        PlaceTagger.shared.tag { Recorder.shared.place = $0 }
+        rec.start()
     }
 
     /// True whenever the recorder capsule should replace the tab bar.
@@ -87,6 +94,7 @@ struct LibraryScreen: View {
         switch s {
         case .home:        IngestSection()
         case .record:      IngestSection()   // never shown; the tab is an action
+        case .more:        MoreSection(store: store)
         case .jobs:        JobsSection()
         case .groups:      GroupsSection(store: store)
         case .collections: CollectionsSection(store: store)
