@@ -236,7 +236,7 @@ struct RecordBar: View {
     private var statusText: String {
         if rec.interrupted { return "Interrupted — resuming automatically" }
         switch rec.state {
-        case .recording: return "Recording"
+        case .recording: return rec.appendTo == nil ? "Recording" : "Adding to this entry"
         case .paused:    return "Paused"
         case .finishing: return "Finishing…"
         case .idle:      return ""
@@ -268,9 +268,11 @@ struct RecordBar: View {
                 Button {
                     rec.finish { url, dur in
                         guard let url else { return }
-                        up.upload(fileURL: url, duration: dur, location: rec.place) { ok, msg in
-                            savedTitle = ok ? (msg ?? "Saved to your library") : nil
+                        let appending = rec.appendTo != nil
+                        up.upload(fileURL: url, duration: dur, location: rec.place, appendTo: rec.appendTo) { ok, msg in
+                            savedTitle = ok ? (appending ? "Added to the recording" : (msg ?? "Saved to your library")) : nil
                         }
+                        rec.appendTo = nil
                     }
                 } label: {
                     circleButton(icon: "checkmark", tint: P.good, size: 30)

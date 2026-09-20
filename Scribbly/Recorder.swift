@@ -27,6 +27,8 @@ final class Recorder: NSObject, ObservableObject {
     static let shared = Recorder()
     /// Where this recording started ("Riverside Country Club, Provo").
     @Published var place: String?
+    /// Set before start() to append this take to an existing entry ("Add to this recording"); cleared after finish.
+    @Published var appendTo: String? = nil
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var level: Float = 0          // 0...1 for the waveform
     @Published private(set) var lastError: String?

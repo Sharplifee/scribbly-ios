@@ -47,23 +47,23 @@ final class Uploader: NSObject, ObservableObject {
 
     // MARK: - Public entry points
 
-    func upload(fileURL: URL, duration: TimeInterval, location: String? = nil,
+    func upload(fileURL: URL, duration: TimeInterval, location: String? = nil, appendTo: String? = nil,
                 completion: @escaping (Bool, String?) -> Void) {
         let fmt = DateFormatter()
         fmt.dateFormat = "MMM d, h:mm a"
         // Provisional title; the server replaces it with "<topic> · <place>" once
         // it has the transcript. If no place is known, the time stays.
         let title = location.map { "\($0) — \(fmt.string(from: Date()))" } ?? "Voice Memo — \(fmt.string(from: Date()))"
-        upload(fileURL: fileURL, title: title, duration: duration, location: location, completion: completion)
+        upload(fileURL: fileURL, title: title, duration: duration, location: location, appendTo: appendTo, completion: completion)
     }
 
     /// Same as upload(fileURL:duration:) but with a caller-chosen title —
     /// used by crash recovery so rescued audio is labelled honestly.
-    func upload(fileURL: URL, title: String, duration: TimeInterval?, location: String? = nil,
+    func upload(fileURL: URL, title: String, duration: TimeInterval?, location: String? = nil, appendTo: String? = nil,
                 completion: @escaping (Bool, String?) -> Void) {
 
         do {
-            try enqueue(fileURL: fileURL, title: title, duration: duration ?? 0, mime: "audio/m4a", location: location)
+            try enqueue(fileURL: fileURL, title: title, duration: duration ?? 0, mime: "audio/m4a", location: location, appendTo: appendTo)
         } catch {
             setState(uploading: false, error: "Could not save the recording on this phone (\(error.localizedDescription)). Free up storage and tap Finish again.")
             completion(false, error.localizedDescription)
@@ -133,6 +133,8 @@ final class Uploader: NSObject, ObservableObject {
         /// Where the recording was made ("Thanksgiving Point, Lehi") — sent to
         /// the server so the saved note gets a real title, not "Voice Memo 152".
         var location: String? = nil
+        /// "Add to this recording": the entry this audio is appended to instead of creating a new one.
+        var appendTo: String? = nil
     }
 
     /// Queue audio WITHOUT uploading — shown in Jobs as "needs your OK".
@@ -150,7 +152,7 @@ final class Uploader: NSObject, ObservableObject {
     }
 
     private func enqueue(fileURL: URL, title: String, duration: TimeInterval?, mime: String,
-                         held: Bool = false, location: String? = nil) throws {
+                         held: Bool = false, location: String? = nil, appendTo: String? = nil) throws {
         let id = UUID().uuidString
         let srcBytes = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
         for (job, audio) in jobs() {
@@ -169,7 +171,7 @@ final class Uploader: NSObject, ObservableObject {
         try fm.copyItem(at: fileURL, to: dest)
 
         try write(Job(id: id, title: title, mime: mime, duration: duration,
-                      createdAt: Date(), attempts: 0, held: held ? true : nil, location: location))
+                      createdAt: Date(), attempts: 0, held: held ? true : nil, location: location, appendTo: appendTo))
         refreshPendingCount()
     }
 
@@ -260,6 +262,7 @@ final class Uploader: NSObject, ObservableObject {
                 DispatchQueue.main.async { self.stage = "Uploading…" }
                 let result = try await AudioUpload.ingestWhole(
                     fileURL: audio, title: job.title, mime: job.mime, location: job.location,
+                    appendTo: job.appendTo,
                     onProgress: { frac in
                         DispatchQueue.main.async {
                             // Bytes are 90% of the visible bar; the server's

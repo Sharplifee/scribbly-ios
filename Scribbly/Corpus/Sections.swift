@@ -4,18 +4,66 @@ import SwiftUI
 
 struct GroupsSection: View {
     @ObservedObject var store: LibraryStore
+    @State private var q = ""
+    @State private var kind = "All"
+    @State private var sort = "Most videos"
+
+    private func sortedGroups(_ gs: [Group]) -> [Group] {
+        switch sort {
+        case "A–Z":   return gs.sorted { $0.channel.localizedCaseInsensitiveCompare($1.channel) == .orderedAscending }
+        case "Newest": return gs.sorted { ($0.collections.map { $0.created_at ?? "" }.max() ?? "") > ($1.collections.map { $0.created_at ?? "" }.max() ?? "") }
+        default:      return gs.sorted { $0.totalVideos > $1.totalVideos }
+        }
+    }
+    private func passesKind(_ g: Group) -> Bool {
+        let t = g.collections.first?.type?.lowercased() ?? ""
+        switch kind {
+        case "Podcasts": return t.contains("podcast")
+        case "Files":    return t.contains("audio") || t.contains("file")
+        case "Creators": return t.contains("youtube") || t.isEmpty
+        default: return true
+        }
+    }
+    /// Search: (group, matching collections) — a group matches by name or by any collection's name.
+    private var hits: [(Group, [Collection])] {
+        let s = q.lowercased()
+        return sortedGroups(store.groups.filter(passesKind)).compactMap { g in
+            if s.isEmpty { return (g, g.collections) }
+            let byName = g.channel.lowercased().contains(s)
+            let cols = byName ? g.collections : g.collections.filter { $0.name.lowercased().contains(s) }
+            return cols.isEmpty ? nil : (g, cols)
+        }
+    }
+
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
-                if !store.groups.isEmpty {
-                    Text("\(store.groups.count) groups · \(fmt(store.groups.reduce(0){$0+$1.totalVideos})) entries")
-                        .font(.system(size: 12, weight: .semibold)).foregroundColor(P.textDim)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 18).padding(.top, 12)
-                }
-                ForEach(store.groups) { group in
-                    NavigationLink { GroupDetail(group: group, store: store) } label: { GroupCard(group: group) }
-                        .buttonStyle(.plain)
+                ListSearch(placeholder: "Search creators…", text: $q)
+                FilterSortRow(filters: ["All", "Creators", "Podcasts", "Files"], filter: $kind,
+                              sorts: ["Most videos", "A–Z", "Newest"], sort: $sort)
+                if q.isEmpty {
+                    if !store.groups.isEmpty {
+                        Text("\(store.groups.count) groups · \(fmt(store.groups.reduce(0){$0+$1.totalVideos})) videos")
+                            .font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).tracking(0.8)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
+                    }
+                    ForEach(hits.map { $0.0 }) { group in
+                        NavigationLink { GroupDetail(group: group, store: store) } label: { GroupCard(group: group) }
+                            .buttonStyle(.plain)
+                    }
+                } else {
+                    ForEach(hits, id: \.0.id) { g, cols in
+                        GroupHeader(title: g.channel, detail: "\(cols.count) collection" + (cols.count == 1 ? "" : "s") + " match")
+                        Nested {
+                            ForEach(cols) { col in
+                                NavigationLink { CollectionDetail(collection: col) } label: { CollectionCard(collection: col) }
+                                    .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    if hits.isEmpty {
+                        Text("No creators or collections match.").font(.system(size: 13)).foregroundColor(P.textDim).padding(30)
+                    }
                 }
             }
             .padding(.bottom, 20)
@@ -133,14 +181,58 @@ struct ReassignSheet: View {
 
 struct CollectionsSection: View {
     @ObservedObject var store: LibraryStore
+    @State private var q = ""
+    @State private var state = "All"
+    @State private var sort = "Newest"
+
+    private func passes(_ c: Collection) -> Bool {
+        switch state {
+        case "Has skips": return (c.skipped_videos ?? 0) > 0
+        case "Complete":  return (c.saved_videos ?? 0) >= (c.total_videos ?? 0) && (c.total_videos ?? 0) > 0
+        case "Active":    return (c.saved_videos ?? 0) < (c.total_videos ?? 0)
+        default: return true
+        }
+    }
+    private var shown: [Collection] {
+        var xs = store.collections.filter(passes)
+        if !q.isEmpty { let s = q.lowercased(); xs = xs.filter { $0.name.lowercased().contains(s) || ($0.channel ?? "").lowercased().contains(s) } }
+        switch sort {
+        case "Oldest":      return xs.sorted { ($0.created_at ?? "") < ($1.created_at ?? "") }
+        case "A–Z":         return xs.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case "Most videos": return xs.sorted { ($0.saved_videos ?? 0) > ($1.saved_videos ?? 0) }
+        default:            return xs.sorted { ($0.created_at ?? "") > ($1.created_at ?? "") }
+        }
+    }
+    private var grouped: [(String, [Collection])] {
+        var order: [String] = []; var b: [String: [Collection]] = [:]
+        for c in shown { let k = c.channel ?? c.name; if b[k] == nil { order.append(k) }; b[k, default: []].append(c) }
+        return order.map { ($0, b[$0]!) }
+    }
+
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
-                ForEach(store.collections) { col in
-                    NavigationLink { CollectionDetail(collection: col) } label: { CollectionCard(collection: col) }
-                        .buttonStyle(.plain)
+                ListSearch(placeholder: "Search \(store.collections.count) collections…", text: $q)
+                FilterSortRow(filters: ["All", "Active", "Complete", "Has skips"], filter: $state,
+                              sorts: ["Newest", "Oldest", "Most videos", "A–Z"], sort: $sort)
+                if q.isEmpty {
+                    ForEach(shown) { col in
+                        NavigationLink { CollectionDetail(collection: col) } label: { CollectionCard(collection: col) }
+                            .buttonStyle(.plain)
+                    }
+                } else {
+                    ForEach(grouped, id: \.0) { group, cols in
+                        GroupHeader(title: group, detail: "\(cols.count) collection" + (cols.count == 1 ? "" : "s"))
+                        Nested {
+                            ForEach(cols) { col in
+                                NavigationLink { CollectionDetail(collection: col) } label: { CollectionCard(collection: col) }
+                                    .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    if grouped.isEmpty { Text("No collections match.").font(.system(size: 13)).foregroundColor(P.textDim).padding(30) }
                 }
-            }.padding(.vertical, 14)
+            }.padding(.vertical, 8)
         }
         .task { await store.loadCollectionsIfNeeded() }
         .overlay { if store.loadingCollections && store.collections.isEmpty { ProgressView().tint(P.accent) } }
@@ -274,6 +366,7 @@ struct HitRow: View {
 // MARK: - Ingest (native shell; submission still goes through the server routes)
 
 struct IngestSection: View {
+    var store: LibraryStore? = nil
     @State private var progressTotal = 0
     @State private var progressDone = 0
     @State private var progressFailed = 0
@@ -299,35 +392,87 @@ struct IngestSection: View {
         ScrollView {
             VStack(spacing: 14) {
 
-                // ── Card 1: paste ANY link. No mode to choose — the app detects
-                // channel / playlist / video / podcast / article itself. Return on the
-                // keyboard fires exactly what the button does.
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "link").foregroundColor(P.accent)
-                        TextField("Paste a link…", text: $text)
+                // ── Hero, exactly as the web home: wordmark, tagline, one line.
+                VStack(spacing: 10) {
+                    HStack(spacing: 8) {
+                        Text("◈").foregroundColor(P.accent)
+                        Text("Scribbly").font(.system(size: 15, weight: .bold)).foregroundColor(P.textSec)
+                    }
+                    Text("One link.\nOne library.")
+                        .font(.system(size: 34, weight: .heavy)).tracking(-1.2)
+                        .multilineTextAlignment(.center).foregroundColor(.white)
+                    Text("Transcribed, summarized, searchable.")
+                        .font(.system(size: 14)).foregroundColor(P.textSec)
+                }
+                .padding(.top, 2).padding(.bottom, 4)
+
+                // ── ONE open tile. Paste anything — a channel grabs every video, one
+                // link or twenty queue together; Return does exactly what Fetch does.
+                // Upload lives inside the tile as a button, not a second box.
+                let det = detect(text)
+                VStack(alignment: .leading, spacing: 10) {
+                    ZStack(alignment: .topLeading) {
+                        if text.isEmpty {
+                            Text("Paste anything here — a channel, a playlist, one link or twenty…")
+                                .font(.system(size: 14)).foregroundColor(P.textDim)
+                                .padding(.horizontal, 17).padding(.top, 20)
+                        }
+                        TextEditor(text: $text)
+                            .font(.system(size: 14)).foregroundColor(.white)
+                            .scrollContentBackground(.hidden)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
-                            .keyboardType(.URL)
-                            .submitLabel(.go)
-                            .onSubmit { Task { await submit() } }
-                        if !text.isEmpty {
-                            Button { text = "" } label: {
-                                Image(systemName: "xmark.circle.fill").foregroundColor(P.textDim)
+                            .frame(minHeight: 92)
+                            .padding(.horizontal, 12).padding(.vertical, 12)
+                            .onChange(of: text) { new in
+                                // A typed Return submits; a pasted block keeps its newlines.
+                                if new.hasSuffix("\n") && !new.dropLast().contains("\n") {
+                                    text = String(new.dropLast()); Task { await submit() }
+                                }
+                            }
+                    }
+                    .background(Color.black.opacity(0.35)).clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(text.isEmpty ? P.border : P.accent.opacity(0.55)))
+
+                    if det.isEmpty {
+                        Color.clear.frame(height: 20)
+                    } else {
+                        HStack(spacing: 6) {
+                            ForEach(det, id: \.self) { d in
+                                Text(d).font(.system(size: 11, weight: .bold)).foregroundColor(P.accent)
+                                    .padding(.horizontal, 8).padding(.vertical, 3)
+                                    .background(P.accent.opacity(0.15)).clipShape(Capsule())
                             }
                         }
                     }
-                    .padding(14).background(P.bg).clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(P.border))
-                    Button { Task { await submit() } } label: {
-                        Text("Fetch")
-                            .font(.system(size: 16, weight: .semibold)).foregroundColor(.white)
-                            .frame(maxWidth: .infinity).padding(.vertical, 14)
-                            .background(P.accent).clipShape(RoundedRectangle(cornerRadius: 12))
+
+                    HStack(spacing: 10) {
+                        Button { showPicker = true } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "square.and.arrow.up").font(.system(size: 16, weight: .semibold))
+                                Text("Upload").font(.system(size: 15, weight: .semibold))
+                            }
+                            .foregroundColor(.white).frame(maxWidth: .infinity).padding(.vertical, 14)
+                            .background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.14)))
+                        }
+                        Button { Task { await submit() } } label: {
+                            ZStack {
+                                if det.isEmpty {
+                                    RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06))
+                                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(P.border))
+                                } else {
+                                    RoundedRectangle(cornerRadius: 12).fill(P.brand)
+                                }
+                                Text(fetchLabel(det))
+                                    .font(.system(size: 15, weight: .bold)).foregroundColor(det.isEmpty ? P.textDim : .white)
+                            }
+                            .frame(maxWidth: .infinity).frame(height: 48)
+                        }
+                        .layoutPriority(1)
+                        .disabled(det.isEmpty)
                     }
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .opacity(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
                 }
-                .padding(16)
+                .padding(12)
                 .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(P.surface)
                     .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(P.border)))
                 .padding(.horizontal, 16)
@@ -405,7 +550,7 @@ struct IngestSection: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             HStack {
-                                Text(progressActive ? "Processing \(progressDone)/\(progressTotal)" : "Finished \(progressDone)/\(progressTotal)")
+                                Text(progressActive ? "Processing · \(progressDone)/\(progressTotal)" : "Finished · \(progressDone)/\(progressTotal)")
                                     .font(.system(size: 12, weight: .semibold)).foregroundColor(P.textSec)
                                 if progressSkipped > 0 {
                                     Text("· \(progressSkipped) skipped").font(.system(size: 12)).foregroundColor(.yellow)
@@ -502,10 +647,59 @@ struct IngestSection: View {
                 if let s = status {
                     Text(s).font(.system(size: 13)).foregroundColor(P.textSec)
                         .multilineTextAlignment(.center).padding(.horizontal, 20)
+                if let store, !store.entries.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("RECENT").font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).tracking(0.8)
+                        VStack(spacing: 0) {
+                            ForEach(Array(store.entries.prefix(4))) { e in
+                                NavigationLink { EntryDetail(entryID: e.id, preloaded: e) } label: {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(e.title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(2).multilineTextAlignment(.leading)
+                                        Text((e.date ?? "") + " · " + (e.type ?? "")).font(.system(size: 11)).foregroundColor(P.textDim)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 11)
+                                }
+                                Divider().background(P.border)
+                            }
+                            Button { BottomChrome.shared.currentTab = .library } label: {
+                                Text("See all \(store.libraryCount.formatted()) ›").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 10)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
+                    }
+                    .padding(.horizontal, 16)
+                    .task { await store.loadFirstPageIfNeeded() }
+                }
                 }
             }
             .padding(.bottom, 30)
         }
+    }
+
+    /// What the pasted text contains, as pills: "1 channel", "12 videos", "2 podcasts", "3 articles".
+    private func detect(_ t: String) -> [String] {
+        let urls = extractURLs(t)
+        var ch = 0, vid = 0, pod = 0, art = 0
+        for u in urls {
+            if isChannelOrPlaylist(u) { ch += 1 }
+            else if CorpusAPI.youtubeID(from: u) != nil { vid += 1 }
+            else if u.contains("podcasts.apple.com") || u.contains("open.spotify.com") { pod += 1 }
+            else { art += 1 }
+        }
+        var out: [String] = []
+        if ch > 0 { out.append("\(ch) channel" + (ch == 1 ? "" : "s")) }
+        if vid > 0 { out.append("\(vid) video" + (vid == 1 ? "" : "s")) }
+        if pod > 0 { out.append("\(pod) podcast" + (pod == 1 ? "" : "s")) }
+        if art > 0 { out.append("\(art) article" + (art == 1 ? "" : "s")) }
+        return out
+    }
+    private func fetchLabel(_ det: [String]) -> String {
+        if det.isEmpty { return "Fetch →" }
+        let n = det.compactMap { Int($0.split(separator: " ").first ?? "") }.reduce(0, +)
+        return n > 1 ? "Fetch \(n) →" : "Fetch →"
     }
 
     /// Pull every URL out of whatever was pasted — newlines, spaces, commas,

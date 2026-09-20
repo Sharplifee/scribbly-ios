@@ -61,6 +61,7 @@ enum AudioUpload {
     /// Returns the saved entry. Progress reflects real bytes on the wire; once
     /// the upload completes the work continues on the server even if the app dies.
     static func ingestWhole(fileURL: URL, title: String?, mime: String = "audio/m4a", location: String? = nil,
+                            appendTo: String? = nil,
                             onProgress: (@Sendable (Double) -> Void)? = nil) async throws -> Result {
         var req = URLRequest(url: URL(string: CorpusAPI.voiceIngestURL)!)
         req.httpMethod = "POST"
@@ -74,6 +75,9 @@ enum AudioUpload {
         }
         if let location, let enc = location.addingPercentEncoding(withAllowedCharacters: .alphanumerics) {
             req.setValue(enc, forHTTPHeaderField: "x-location")
+        }
+        if let a = appendTo, let enc = a.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            req.setValue(enc, forHTTPHeaderField: "x-append-to")
         }
         // The server transcribes before answering, so a long recording legitimately
         // holds the response open for minutes — no per-request idle cap here.

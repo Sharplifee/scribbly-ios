@@ -37,23 +37,64 @@ struct EntryDetail: View {
                         sectionLabel("Summary")
                         Text(s).font(.system(size: 15)).foregroundColor(P.textSec)
                     }
-                    if let t = e.transcript, !t.isEmpty {
-                        HStack {
-                            sectionLabel("Transcript")
-                            Spacer()
-                            Button {
-                                UIPasteboard.general.string = t
-                                copied = true
-                            } label: {
-                                Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                                    .font(.system(size: 13)).foregroundColor(P.accent)
-                            }
+                    sectionLabel("Send to")
+                    sendToClaudeButton(e)
+
+                    // Copy · Export · Share · Delete
+                    HStack {
+                        Button { UIPasteboard.general.string = exportText(); copied = true } label: {
+                            Text(copied ? "Copied" : "Copy").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
                         }
-                        Text(t).font(.system(size: 14)).foregroundColor(P.textSec.opacity(0.85))
+                        Spacer()
+                        ShareLink(item: exportText(), preview: SharePreview(e.title)) {
+                            Text("Export").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                        }
+                        Spacer()
+                        ShareLink(item: URL(string: "https://getscribbly.vercel.app/?tab=library")!) {
+                            Text("Share").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                        }
+                        Spacer()
+                        Button { confirmDelete = true } label: {
+                            Text("Delete").font(.system(size: 13, weight: .semibold)).foregroundColor(P.danger)
+                        }
+                    }
+                    .padding(.vertical, 2)
+
+                    // Add to this recording — record more now; it's transcribed and appended to this transcript.
+                    if (e.type ?? "").lowercased().contains("voice") || (e.type ?? "").lowercased().contains("audio") {
+                        Button {
+                            let rec = Recorder.shared
+                            guard rec.state == .idle, !Uploader.shared.isUploading else { return }
+                            rec.appendTo = e.id
+                            rec.place = nil
+                            PlaceTagger.shared.tag { Recorder.shared.place = $0 }
+                            rec.start()
+                        } label: {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    Circle().fill(P.brand).frame(width: 38, height: 38)
+                                    Image(systemName: "mic.fill").foregroundColor(.white).font(.system(size: 16, weight: .semibold))
+                                }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Add to this recording").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                                    Text("Record more now — it's transcribed and appended to this transcript.")
+                                        .font(.system(size: 12)).foregroundColor(P.textSec).multilineTextAlignment(.leading)
+                                }
+                                Spacer()
+                            }
+                            .padding(12)
+                            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 14))
+                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(P.accent.opacity(0.35)))
+                        }
+                        .buttonStyle(.plain)
                     }
 
-                    sendToClaudeButton(e)
                     AskBox(entry: e)
+
+                    if let t = e.transcript, !t.isEmpty {
+                        sectionLabel("Transcript")
+                        Text(t).font(.system(size: 14)).foregroundColor(P.textSec.opacity(0.85))
+                    }
                 }
                 .padding(18)
             }

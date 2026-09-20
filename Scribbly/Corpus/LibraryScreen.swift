@@ -93,7 +93,7 @@ struct LibraryScreen: View {
 
     @ViewBuilder private func content(for s: Section) -> some View {
         switch s {
-        case .home:        IngestSection()
+        case .home:        IngestSection(store: store)
         case .record:      IngestSection()   // never shown; the tab is an action
         case .more:        MoreSection(store: store)
         case .jobs:        JobsSection()
@@ -115,38 +115,85 @@ struct LibraryScreen: View {
 struct LibrarySection: View {
     @ObservedObject var store: LibraryStore
     @State private var filter = ""
+    @State private var typeFilter = "All"
+    @State private var sort = "Newest"
 
+    private func passesType(_ e: Entry) -> Bool {
+        let t = (e.type ?? "").lowercased()
+        switch typeFilter {
+        case "Voice":    return t.contains("voice")
+        case "YouTube":  return t.contains("youtube")
+        case "Podcasts": return t.contains("podcast")
+        case "Articles": return t.contains("article")
+        case "Files":    return t.contains("audio") || t.contains("video") || t.contains("file")
+        default:         return true
+        }
+    }
+    private func sorted(_ xs: [Entry]) -> [Entry] {
+        switch sort {
+        case "Oldest": return xs.sorted { ($0.created_at ?? "") < ($1.created_at ?? "") }
+        case "A–Z":    return xs.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        default:       return xs
+        }
+    }
     private var shown: [Entry] {
-        guard !filter.isEmpty else { return store.entries }
+        let base = store.entries.filter(passesType)
+        guard !filter.isEmpty else { return sorted(base) }
         let q = filter.lowercased()
-        return store.entries.filter {
+        return sorted(base.filter {
             $0.title.lowercased().contains(q) ||
             ($0.summary ?? "").lowercased().contains(q) ||
             ($0.tags ?? "").lowercased().contains(q)
+        })
+    }
+    /// Searching: hits grouped by group › collection so you see where each lives.
+    private var groupedHits: [(header: String, detail: String, items: [Entry])] {
+        var buckets: [String: (String, [Entry])] = [:]
+        var order: [String] = []
+        for e in shown {
+            let col = store.collections.first { $0.id == e.collection_id }
+            let group = col?.channel ?? col?.name ?? "Voice notes"
+            let key = group
+            if buckets[key] == nil { buckets[key] = ("› " + (col?.name ?? "Recordings"), []); order.append(key) }
+            buckets[key]!.1.append(e)
         }
+        return order.map { (header: $0, detail: buckets[$0]!.0 + " · \(buckets[$0]!.1.count)", items: buckets[$0]!.1) }
     }
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                searchBar
+                ListSearch(placeholder: "Search \(store.libraryCount.formatted()) entries…", text: $filter)
+                FilterSortRow(filters: ["All", "Voice", "YouTube", "Podcasts", "Articles", "Files"], filter: $typeFilter,
+                              sorts: ["Newest", "Oldest", "A–Z"], sort: $sort)
                 exportAllRow
-                ForEach(shown) { entry in
-                    NavigationLink { EntryDetail(entryID: entry.id, preloaded: entry) } label: {
-                        EntryRow(entry: entry)
+                if filter.isEmpty {
+                    ForEach(shown) { entry in
+                        NavigationLink { EntryDetail(entryID: entry.id, preloaded: entry) } label: { EntryRow(entry: entry) }
+                            .buttonStyle(.plain)
+                            .onAppear { if entry.id == store.entries.last?.id { Task { await store.loadNextPage() } } }
+                        Divider().overlay(P.border).padding(.leading, 18)
                     }
-                    .buttonStyle(.plain)
-                    .onAppear {
-                        if entry.id == store.entries.last?.id { Task { await store.loadNextPage() } }
+                } else {
+                    ForEach(groupedHits, id: \.header) { g in
+                        GroupHeader(title: g.header, detail: g.detail)
+                        Nested {
+                            ForEach(g.items) { entry in
+                                NavigationLink { EntryDetail(entryID: entry.id, preloaded: entry) } label: { EntryRow(entry: entry) }
+                                    .buttonStyle(.plain)
+                                Divider().overlay(P.border).padding(.leading, 18)
+                            }
+                        }
                     }
-                    Divider().overlay(P.border).padding(.leading, 18)
+                    if groupedHits.isEmpty {
+                        Text("No matches in the loaded entries — pull down to load more, or use Query for the whole library.")
+                            .font(.system(size: 13)).foregroundColor(P.textDim).multilineTextAlignment(.center).padding(30)
+                    }
                 }
-                if store.loadingEntries {
-                    ProgressView().tint(P.accent).padding(24)
-                }
+                if store.loadingEntries { ProgressView().tint(P.accent).padding(24) }
             }
         }
-        .task { await store.loadFirstPageIfNeeded() }
+        .task { await store.loadFirstPageIfNeeded(); await store.loadCollectionsIfNeeded() }
         .refreshable { await store.refreshAll() }
         .onReceive(NotificationCenter.default.publisher(for: .init("scribblyEntryDeleted"))) { _ in
             Task { await store.refreshAll() }
@@ -195,16 +242,6 @@ struct LibrarySection: View {
         .padding(.horizontal, 18).padding(.bottom, 2)
     }
 
-    private var searchBar: some View {
-        HStack {
-            Image(systemName: "magnifyingglass").foregroundColor(P.textDim)
-            TextField("Search loaded entries…", text: $filter)
-                .textInputAutocapitalization(.never)
-        }
-        .padding(12).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(P.border))
-        .padding(.horizontal, 16).padding(.vertical, 12)
-    }
 }
 
 struct EntryRow: View {
