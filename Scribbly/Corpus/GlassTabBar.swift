@@ -14,10 +14,11 @@ struct GlassTabBar: View {
         ZStack {
             HStack(spacing: 0) {
                 ForEach(left) { tab(for: $0) }
-                Color.clear.frame(width: 76)          // room under the mic
+                Spacer().frame(width: 76)             // room under the mic (fixed size)
                 ForEach(right) { tab(for: $0) }
             }
             .padding(.horizontal, 6).padding(.vertical, 6)
+            .fixedSize(horizontal: false, vertical: true)
             .background(
                 Capsule().fill(.ultraThinMaterial)
                     .overlay(Capsule().stroke(Color.white.opacity(0.10)))
@@ -34,6 +35,7 @@ struct GlassTabBar: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Record")
         }
+        .frame(height: 64)
         .padding(.horizontal, 16).padding(.bottom, 4)
     }
 
