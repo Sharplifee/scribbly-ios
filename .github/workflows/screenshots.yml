@@ -33,7 +33,7 @@ jobs:
           for tab in home library groups more; do
             xcrun simctl terminate $UDID com.connor.scribbly 2>/dev/null || true
             SIMCTL_CHILD_SCRIBBLY_TAB=$tab xcrun simctl launch $UDID com.connor.scribbly >/dev/null
-            sleep 9
+            sleep 14
             xcrun simctl io $UDID screenshot shots/$tab.png
           done
       - uses: actions/upload-artifact@v4

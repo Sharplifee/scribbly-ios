@@ -51,8 +51,9 @@ struct LibraryScreen: View {
                         }
                     }
                     .toolbar(.hidden, for: .tabBar)
-                    .navigationTitle(s == .home ? "Scribbly" : s.rawValue)
+                    .navigationTitle(s == .home ? "" : s.rawValue)
                     .navigationBarTitleDisplayMode(.inline)
+                    .toolbar(s == .home ? .hidden : .visible, for: .navigationBar)
                     .toolbarBackground(P.bg, for: .navigationBar)
                     .toolbarBackground(.visible, for: .navigationBar)
                     .toolbarColorScheme(.dark, for: .navigationBar)
@@ -197,6 +198,16 @@ struct LibrarySection: View {
                     }
                 }
                 if store.loadingEntries { ProgressView().tint(P.accent).padding(24) }
+                if store.entries.isEmpty && !store.loadingEntries {
+                    VStack(spacing: 8) {
+                        Text(store.error == nil ? "Nothing loaded yet" : "Couldn't load the library")
+                            .font(.system(size: 15, weight: .semibold)).foregroundColor(P.textSec)
+                        Text(store.error ?? "Pull down to load.").font(.system(size: 12)).foregroundColor(P.textDim).multilineTextAlignment(.center)
+                        Button("Try again") { Task { await store.refreshAll() } }
+                            .font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                    }
+                    .frame(maxWidth: .infinity).padding(40)
+                }
             }
         }
         .task { await store.loadFirstPageIfNeeded(); await store.loadCollectionsIfNeeded() }

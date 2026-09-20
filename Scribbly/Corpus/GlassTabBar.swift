@@ -35,8 +35,8 @@ struct GlassTabBar: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Record")
         }
-        .frame(height: 64)
-        .padding(.horizontal, 16).padding(.bottom, 4)
+        .frame(height: 74)
+        .padding(.horizontal, 16).padding(.bottom, 2)
     }
 
     private func tab(for s: LibraryScreen.Section) -> some View {
@@ -54,16 +54,48 @@ struct GlassTabBar: View {
     }
 }
 
-/// "More" page: the sections that don't get a bar slot.
+/// "More" page: Collections · Query · Activity · Apple Watch · Settings, as cards.
 struct MoreSection: View {
     let store: LibraryStore
+    @ObservedObject private var up = Uploader.shared
+
     var body: some View {
-        List {
-            NavigationLink { CollectionsSection(store: store).navigationTitle("Collections") } label: { Label("Collections", systemImage: "square.stack.fill") }
-            NavigationLink { QuerySection().navigationTitle("Query") } label: { Label("Query", systemImage: "sparkle.magnifyingglass") }
-            NavigationLink { JobsSection().navigationTitle("Activity") } label: { Label("Activity", systemImage: "waveform.path.ecg") }
+        ScrollView {
+            VStack(spacing: 12) {
+                row(icon: "square.stack.fill", title: "Collections", sub: "Every batch you've queued, with progress.") { CollectionsSection(store: store).navigationTitle("Collections") }
+                row(icon: "sparkle.magnifyingglass", title: "Query", sub: "Ask a question across everything in the library.") { QuerySection().navigationTitle("Query") }
+                row(icon: "waveform.path.ecg", title: "Activity", sub: "Everything processing right now — pause, resume, retry, or cancel.", badge: up.pendingCount) { JobsSection().navigationTitle("Activity") }
+                row(icon: "applewatch", title: "Apple Watch", sub: "Record on the wrist; it lands here with the same place title.") { WatchInfoSection().navigationTitle("Apple Watch") }
+                row(icon: "gearshape.fill", title: "Settings", sub: "Permissions, recording, storage, server status.") { SettingsSection().navigationTitle("Settings") }
+            }
+            .padding(16)
         }
-        .scrollContentBackground(.hidden)
-        .tint(P.accent)
+    }
+
+    private func row<D: View>(icon: String, title: String, sub: String, badge: Int = 0, @ViewBuilder dest: @escaping () -> D) -> some View {
+        NavigationLink { dest() } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 11).fill(Color.white.opacity(0.06)).frame(width: 40, height: 40)
+                    Image(systemName: icon).font(.system(size: 17, weight: .semibold)).foregroundColor(P.accent)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(title).font(.system(size: 16, weight: .bold)).foregroundColor(.white)
+                        if badge > 0 {
+                            Text("\(badge)").font(.system(size: 11, weight: .bold)).foregroundColor(.white)
+                                .padding(.horizontal, 7).padding(.vertical, 1).background(P.accent).clipShape(Capsule())
+                        }
+                    }
+                    Text(sub).font(.system(size: 12.5)).foregroundColor(P.textSec).multilineTextAlignment(.leading)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").foregroundColor(P.textDim)
+            }
+            .padding(14)
+            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -82,14 +82,17 @@ struct GroupCard: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(group.channel).font(.system(size: 22, weight: .bold)).foregroundColor(.white)
-                Text("\(group.totalVideos) entries · \(group.batchCount) batches")
+                if let sub = ChannelSubtitles.map[group.channel] {
+                    Text(sub).font(.system(size: 11)).foregroundColor(P.textDim.opacity(0.85))
+                }
+                Text("\(group.totalVideos) videos · \(group.batchCount) batches")
                     .font(.system(size: 13)).foregroundColor(P.textSec)
                 Text(group.badgeRange).font(.system(size: 12)).foregroundColor(P.textDim)
             }
             Spacer()
             VStack(spacing: 2) {
                 Text("\(group.totalVideos)").font(.system(size: 26, weight: .bold)).foregroundColor(.white)
-                Text("entries").font(.system(size: 11)).foregroundColor(P.textDim)
+                Text("videos").font(.system(size: 11)).foregroundColor(P.textDim)
             }
         }
         .padding(16)
@@ -260,7 +263,7 @@ struct CollectionCard: View {
             Spacer()
             VStack(spacing: 2) {
                 Text("\(collection.saved_videos ?? 0)").font(.system(size: 22, weight: .bold)).foregroundColor(.white)
-                Text("entries").font(.system(size: 11)).foregroundColor(P.textDim)
+                Text("videos").font(.system(size: 11)).foregroundColor(P.textDim)
             }
         }
         .padding(16).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
@@ -405,6 +408,7 @@ struct IngestSection: View {
                         .font(.system(size: 14)).foregroundColor(P.textSec)
                 }
                 .padding(.top, 2).padding(.bottom, 4)
+                .task { if let store { await store.loadFirstPageIfNeeded() } }
 
                 // ── ONE open tile. Paste anything — a channel grabs every video, one
                 // link or twenty queue together; Return does exactly what Fetch does.
@@ -449,12 +453,13 @@ struct IngestSection: View {
                         Button { showPicker = true } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "square.and.arrow.up").font(.system(size: 16, weight: .semibold))
-                                Text("Upload").font(.system(size: 15, weight: .semibold))
+                                Text("Upload").font(.system(size: 15, weight: .semibold)).lineLimit(1).fixedSize()
                             }
-                            .foregroundColor(.white).frame(maxWidth: .infinity).padding(.vertical, 14)
+                            .foregroundColor(.white).frame(maxWidth: .infinity).frame(height: 48)
                             .background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 12))
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.14)))
                         }
+                        .frame(maxWidth: .infinity)
                         Button { Task { await submit() } } label: {
                             ZStack {
                                 if det.isEmpty {
@@ -468,7 +473,7 @@ struct IngestSection: View {
                             }
                             .frame(maxWidth: .infinity).frame(height: 48)
                         }
-                        .layoutPriority(1)
+                        .frame(maxWidth: .infinity)
                         .disabled(det.isEmpty)
                     }
                 }
@@ -476,6 +481,15 @@ struct IngestSection: View {
                 .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(P.surface)
                     .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(P.border)))
                 .padding(.horizontal, 16)
+                if files.working {
+                    ProgressView(value: up.progress).tint(P.accent).padding(.horizontal, 32)
+                }
+                if let st = files.status {
+                    Text(st).font(.system(size: 13)).foregroundColor(P.textSec).multilineTextAlignment(.center).padding(.horizontal, 24)
+                }
+                if let fe = files.lastError {
+                    Text(fe).font(.system(size: 13)).foregroundColor(P.danger).multilineTextAlignment(.center).padding(.horizontal, 24)
+                }
 
                 SwiftUI.Group {
 
@@ -607,34 +621,6 @@ struct IngestSection: View {
                     }
                 }
 
-                // ── Card 2: upload a file. Its own bubble, always visible.
-                SwiftUI.Group {
-                    VStack(spacing: 12) {
-                        Button { showPicker = true } label: {
-                            VStack(spacing: 8) {
-                                if files.working {
-                                    ProgressView(value: up.progress).tint(P.accent).padding(.horizontal, 24)
-                                }
-                                else { Image(systemName: "arrow.up").font(.system(size: 22)).foregroundColor(P.accent) }
-                                Text(files.working ? (files.status ?? "Working…") : "Upload audio or video")
-                                    .font(.system(size: 16, weight: .semibold)).foregroundColor(.white)
-                            }
-                            .frame(maxWidth: .infinity).padding(.vertical, 26)
-                            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
-                            .overlay(RoundedRectangle(cornerRadius: 16)
-                                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [6])).foregroundColor(P.border))
-                        }
-                        .disabled(files.working)
-                        if let s = files.status {
-                            Text(s).font(.system(size: 13)).foregroundColor(P.textSec)
-                                .multilineTextAlignment(.center).padding(.horizontal, 24)
-                        }
-                        if let e = files.lastError {
-                            Text(e).font(.system(size: 13)).foregroundColor(P.danger)
-                                .multilineTextAlignment(.center).padding(.horizontal, 24)
-                        }
-                    }
-                    .padding(.horizontal, 16)
                     .fileImporter(isPresented: $showPicker,
                                   allowedContentTypes: FileIngestModel.contentTypes,
                                   allowsMultipleSelection: false) { result in
@@ -671,8 +657,6 @@ struct IngestSection: View {
                         .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
                     }
                     .padding(.horizontal, 16)
-                    .task { await store.loadFirstPageIfNeeded() }
-                }
                 }
             }
             .padding(.bottom, 30)
