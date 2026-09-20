@@ -1,30 +1,36 @@
 import SwiftUI
 
-/// Native iOS tab shell. Home · Library · Collections · Groups · Query · Activity
-/// (Activity is last on purpose — it's the utility page). On iPhone iOS puts
-/// anything past the 4th tab under "More", which is native behaviour.
+/// Native iOS tab shell. Home · Library · RECORD · Groups · More(Collections · Query · Activity · Settings).
+/// The centre tab is not a page: tapping it starts a recording and the glass
+/// bar itself becomes the recorder (pause/resume, discard, finish) until you
+/// tap ✓ — then the tabs come back.
 struct LibraryScreen: View {
     @StateObject private var store = LibraryStore()
     @ObservedObject private var chrome = BottomChrome.shared
+    @ObservedObject private var recorder = Recorder.shared
+    @ObservedObject private var uploader = Uploader.shared
     init(initial: Section = .home) {}
 
     enum Section: String, CaseIterable, Identifiable {
-        case home = "Home", library = "Library", collections = "Collections",
-             groups = "Groups", query = "Query", jobs = "Activity"
+        case home = "Home", library = "Library", record = "Record",
+             groups = "Groups", collections = "Collections", query = "Query", jobs = "Activity"
         var id: String { rawValue }
         var icon: String {
             switch self {
             case .home:        return "house.fill"
             case .library:     return "books.vertical.fill"
-            case .collections: return "square.stack.fill"
+            case .record:      return "mic.circle.fill"
             case .groups:      return "person.2.fill"
+            case .collections: return "square.stack.fill"
             case .query:       return "sparkle.magnifyingglass"
             case .jobs:        return "waveform.path.ecg"
             }
         }
     }
+    @State private var lastRealTab: Section = .home
 
     var body: some View {
+        let rec = Recorder.shared
         TabView(selection: $chrome.currentTab) {
             ForEach(Section.allCases) { s in
                 NavigationStack {
@@ -32,7 +38,10 @@ struct LibraryScreen: View {
                         P.bg.ignoresSafeArea()
                         content(for: s)
                     }
+                    // While recording/uploading the native bar hides and the
+                    // recorder capsule takes its exact place.
                     .safeAreaInset(edge: .bottom, spacing: 0) { RecordBar(armToken: chrome.armToken, tab: s) }
+                    .toolbar(recorderOwnsBar ? .hidden : .visible, for: .tabBar)
                     .navigationTitle(s == .home ? "Scribbly" : s.rawValue)
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbarBackground(P.bg, for: .navigationBar)
@@ -45,7 +54,25 @@ struct LibraryScreen: View {
             }
         }
         .tint(P.accent)
+        .onChange(of: chrome.currentTab) { newTab in
+            if newTab == .record {
+                // Not a destination: bounce back to where you were and start recording.
+                chrome.currentTab = lastRealTab
+                if rec.state == .idle && !Uploader.shared.isUploading {
+                    rec.place = nil
+                    PlaceTagger.shared.tag { Recorder.shared.place = $0 }
+                    rec.start()
+                }
+            } else {
+                lastRealTab = newTab
+            }
+        }
         .task { await store.loadCounts() }
+    }
+
+    /// True whenever the recorder capsule should replace the tab bar.
+    private var recorderOwnsBar: Bool {
+        recorder.state != .idle || uploader.isUploading
     }
 
     private func badgeInt(for s: Section) -> Int {
@@ -59,6 +86,7 @@ struct LibraryScreen: View {
     @ViewBuilder private func content(for s: Section) -> some View {
         switch s {
         case .home:        IngestSection()
+        case .record:      IngestSection()   // never shown; the tab is an action
         case .jobs:        JobsSection()
         case .groups:      GroupsSection(store: store)
         case .collections: CollectionsSection(store: store)

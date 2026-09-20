@@ -110,10 +110,16 @@ struct RecordBar: View {
     @ObservedObject private var chrome = BottomChrome.shared
 
     var body: some View {
-        if chrome.hideRecordBar && !isActive {
-            EmptyView()
-        } else {
+        // Idle: nothing here — the Record button IS the centre tab in the glass bar.
+        // The only idle-time element is the one-line "saved" confirmation on Home.
+        if isActive && chrome.currentTab == tab {
             barBody
+        } else if !isActive, tab == .home, chrome.currentTab == .home, let t = chrome.savedTitle {
+            Label(t, systemImage: "checkmark.circle.fill")
+                .font(.system(size: 12)).foregroundColor(P.good)
+                .padding(.horizontal, 20).padding(.bottom, 6).lineLimit(1)
+        } else {
+            EmptyView()
         }
     }
 
@@ -154,14 +160,15 @@ struct RecordBar: View {
                     activePanel
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(P.surface)
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(P.border))
+                Capsule().fill(.ultraThinMaterial)
+                    .overlay(Capsule().stroke(Color.white.opacity(0.10)))
+                    .shadow(color: .black.opacity(0.45), radius: 16, y: 8)
             )
             .padding(.horizontal, 16)
-            .padding(.bottom, 6)
+            .padding(.bottom, 8)
             .animation(.spring(response: 0.3, dampingFraction: 0.88), value: isActive)
         }
         .padding(.top, 4)
