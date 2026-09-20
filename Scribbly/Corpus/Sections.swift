@@ -633,6 +633,7 @@ struct IngestSection: View {
                 if let s = status {
                     Text(s).font(.system(size: 13)).foregroundColor(P.textSec)
                         .multilineTextAlignment(.center).padding(.horizontal, 20)
+                }
                 if let store, !store.entries.isEmpty {
                     RecentList(store: store)
                 }
