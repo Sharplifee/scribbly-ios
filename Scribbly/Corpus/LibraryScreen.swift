@@ -74,6 +74,7 @@ struct LibraryScreen: View {
             }
             await store.loadCounts()
         }
+    }
 
     private func startRecording() {
         let rec = Recorder.shared
