@@ -24,6 +24,7 @@ jobs:
           xcrun simctl boot $UDID || true
           xcrun simctl bootstatus $UDID -b
           APP=$(find build -name 'Scribbly.app' -path '*iphonesimulator*' | head -1)
+          rm -rf "$APP/PlugIns" "$APP/Watch"          # unsigned appex/watch can't be placeholdered on the simulator
           xcrun simctl install $UDID "$APP"
           xcrun simctl privacy $UDID grant microphone com.connor.scribbly || true
       - name: Screenshot each page
