@@ -141,38 +141,41 @@ struct EntryDetail: View {
             case .codex:   return 0
             }
         }
-        var icon: String {
+        var label: String {
             switch self {
-            case .claude:  return "bubble.left.and.text.bubble.right"
-            case .chatgpt: return "sparkles"
-            case .grok:    return "bolt.fill"
-            case .codex:   return "chevron.left.forwardslash.chevron.right"
+            case .claude:  return "Claude"
+            case .chatgpt: return "GPT"
+            case .grok:    return "Grok"
+            case .codex:   return "Codex"
+            }
+        }
+        var logo: String {
+            switch self {
+            case .claude:  return "logo-claude"
+            case .chatgpt, .codex: return "logo-gpt"
+            case .grok:    return "logo-grok"
             }
         }
     }
 
     private func sendToClaudeButton(_ e: Entry) -> some View {
-        VStack(spacing: 8) {
-            Button { send(e, to: .claude) } label: {
-                Label("Send to Claude", systemImage: "bubble.left.and.text.bubble.right")
-                    .font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
-                    .frame(maxWidth: .infinity).padding(.vertical, 12)
-                    .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 12))
-            }
-            HStack(spacing: 8) {
-                ForEach([Destination.chatgpt, .grok, .codex]) { d in
-                    Button { send(e, to: d) } label: {
-                        Label(d.rawValue, systemImage: d.icon)
-                            .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
-                            .frame(maxWidth: .infinity).padding(.vertical, 10)
-                            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 10))
-                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(P.border))
+        HStack(spacing: 8) {
+            ForEach([Destination.claude, .chatgpt, .grok]) { d in
+                Button { send(e, to: d) } label: {
+                    HStack(spacing: 8) {
+                        Image(d.logo).resizable().scaledToFit().frame(width: 22, height: 22)
+                            .padding(d == .chatgpt ? 3 : 0)
+                            .background(d == .chatgpt ? Color.white : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
+                        Text(d.label).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
                     }
+                    .frame(maxWidth: .infinity).padding(.vertical, 12)
+                    .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(P.border))
                 }
             }
-            Text("Codex has no link-prefill — the text is copied for you to paste.")
-                .font(.system(size: 10)).foregroundColor(P.textDim)
         }
+    }
     }
 
     private func sectionLabel(_ t: String) -> some View {
