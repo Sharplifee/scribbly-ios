@@ -71,6 +71,7 @@ struct LibraryScreen: View {
     }
 
     private func startRecording() {
+        let rec = Recorder.shared
         guard rec.state == .idle, !Uploader.shared.isUploading else { return }
         rec.place = nil
         PlaceTagger.shared.tag { Recorder.shared.place = $0 }
