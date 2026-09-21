@@ -107,24 +107,7 @@ struct LibraryScreen: View {
         switch s {
         case .home:        IngestSection(store: store)
         case .record:      IngestSection()   // never shown; the tab is an action
-        case .more:
-            if let sub = chrome.moreSub {
-                VStack(spacing: 0) {
-                    HStack {
-                        Button { chrome.moreSub = nil } label: {
-                            Label("More", systemImage: "chevron.left").font(.system(size: 15)).foregroundColor(P.accent)
-                        }
-                        Spacer()
-                        Text(sub.rawValue).font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
-                        Spacer()
-                        Color.clear.frame(width: 64, height: 1)
-                    }
-                    .padding(.horizontal, 16).padding(.vertical, 8)
-                    content(for: sub)
-                }
-            } else {
-                MoreSection(store: store)
-            }
+        case .more:        MoreHost(store: store)
         case .jobs:        JobsSection()
         case .groups:      GroupsSection(store: store)
         case .collections: CollectionsSection(store: store)
@@ -315,5 +298,40 @@ struct TagChip: View {
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(P.accent.opacity(0.13)).clipShape(Capsule())
             .overlay(Capsule().stroke(P.accent.opacity(0.35)))
+    }
+}
+
+
+/// The More page: cards, or one of its sub-pages (Collections / Query / Activity) with a ‹ More header.
+struct MoreHost: View {
+    let store: LibraryStore
+    @ObservedObject private var chrome = BottomChrome.shared
+
+    var body: some View {
+        if let sub = chrome.moreSub {
+            VStack(spacing: 0) {
+                HStack {
+                    Button { chrome.moreSub = nil } label: {
+                        Label("More", systemImage: "chevron.left").font(.system(size: 15)).foregroundColor(P.accent)
+                    }
+                    Spacer()
+                    Text(sub.rawValue).font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
+                    Spacer()
+                    Color.clear.frame(width: 64, height: 1)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                subPage(sub)
+            }
+        } else {
+            MoreSection(store: store)
+        }
+    }
+
+    @ViewBuilder private func subPage(_ s: LibraryScreen.Section) -> some View {
+        switch s {
+        case .collections: CollectionsSection(store: store)
+        case .query:       QuerySection()
+        default:           JobsSection()
+        }
     }
 }
