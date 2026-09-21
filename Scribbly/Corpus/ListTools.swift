@@ -8,27 +8,31 @@ struct FilterSortRow: View {
     @Binding var sort: String
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(filters, id: \.self) { f in
-                    Button { filter = f } label: {
-                        Text(f).font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(filter == f ? .white : P.textSec)
-                            .padding(.horizontal, 11).padding(.vertical, 6)
-                            .background(filter == f ? P.accent.opacity(0.18) : P.surface).clipShape(Capsule())
-                            .overlay(Capsule().stroke(filter == f ? P.accent.opacity(0.4) : P.border))
+        HStack(spacing: 6) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(filters, id: \.self) { f in
+                        Button { filter = f } label: {
+                            Text(f).font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(filter == f ? .white : P.textSec)
+                                .padding(.horizontal, 11).padding(.vertical, 6)
+                                .background(filter == f ? P.accent.opacity(0.18) : P.surface).clipShape(Capsule())
+                                .overlay(Capsule().stroke(filter == f ? P.accent.opacity(0.4) : P.border))
+                        }
                     }
                 }
-                Menu {
-                    ForEach(sorts, id: \.self) { s in Button(s) { sort = s } }
-                } label: {
-                    Text("⇅ \(sort)").font(.system(size: 12, weight: .semibold)).foregroundColor(P.accent)
-                        .padding(.horizontal, 11).padding(.vertical, 6)
-                        .background(P.surface).clipShape(Capsule()).overlay(Capsule().stroke(P.border))
-                }
+                .padding(.leading, 16)
             }
-            .padding(.horizontal, 16).padding(.vertical, 6)
+            Menu {
+                ForEach(sorts, id: \.self) { s in Button(s) { sort = s } }
+            } label: {
+                Text("⇅ \(sort)").font(.system(size: 12, weight: .semibold)).foregroundColor(P.accent).lineLimit(1).fixedSize()
+                    .padding(.horizontal, 11).padding(.vertical, 6)
+                    .background(P.surface).clipShape(Capsule()).overlay(Capsule().stroke(P.border))
+            }
+            .padding(.trailing, 16)
         }
+        .padding(.vertical, 6)
     }
 }
 

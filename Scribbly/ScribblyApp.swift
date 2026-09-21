@@ -85,6 +85,8 @@ final class BottomChrome: ObservableObject {
     static let shared = BottomChrome()
     @Published var hideRecordBar = false
     @Published var currentTab: LibraryScreen.Section = .home
+    /// Which sub-page More is showing (Collections / Query / Activity), if any.
+    @Published var moreSub: LibraryScreen.Section? = nil
     @Published var armToken = 0
     @Published var savedTitle: String?
 }

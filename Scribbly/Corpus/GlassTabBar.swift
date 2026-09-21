@@ -62,9 +62,9 @@ struct MoreSection: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                row(icon: "square.stack.fill", title: "Collections", sub: "Every batch you've queued, with progress.") { CollectionsSection(store: store).navigationTitle("Collections") }
-                row(icon: "sparkle.magnifyingglass", title: "Query", sub: "Ask a question across everything in the library.") { QuerySection().navigationTitle("Query") }
-                row(icon: "waveform.path.ecg", title: "Activity", sub: "Everything processing right now — pause, resume, retry, or cancel.", badge: up.pendingCount) { JobsSection().navigationTitle("Activity") }
+                tap(icon: "square.stack.fill", title: "Collections", sub: "Every batch you've queued, with progress.", go: .collections)
+                tap(icon: "sparkle.magnifyingglass", title: "Query", sub: "Ask a question across everything in the library.", go: .query)
+                tap(icon: "waveform.path.ecg", title: "Activity", sub: "Everything processing right now — pause, resume, retry, or cancel.", badge: up.pendingCount, go: .jobs)
                 row(icon: "applewatch", title: "Apple Watch", sub: "Record on the wrist; it lands here with the same place title.") { WatchInfoSection().navigationTitle("Apple Watch") }
                 row(icon: "gearshape.fill", title: "Settings", sub: "Permissions, recording, storage, server status.") { SettingsSection().navigationTitle("Settings") }
             }
@@ -72,8 +72,16 @@ struct MoreSection: View {
         }
     }
 
+    private func tap(icon: String, title: String, sub: String, badge: Int = 0, go: LibraryScreen.Section) -> some View {
+        Button { BottomChrome.shared.moreSub = go } label: { rowLabel(icon: icon, title: title, sub: sub, badge: badge) }
+            .buttonStyle(.plain)
+    }
     private func row<D: View>(icon: String, title: String, sub: String, badge: Int = 0, @ViewBuilder dest: @escaping () -> D) -> some View {
-        NavigationLink { dest() } label: {
+        NavigationLink { dest() } label: { rowLabel(icon: icon, title: title, sub: sub, badge: badge) }
+            .buttonStyle(.plain)
+    }
+    private func rowLabel(icon: String, title: String, sub: String, badge: Int) -> some View {
+        SwiftUI.Group {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 11).fill(Color.white.opacity(0.06)).frame(width: 40, height: 40)
@@ -96,6 +104,5 @@ struct MoreSection: View {
             .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
         }
-        .buttonStyle(.plain)
     }
 }
