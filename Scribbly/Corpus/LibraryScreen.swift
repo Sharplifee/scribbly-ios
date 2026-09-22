@@ -58,7 +58,7 @@ struct LibraryScreen: View {
                     }
                     .toolbar(.hidden, for: .tabBar)
                     .navigationDestination(for: String.self) { id in EntryDetail(entryID: id, preloaded: nil) }
-                    .navigationTitle(s == .home ? "" : s.rawValue)
+                    .navigationTitle(s == .home ? "" : (s == .more ? (chrome.moreSub?.rawValue ?? "More") : s.rawValue))
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar(s == .home ? .hidden : .visible, for: .navigationBar)
                     .toolbarBackground(P.bg, for: .navigationBar)
@@ -327,11 +327,8 @@ struct MoreHost: View {
                         Label("More", systemImage: "chevron.left").font(.system(size: 15)).foregroundColor(P.accent)
                     }
                     Spacer()
-                    Text(sub.rawValue).font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
-                    Spacer()
-                    Color.clear.frame(width: 64, height: 1)
                 }
-                .padding(.horizontal, 16).padding(.vertical, 8)
+                .padding(.horizontal, 16).padding(.vertical, 6)
                 subPage(sub)
             }
         } else {

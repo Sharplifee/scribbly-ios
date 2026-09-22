@@ -50,6 +50,12 @@ struct Collection: Decodable, Identifiable, Equatable {
         return name
     }
     var badge: String { batch_number.map { "#\($0)" } ?? "—" }
+
+    /// Batch-of-links collections are named "<Creator> — Links <date>" by the ingest; show the creator.
+    var displayName: String {
+        if let r = name.range(of: " — Links ") { return String(name[..<r.lowerBound]) }
+        return name
+    }
 }
 
 /// A runtime cluster of collections that share a channel.

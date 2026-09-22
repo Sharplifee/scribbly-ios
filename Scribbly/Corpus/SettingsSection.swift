@@ -90,7 +90,7 @@ struct SettingsSection: View {
     }
     private func plainRow(_ l: String, _ v: String, good: Bool = false) -> some View {
         HStack { Text(l).foregroundColor(.white); Spacer(); Text(v).foregroundColor(good ? P.good : P.textDim).font(.system(size: 14)) }
-            .padding(.vertical, 12).overlay(Divider().overlay(P.border), alignment: .bottom)
+            .padding(.vertical, 12).overlay(Rectangle().fill(P.border).frame(height: 1), alignment: .bottom)
     }
     private func linkRow(_ l: String, _ v: String, good: Bool) -> some View {
         Button { if !good, let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) } } label: {
@@ -99,11 +99,11 @@ struct SettingsSection: View {
     }
     private func navRow(_ l: String) -> some View {
         HStack { Text(l).foregroundColor(.white); Spacer(); Image(systemName: "chevron.right").foregroundColor(P.textDim) }
-            .padding(.vertical, 12).overlay(Divider().overlay(P.border), alignment: .bottom)
+            .padding(.vertical, 12).overlay(Rectangle().fill(P.border).frame(height: 1), alignment: .bottom)
     }
     private func toggleRow(_ l: String, _ b: Binding<Bool>) -> some View {
         Toggle(l, isOn: b).tint(P.good).foregroundColor(.white).padding(.vertical, 10)
-            .overlay(Divider().overlay(P.border), alignment: .bottom)
+            .overlay(Rectangle().fill(P.border).frame(height: 1), alignment: .bottom)
     }
 }
 

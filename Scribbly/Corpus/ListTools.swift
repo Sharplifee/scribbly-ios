@@ -23,6 +23,7 @@ struct FilterSortRow: View {
                 }
                 .padding(.leading, 16)
             }
+            .clipped()
             Menu {
                 ForEach(sorts, id: \.self) { s in Button(s) { sort = s } }
             } label: {

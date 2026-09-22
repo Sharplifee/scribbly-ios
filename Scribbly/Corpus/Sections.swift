@@ -251,10 +251,10 @@ struct CollectionCard: View {
                     Text(collection.badge).font(.system(size: 13, weight: .bold)).foregroundColor(P.accent)
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(P.accent.opacity(0.14)).clipShape(RoundedRectangle(cornerRadius: 7))
-                    Text(collection.name).font(.system(size: 17, weight: .semibold))
+                    Text(collection.displayName).font(.system(size: 17, weight: .semibold))
                         .foregroundColor(.white).lineLimit(1)
                 }
-                if let ch = collection.channel, !ch.isEmpty {
+                if let ch = collection.channel, !ch.isEmpty, ch != collection.displayName {
                     Text("↳ \(ch)").font(.system(size: 13)).foregroundColor(P.textSec)
                 }
                 Text("\(collection.saved_videos ?? 0) saved · \(collection.skipped_videos ?? 0) skipped")
