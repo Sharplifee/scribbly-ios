@@ -643,17 +643,20 @@ struct IngestSection: View {
     /// What the pasted text contains, as pills: "1 channel", "12 videos", "2 podcasts", "3 articles".
     private func detect(_ t: String) -> [String] {
         let urls = extractURLs(t)
-        var ch = 0, vid = 0, pod = 0, art = 0
+        var ch = 0, vid = 0, pod = 0, art = 0, soc = 0
         for u in urls {
+            let l = u.lowercased()
             if isChannelOrPlaylist(u) { ch += 1 }
             else if CorpusAPI.youtubeID(from: u) != nil { vid += 1 }
-            else if u.contains("podcasts.apple.com") || u.contains("open.spotify.com") { pod += 1 }
+            else if l.contains("podcasts.apple.com") || l.contains("open.spotify.com") { pod += 1 }
+            else if ["instagram.com", "tiktok.com", "facebook.com", "fb.watch", "vimeo.com", "x.com/", "twitter.com/"].contains(where: { l.contains($0) }) { soc += 1 }
             else { art += 1 }
         }
         var out: [String] = []
         if ch > 0 { out.append("\(ch) channel" + (ch == 1 ? "" : "s")) }
         if vid > 0 { out.append("\(vid) video" + (vid == 1 ? "" : "s")) }
         if pod > 0 { out.append("\(pod) podcast" + (pod == 1 ? "" : "s")) }
+        if soc > 0 { out.append("\(soc) social video" + (soc == 1 ? "" : "s")) }
         if art > 0 { out.append("\(art) article" + (art == 1 ? "" : "s")) }
         return out
     }
@@ -756,7 +759,7 @@ struct IngestSection: View {
                 let unknown: [String] = []
                 var otherNote = ""
                 if !others.isEmpty {
-                    otherNote = " \(otherSaved) link(s) saved" + (otherFailed > 0 ? ", \(otherFailed) failed" : "") + "."
+                    otherNote = " \(otherSaved) link(s) queued" + (otherFailed > 0 ? ", \(otherFailed) failed" : "") + " — transcribing on the server; see Activity."
                 }
                 guard !videos.isEmpty else {
                     status = (podcasts.isEmpty && others.isEmpty)
@@ -870,6 +873,26 @@ struct IngestSection: View {
                               userInfo: [NSLocalizedDescriptionKey: (j["error"] as? String) ?? "Pipeline failed"])
             }
             return j
+        }
+        // Social video (Instagram / TikTok / Facebook / Vimeo / X) → Sharp's Cloud Computer pulls the audio
+        // and transcribes it on its own clock, exactly like a recording. Accepted instantly; shows in Activity.
+        let low0 = url.lowercased()
+        if ["instagram.com", "tiktok.com", "facebook.com", "fb.watch", "vimeo.com", "x.com/", "twitter.com/"].contains(where: { low0.contains($0) }) {
+            do {
+                var req = URLRequest(url: URL(string: CorpusAPI.voiceIngestURL.replacingOccurrences(of: "/upload", with: "/link"))!)
+                req.httpMethod = "POST"; req.timeoutInterval = 30
+                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                req.httpBody = try JSONSerialization.data(withJSONObject: ["url": url])
+                let (d, r) = try await URLSession.shared.data(for: req)
+                let code = (r as? HTTPURLResponse)?.statusCode ?? 0
+                if code == 202 { return true }
+                let j = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] ?? [:]
+                status = "Couldn't queue that link: " + ((j["error"] as? String) ?? "HTTP \(code)") + " — check it opens publicly and try again."
+                return false
+            } catch {
+                status = "Couldn't reach Sharp's Cloud Computer (\(error.localizedDescription)). The link wasn't queued — try again."
+                return false
+            }
         }
         do {
             let isIG = url.contains("instagram.com")
