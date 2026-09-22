@@ -370,6 +370,7 @@ struct HitRow: View {
 
 struct IngestSection: View {
     var store: LibraryStore? = nil
+    @FocusState private var pasteFocused: Bool
     @State private var progressTotal = 0
     @State private var progressDone = 0
     @State private var progressFailed = 0
@@ -393,6 +394,7 @@ struct IngestSection: View {
 
     var body: some View {
         ScrollView {
+            // any tap outside the field puts the keyboard away
             VStack(spacing: 14) {
 
                 // ── Hero, exactly as the web home: wordmark, tagline, one line.
@@ -415,25 +417,22 @@ struct IngestSection: View {
                 // Upload lives inside the tile as a button, not a second box.
                 let det = detect(text)
                 VStack(alignment: .leading, spacing: 10) {
-                    ZStack(alignment: .topLeading) {
-                        if text.isEmpty {
-                            Text("Paste anything here — a channel, a playlist, one link or twenty…")
-                                .font(.system(size: 14)).foregroundColor(P.textDim)
-                                .padding(.horizontal, 17).padding(.top, 20)
-                        }
-                        TextEditor(text: $text)
-                            .font(.system(size: 14)).foregroundColor(.white)
-                            .scrollContentBackground(.hidden)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                            .frame(minHeight: 92)
-                            .padding(.horizontal, 12).padding(.vertical, 12)
-                            .onChange(of: text) { new in
-                                // A typed Return submits; a pasted block keeps its newlines.
-                                if new.hasSuffix("\n") && !new.dropLast().contains("\n") {
-                                    text = String(new.dropLast()); Task { await submit() }
-                                }
+                    // Return = Go (same as Fetch) and the keyboard goes away; pasted blocks keep their lines.
+                    TextField("Paste anything here — a channel, a playlist, one link or twenty…", text: $text, axis: .vertical)
+                        .lineLimit(3...8)
+                        .font(.system(size: 14)).foregroundColor(.white)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .submitLabel(.go)
+                        .focused($pasteFocused)
+                        .onSubmit { pasteFocused = false; Task { await submit() } }
+                        .padding(.horizontal, 14).padding(.vertical, 14)
+                        .toolbar {
+                            ToolbarItemGroup(placement: .keyboard) {
+                                Spacer()
+                                Button("Done") { pasteFocused = false }.font(.system(size: 15, weight: .semibold)).foregroundColor(P.accent)
                             }
-                    }
+                        }
                     .background(Color.black.opacity(0.35)).clipShape(RoundedRectangle(cornerRadius: 12))
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(text.isEmpty ? P.border : P.accent.opacity(0.55)))
 
@@ -460,7 +459,7 @@ struct IngestSection: View {
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.14)))
                         }
                         .frame(maxWidth: .infinity)
-                        Button { Task { await submit() } } label: {
+                        Button { pasteFocused = false; Task { await submit() } } label: {
                             ZStack {
                                 if det.isEmpty {
                                     RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06))
@@ -637,7 +636,11 @@ struct IngestSection: View {
                 }
             }
             .padding(.bottom, 30)
+            .contentShape(Rectangle())
+            .onTapGesture { pasteFocused = false }
         }
+        .scrollDismissesKeyboard(.immediately)
+        .onChange(of: pasteFocused) { BottomChrome.shared.keyboardUp = $0 }
     }
 
     /// What the pasted text contains, as pills: "1 channel", "12 videos", "2 podcasts", "3 articles".

@@ -87,6 +87,8 @@ final class BottomChrome: ObservableObject {
     @Published var currentTab: LibraryScreen.Section = .home
     /// Which sub-page More is showing (Collections / Query / Activity), if any.
     @Published var moreSub: LibraryScreen.Section? = nil
+    /// True while the paste field owns the keyboard — the glass bar steps out of the way.
+    @Published var keyboardUp = false
     @Published var armToken = 0
     @Published var savedTitle: String?
 }

@@ -52,7 +52,7 @@ struct LibraryScreen: View {
                         } else {
                             VStack(spacing: 0) {
                                 RecordBar(armToken: chrome.armToken, tab: s)   // idle: only the saved line, if any
-                                if !chrome.hideRecordBar { GlassTabBar(selection: $chrome.currentTab, onRecord: startRecording) }
+                                if !chrome.hideRecordBar && !chrome.keyboardUp { GlassTabBar(selection: $chrome.currentTab, onRecord: startRecording) }
                             }
                         }
                     }
