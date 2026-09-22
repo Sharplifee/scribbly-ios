@@ -120,6 +120,8 @@ struct LibraryScreen: View {
         case .collections: CollectionsSection(store: store)
         case .library:     LibrarySection(store: store)
         case .query:       QuerySection()
+        case .settings:    SettingsSection()
+        case .watch:       WatchInfoSection()
         }
     }
 
