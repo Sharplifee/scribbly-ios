@@ -13,7 +13,8 @@ struct LibraryScreen: View {
 
     enum Section: String, CaseIterable, Identifiable {
         case home = "Home", library = "Library", record = "Record",
-             groups = "Groups", more = "More", collections = "Collections", query = "Query", jobs = "Activity"
+             groups = "Groups", more = "More", collections = "Collections", query = "Query", jobs = "Activity",
+             settings = "Settings", watch = "Apple Watch"
         var id: String { rawValue }
         /// The four real pages. Collections · Query · Activity live inside More.
         static let pages: [Section] = [.home, .library, .groups, .more]
@@ -27,15 +28,18 @@ struct LibraryScreen: View {
             case .collections: return "square.stack.fill"
             case .query:       return "sparkle.magnifyingglass"
             case .jobs:        return "waveform.path.ecg"
+            case .settings:    return "gearshape.fill"
+            case .watch:       return "applewatch"
             }
         }
     }
     @State private var lastRealTab: Section = .home
+    @State private var libPath = NavigationPath()
 
     var body: some View {
         TabView(selection: $chrome.currentTab) {
             ForEach(Section.pages) { s in
-                NavigationStack {
+                NavigationStack(path: s == .library ? $libPath : .constant(NavigationPath())) {
                     ZStack {
                         P.bg.ignoresSafeArea()
                         content(for: s)
@@ -53,6 +57,7 @@ struct LibraryScreen: View {
                         }
                     }
                     .toolbar(.hidden, for: .tabBar)
+                    .navigationDestination(for: String.self) { id in EntryDetail(entryID: id, preloaded: nil) }
                     .navigationTitle(s == .home ? "" : s.rawValue)
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar(s == .home ? .hidden : .visible, for: .navigationBar)
@@ -69,15 +74,17 @@ struct LibraryScreen: View {
         .onChange(of: chrome.currentTab) { newTab in
             switch newTab {
             case .record: chrome.currentTab = lastRealTab; startRecording()
-            case .collections, .query, .jobs: chrome.moreSub = newTab; chrome.currentTab = .more
+            case .collections, .query, .jobs, .settings, .watch: chrome.moreSub = newTab; chrome.currentTab = .more
             default: lastRealTab = newTab
             }
         }
         .task {
             // Screenshot/QA hook: SCRIBBLY_TAB=home|library|groups|more opens that page on launch.
-            if let t = ProcessInfo.processInfo.environment["SCRIBBLY_TAB"], let sec = Section(rawValue: t.capitalized) {
-                chrome.currentTab = sec
-            }
+            let env = ProcessInfo.processInfo.environment
+            if let t = env["SCRIBBLY_TAB"], let sec = Section(rawValue: t.capitalized) { chrome.currentTab = sec }
+            if let m = env["SCRIBBLY_MORE"], let sec = Section(rawValue: m.capitalized) { chrome.moreSub = sec; chrome.currentTab = .more }
+            if let id = env["SCRIBBLY_ENTRY"], !id.isEmpty { chrome.currentTab = .library; try? await Task.sleep(nanoseconds: 800_000_000); libPath.append(id) }
+            if env["SCRIBBLY_REC"] == "1" { try? await Task.sleep(nanoseconds: 1_500_000_000); startRecording() }
             await store.loadCounts()
         }
     }
@@ -215,7 +222,10 @@ struct LibrarySection: View {
                 }
             }
         }
-        .task { await store.loadFirstPageIfNeeded(); await store.loadCollectionsIfNeeded() }
+        .task {
+            if let q = ProcessInfo.processInfo.environment["SCRIBBLY_SEARCH"], !q.isEmpty { filter = q }
+            await store.loadFirstPageIfNeeded(); await store.loadCollectionsIfNeeded()
+        }
         .refreshable { await store.refreshAll() }
         .onReceive(NotificationCenter.default.publisher(for: .init("scribblyEntryDeleted"))) { _ in
             Task { await store.refreshAll() }
@@ -331,6 +341,8 @@ struct MoreHost: View {
         switch s {
         case .collections: CollectionsSection(store: store)
         case .query:       QuerySection()
+        case .settings:    SettingsSection()
+        case .watch:       WatchInfoSection()
         default:           JobsSection()
         }
     }

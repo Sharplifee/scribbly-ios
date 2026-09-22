@@ -30,11 +30,21 @@ jobs:
       - name: Screenshot each page
         run: |
           mkdir -p shots
-          for tab in home library groups more; do
+          shot() { # name, env assignments...
+            name=$1; shift
             xcrun simctl terminate $UDID com.connor.scribbly 2>/dev/null || true
-            SIMCTL_CHILD_SCRIBBLY_TAB=$tab xcrun simctl launch $UDID com.connor.scribbly >/dev/null
+            env "$@" xcrun simctl launch $UDID com.connor.scribbly >/dev/null
             sleep 14
-            xcrun simctl io $UDID screenshot shots/$tab.png
-          done
+            xcrun simctl io $UDID screenshot shots/$name.png
+          }
+          shot home        SIMCTL_CHILD_SCRIBBLY_TAB=home
+          shot library     SIMCTL_CHILD_SCRIBBLY_TAB=library
+          shot groups      SIMCTL_CHILD_SCRIBBLY_TAB=groups
+          shot more        SIMCTL_CHILD_SCRIBBLY_TAB=more
+          shot collections SIMCTL_CHILD_SCRIBBLY_MORE=collections
+          shot settings    SIMCTL_CHILD_SCRIBBLY_MORE=settings
+          shot search      SIMCTL_CHILD_SCRIBBLY_TAB=library SIMCTL_CHILD_SCRIBBLY_SEARCH=chase
+          shot entry       SIMCTL_CHILD_SCRIBBLY_ENTRY=voice_1789579956113
+          shot recording   SIMCTL_CHILD_SCRIBBLY_REC=1
       - uses: actions/upload-artifact@v4
         with: { name: shots, path: shots }
