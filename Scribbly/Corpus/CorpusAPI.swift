@@ -136,6 +136,17 @@ enum CorpusAPI {
 
     /// One page of the library, newest first. `limit`/`offset` give real
     /// pagination — the fix for the web app's silent 5000-row truncation.
+    /// Newest few entries without summaries — tiny payload, used for Home → Recent at launch.
+    static func recentEntries(limit: Int = 6) async throws -> [Entry] {
+        var c = URLComponents(string: "\(restBase)/scribbly_entries")!
+        c.queryItems = [
+            .init(name: "select", value: "id,title,type,date,created_at,collection_id"),
+            .init(name: "order", value: "created_at.desc"),
+            .init(name: "limit", value: String(limit))
+        ]
+        return try await getJSON(c.url!, as: [Entry].self, timeout: 20)
+    }
+
     static func entries(limit: Int = 100, offset: Int = 0) async throws -> [Entry] {
         var c = URLComponents(string: "\(restBase)/scribbly_entries")!
         c.queryItems = [
@@ -313,8 +324,9 @@ enum CorpusAPI {
 
     // MARK: - Core GET
 
-    private static func getJSON<T: Decodable>(_ url: URL, as: T.Type) async throws -> T {
+    private static func getJSON<T: Decodable>(_ url: URL, as: T.Type, timeout: TimeInterval = 30) async throws -> T {
         var req = URLRequest(url: url)
+        req.timeoutInterval = timeout            // reads must fail fast and be retried, never hang for minutes
         restHeaders.forEach { req.setValue($1, forHTTPHeaderField: $0) }
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {

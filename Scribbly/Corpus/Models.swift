@@ -1,7 +1,7 @@
 import Foundation
 
 /// One ingested item — video, recording, audio file, or podcast episode.
-struct Entry: Decodable, Identifiable, Equatable {
+struct Entry: Codable, Identifiable, Equatable {
     let id: String
     let title: String
     let type: String?

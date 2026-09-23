@@ -410,7 +410,7 @@ struct IngestSection: View {
                         .font(.system(size: 14)).foregroundColor(P.textSec)
                 }
                 .padding(.top, 2).padding(.bottom, 4)
-                .task { if let store { await store.loadFirstPageIfNeeded() } }
+                .task { if let store { await store.loadRecent() } }
 
                 // ── ONE open tile. Paste anything — a channel grabs every video, one
                 // link or twenty queue together; Return does exactly what Fetch does.
@@ -631,7 +631,7 @@ struct IngestSection: View {
                     Text(s).font(.system(size: 13)).foregroundColor(P.textSec)
                         .multilineTextAlignment(.center).padding(.horizontal, 20)
                 }
-                if let store, !store.entries.isEmpty {
+                if let store {
                     RecentList(store: store)
                 }
             }
@@ -640,7 +640,9 @@ struct IngestSection: View {
             .onTapGesture { pasteFocused = false }
         }
         .scrollDismissesKeyboard(.immediately)
+        .refreshable { if let store { await store.loadRecent() } }
         .onChange(of: pasteFocused) { BottomChrome.shared.keyboardUp = $0 }
+        .onReceive(BottomChrome.shared.$savedTitle) { if $0 != nil, let store { Task { await store.loadRecent() } } }
     }
 
     /// What the pasted text contains, as pills: "1 channel", "12 videos", "2 podcasts", "3 articles".
@@ -948,7 +950,15 @@ private struct RecentList: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("RECENT").font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).tracking(0.8)
             VStack(spacing: 0) {
-                ForEach(Array(store.entries.prefix(4))) { e in
+                if store.recent.isEmpty {
+                    HStack(spacing: 8) {
+                        if store.recentError == nil { ProgressView().tint(P.accent) }
+                        Text(store.recentError == nil ? "Loading…" : "Couldn't load recent entries — pull down to retry.")
+                            .font(.system(size: 13)).foregroundColor(P.textDim)
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 18)
+                }
+                ForEach(Array(store.recent.prefix(4))) { e in
                     NavigationLink { EntryDetail(entryID: e.id, preloaded: e) } label: { row(e) }
                     Divider().background(P.border)
                 }

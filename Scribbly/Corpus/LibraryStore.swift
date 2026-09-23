@@ -6,6 +6,9 @@ import SwiftUI
 @MainActor
 final class LibraryStore: ObservableObject {
     @Published var entries: [Entry] = []
+    /// Home → Recent: served from disk instantly, then refreshed with a tiny request.
+    @Published var recent: [Entry] = []
+    @Published var recentError: String?
     @Published var collections: [Collection] = []
     @Published var groups: [Group] = []
 
@@ -20,6 +23,33 @@ final class LibraryStore: ObservableObject {
 
     private var offset = 0
     private let pageSize = 100
+
+    private static var recentCacheURL: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("recent.json")
+    }
+
+    init() {
+        if let d = try? Data(contentsOf: Self.recentCacheURL), let cached = try? JSONDecoder().decode([Entry].self, from: d) {
+            recent = cached
+        }
+    }
+
+    /// Fast path for Home: one small request, retried once, cached on success.
+    func loadRecent() async {
+        for attempt in 0..<2 {
+            do {
+                let r = try await CorpusAPI.recentEntries(limit: 6)
+                recent = r; recentError = nil
+                if let d = try? JSONEncoder().encode(r) { try? d.write(to: Self.recentCacheURL, options: .atomic) }
+                return
+            } catch {
+                recentError = error.localizedDescription
+                if attempt == 0 { try? await Task.sleep(nanoseconds: 1_500_000_000) }
+            }
+        }
+    }
 
     func loadCounts() async {
         async let lib = try? CorpusAPI.count(table: "scribbly_entries")
