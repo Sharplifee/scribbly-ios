@@ -9,8 +9,9 @@ struct RecordControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: "com.connor.scribbly.record") {
             ControlWidgetButton(action: StartRecordingIntent()) {
-                Label("Record", systemImage: "mic.fill")
+                Label("Scribbly", image: "scribbly.mark")   // our own mark, not a stock mic
             }
+            .tint(Color(red: 0.66, green: 0.33, blue: 0.97))
         }
         .displayName("Scribbly Record")
         .description("Start a Scribbly recording.")
