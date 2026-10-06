@@ -732,8 +732,11 @@ struct IngestSection: View {
                         try? await Task.sleep(nanoseconds: 1_000_000_000)
                         if Task.isCancelled { return }
                     }
-                    await MainActor.run { countdown = 0 }
-                    await startQueue()
+                    // Detach from this countdown task before queuing: startQueue()
+                    // cancels countdownTask, and cancelling the task we're running in
+                    // aborted every network call with "cancelled".
+                    await MainActor.run { countdown = 0; countdownTask = nil }
+                    Task { await startQueue() }
                 }
             } else {
                 // Individual links: one URL per line.
