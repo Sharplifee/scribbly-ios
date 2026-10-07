@@ -333,7 +333,10 @@ struct QuerySection: View {
                     }.padding(.top, 40).padding(.horizontal, 40)
                 }
 
-                ForEach(hits) { hit in HitRow(hit: hit, query: query) }
+                ForEach(hits) { hit in
+                    NavigationLink { HitDestination(hit: hit) } label: { HitRow(hit: hit, query: query) }
+                        .buttonStyle(.plain)
+                }
             }
             .padding(.bottom, 20)
         }
@@ -363,6 +366,48 @@ struct HitRow: View {
         .padding(14).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(P.border))
         .padding(.horizontal, 16)
+    }
+}
+
+/// Opens a search hit. Scribbly-origin rows (mirror ids notes_/batches_/scribbly_ +
+/// entry id) open the full entry; anything else in the corpus opens a read-only page.
+struct HitDestination: View {
+    let hit: SearchHit
+    @State private var entry: Entry?
+    @State private var loaded = false
+
+    private var entryID: String {
+        for p in ["notes_", "batches_", "scribbly_"] where hit.id.hasPrefix(p) { return String(hit.id.dropFirst(p.count)) }
+        return hit.id
+    }
+
+    var body: some View {
+        SwiftUI.Group {
+            if let e = entry {
+                EntryDetail(entryID: e.id, preloaded: e)
+            } else if loaded {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(hit.title).font(.system(size: 22, weight: .bold)).foregroundColor(.white)
+                        Text("\(hit.date ?? "") · \(hit.origin ?? "")").font(.system(size: 12)).foregroundColor(P.textDim)
+                        if let s = hit.summary, !s.isEmpty {
+                            Text(s).font(.system(size: 15)).foregroundColor(P.textSec)
+                        }
+                        if let u = hit.source_url, let url = URL(string: u) {
+                            Link("Open source", destination: url).font(.system(size: 15, weight: .semibold)).foregroundColor(P.accent)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(18)
+                }
+                .background(P.bg.ignoresSafeArea())
+            } else {
+                ProgressView().tint(P.accent).frame(maxWidth: .infinity, maxHeight: .infinity).background(P.bg.ignoresSafeArea())
+            }
+        }
+        .task {
+            if let e = try? await CorpusAPI.entry(id: entryID) { entry = e }
+            loaded = true
+        }
     }
 }
 

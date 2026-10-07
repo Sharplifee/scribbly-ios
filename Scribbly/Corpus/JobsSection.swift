@@ -52,9 +52,25 @@ struct JobsSection: View {
                         HStack(alignment: .top, spacing: 10) {
                             stateIcon(j.state)
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(j.title ?? j.id).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(2)
-                                Text(voiceSubtitle(j))
-                                    .font(.system(size: 12)).foregroundColor(P.textSec)
+                                if let eid = j.entryId, j.state == "done" {
+                                    // Saved: tap opens the entry it became.
+                                    NavigationLink { EntryDetail(entryID: eid, preloaded: nil) } label: {
+                                        HStack(alignment: .top) {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(j.title ?? j.id).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(2).multilineTextAlignment(.leading)
+                                                Text(voiceSubtitle(j)).font(.system(size: 12)).foregroundColor(P.textSec)
+                                            }
+                                            Spacer(minLength: 6)
+                                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(P.textDim).padding(.top, 3)
+                                        }
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                } else {
+                                    Text(j.title ?? j.id).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(2)
+                                    Text(voiceSubtitle(j))
+                                        .font(.system(size: 12)).foregroundColor(P.textSec)
+                                }
                                 if let e = j.error, j.state == "failed" || j.state == "no_speech" {
                                     Text(e).font(.system(size: 11)).foregroundColor(P.danger).lineLimit(3)
                                 }
@@ -86,11 +102,17 @@ struct JobsSection: View {
                     }
                     ForEach(model.batches) { b in
                         VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Image(systemName: "play.rectangle.fill").foregroundColor(P.accent)
-                                Text(b.name).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(1)
-                                Spacer()
+                            // Tap the batch name to open what it has saved so far.
+                            NavigationLink { CollectionDetail(collection: Collection(id: b.id, name: b.name, channel: nil, type: nil, source_url: nil, total_videos: b.total, saved_videos: b.done, skipped_videos: nil, failed_videos: nil, batch_number: nil, created_at: nil)) } label: {
+                                HStack {
+                                    Image(systemName: "play.rectangle.fill").foregroundColor(P.accent)
+                                    Text(b.name).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(P.textDim)
+                                }
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
                             ProgressView(value: Double(b.done), total: Double(max(b.total, 1))).tint(P.accent)
                             Text(batchSubtitle(b))
                                 .font(.system(size: 12)).foregroundColor(P.textSec)
