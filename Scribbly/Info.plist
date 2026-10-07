@@ -62,6 +62,8 @@
 	<string>Needed to record voice notes.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Used to transcribe recordings.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

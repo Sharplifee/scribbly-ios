@@ -2,11 +2,25 @@ import Foundation
 import AVFoundation
 import WatchConnectivity
 
-/// Records on the watch itself (no phone needed at record time) and hands the
-/// finished file to the iPhone over WatchConnectivity, which uploads it exactly
-/// like a phone recording. If the phone is out of reach, the transfer waits and
-/// completes automatically the next time the two are together.
-final class WatchRecorder: NSObject, ObservableObject, WCSessionDelegate {
+/// Records on the watch itself and uploads the finished file STRAIGHT to Sharp's
+/// Cloud Computer (background URLSession — over the phone's connection, Wi-Fi or
+/// cellular), so it's transcribed and saved without the iPhone app ever opening.
+/// Only if that upload fails does it fall back to handing the file to the
+/// iPhone over WatchConnectivity.
+final class WatchRecorder: NSObject, ObservableObject, WCSessionDelegate, URLSessionTaskDelegate {
+    static let shared = WatchRecorder()
+    static let uploadURL = URL(string: "https://207-148-6-194.sslip.io/v/aa6edc0decd726d1aef6f3e7ec489965/upload")!
+    private lazy var uploads: URLSession = {
+        let c = URLSessionConfiguration.background(withIdentifier: "com.connor.scribbly.watch.upload")
+        c.sessionSendsLaunchEvents = true
+        c.isDiscretionary = false
+        return URLSession(configuration: c, delegate: self, delegateQueue: nil)
+    }()
+    private var outbox: URL {
+        let d = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("outbox")
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
     @Published var isRecording = false
     @Published var elapsed: TimeInterval = 0
     @Published var status: String = ""
@@ -19,6 +33,7 @@ final class WatchRecorder: NSObject, ObservableObject, WCSessionDelegate {
 
     override init() {
         super.init()
+        _ = uploads   // reconnect to any upload still running from a previous launch
         if WCSession.isSupported() {
             WCSession.default.delegate = self
             WCSession.default.activate()
@@ -69,14 +84,11 @@ final class WatchRecorder: NSObject, ObservableObject, WCSessionDelegate {
         guard let url = fileURL else { return }
         let dur = elapsed
         let fmt = DateFormatter(); fmt.dateFormat = "MMM d, h:mm a"
-        let meta: [String: Any] = ["title": "Watch memo — \(fmt.string(from: Date()))", "duration": dur]
-        if WCSession.default.activationState == .activated {
-            WCSession.default.transferFile(url, metadata: meta)
-            pendingTransfers = WCSession.default.outstandingFileTransfers.count
-            status = WCSession.default.isReachable ? "Sent to iPhone." : "Saved — sends to iPhone when it's nearby."
-        } else {
-            status = "Saved on watch — open the iPhone app to sync."
-        }
+        let title = "Watch memo — \(fmt.string(from: Date()))"
+        // Move out of tmp so the background upload can always read it.
+        let kept = outbox.appendingPathComponent(url.lastPathComponent)
+        try? FileManager.default.moveItem(at: url, to: kept)
+        upload(kept, title: title, duration: dur)
         fileURL = nil; elapsed = 0
     }
 
@@ -87,6 +99,43 @@ final class WatchRecorder: NSObject, ObservableObject, WCSessionDelegate {
         if let url = fileURL { try? FileManager.default.removeItem(at: url) }
         fileURL = nil; status = "Discarded."
         try? AVAudioSession.sharedInstance().setActive(false)
+    }
+
+    private func upload(_ file: URL, title: String, duration: TimeInterval) {
+        var req = URLRequest(url: Self.uploadURL)
+        req.httpMethod = "POST"
+        req.setValue("audio/mp4", forHTTPHeaderField: "Content-Type")
+        req.setValue(title.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "Watch%20memo", forHTTPHeaderField: "x-title")
+        req.setValue("m4a", forHTTPHeaderField: "x-ext")
+        let task = uploads.uploadTask(with: req, fromFile: file)
+        // Remember what to fall back with if the upload fails.
+        task.taskDescription = [file.path, title, String(duration)].joined(separator: "\n")
+        task.resume()
+        status = "Uploading — no need to open your iPhone."
+    }
+
+    // MARK: URLSession (direct upload)
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let parts = (task.taskDescription ?? "").components(separatedBy: "\n")
+        guard parts.count == 3 else { return }
+        let file = URL(fileURLWithPath: parts[0])
+        let code = (task.response as? HTTPURLResponse)?.statusCode ?? 0
+        if error == nil, (200..<300).contains(code) {
+            try? FileManager.default.removeItem(at: file)
+            DispatchQueue.main.async { self.status = "Sent — transcribing on the server." }
+        } else {
+            // Fallback: hand it to the iPhone, which uploads it the same way.
+            let meta: [String: Any] = ["title": parts[1], "duration": Double(parts[2]) ?? 0]
+            DispatchQueue.main.async {
+                if WCSession.default.activationState == .activated {
+                    WCSession.default.transferFile(file, metadata: meta)
+                    self.pendingTransfers = WCSession.default.outstandingFileTransfers.count
+                    self.status = "Couldn't reach the server — sending through your iPhone instead."
+                } else {
+                    self.status = "Couldn't upload — saved on the watch, will retry."
+                }
+            }
+        }
     }
 
     // MARK: WCSessionDelegate

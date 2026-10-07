@@ -993,11 +993,43 @@ struct IngestSection: View {
 /// "Recent" on Home — the four newest entries, then a link to the whole library.
 private struct RecentList: View {
     @ObservedObject var store: LibraryStore
+    @StateObject private var jobs = JobsModel()
+    @ObservedObject private var up = Uploader.shared
+    @State private var loop: Task<Void, Never>?
     private func meta(_ e: Entry) -> String { (e.date ?? "") + " · " + (e.type ?? "") }
+
+    /// Anything still moving: server voice/file jobs that aren't finished,
+    /// uploads waiting on this phone, and YouTube batches with videos queued.
+    private var liveJobs: [JobsModel.VoiceJob] {
+        jobs.voiceJobs.filter { ["pending", "transcribing", "saving", "paused", "failed", "no_speech"].contains($0.state) }
+    }
+    private var liveBatches: [JobsModel.Batch] { jobs.batches.filter { $0.pending > 0 } }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("RECENT").font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).tracking(0.8)
+            Text("RECENT ACTIVITY").font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).tracking(0.8)
             VStack(spacing: 0) {
+                // ── Live: what's processing right now
+                ForEach(up.pendingItems()) { item in
+                    liveRow(icon: "iphone", tint: .orange, title: item.title,
+                            sub: item.held ? "Recovered after a crash — approve it in Activity" : "Waiting on this phone to upload")
+                    Divider().background(P.border)
+                }
+                ForEach(liveJobs) { j in
+                    liveRow(icon: icon(j.state), tint: tint(j.state), title: j.title ?? "Recording",
+                            sub: label(j.state) + (j.error.map { " — \($0)" } ?? ""), spinning: ["pending", "transcribing", "saving"].contains(j.state))
+                    Divider().background(P.border)
+                }
+                ForEach(liveBatches) { b in
+                    NavigationLink { CollectionDetail(collection: Collection(id: b.id, name: b.name, channel: nil, type: nil, source_url: nil, total_videos: b.total, saved_videos: b.done, skipped_videos: nil, failed_videos: nil, batch_number: nil, created_at: nil)) } label: {
+                        liveRow(icon: "play.rectangle.fill", tint: P.accent, title: b.name,
+                                sub: "\(b.done)/\(b.total) saved · \(b.pending) queued" + (b.now.map { " · Now: \($0)" } ?? ""), spinning: true)
+                    }
+                    .buttonStyle(.plain)
+                    Divider().background(P.border)
+                }
+
+                // ── Saved: newest entries
                 if store.recent.isEmpty {
                     HStack(spacing: 8) {
                         if store.recentError == nil { ProgressView().tint(P.accent) }
@@ -1006,7 +1038,7 @@ private struct RecentList: View {
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 18)
                 }
-                ForEach(Array(store.recent.prefix(4))) { e in
+                ForEach(Array(store.recent.prefix(5))) { e in
                     NavigationLink { EntryDetail(entryID: e.id, preloaded: e) } label: { row(e) }
                     Divider().background(P.border)
                 }
@@ -1021,6 +1053,52 @@ private struct RecentList: View {
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
         }
         .padding(.horizontal, 16)
+        // Live feed: jobs every 5s, saved entries every 10s, while Home is on screen.
+        .onAppear {
+            loop?.cancel()
+            loop = Task {
+                var n = 0
+                while !Task.isCancelled {
+                    let wasLive = liveJobs.count + liveBatches.count
+                    await jobs.refresh()
+                    let nowLive = liveJobs.count + liveBatches.count
+                    if n % 2 == 0 || nowLive < wasLive { await store.loadRecent() }
+                    n += 1
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                }
+            }
+        }
+        .onDisappear { loop?.cancel(); loop = nil }
+    }
+
+    private func liveRow(icon: String, tint: Color, title: String, sub: String, spinning: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            if spinning { ProgressView().tint(tint).scaleEffect(0.8).frame(width: 18).padding(.top, 2) }
+            else { Image(systemName: icon).foregroundColor(tint).frame(width: 18).padding(.top, 2) }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(2).multilineTextAlignment(.leading)
+                Text(sub).font(.system(size: 11)).foregroundColor(P.textDim).lineLimit(2)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 11)
+    }
+    private func icon(_ s: String) -> String {
+        switch s { case "failed": return "exclamationmark.triangle.fill"; case "no_speech": return "speaker.slash.fill"; case "paused": return "pause.circle.fill"; default: return "waveform" }
+    }
+    private func tint(_ s: String) -> Color {
+        switch s { case "failed", "no_speech": return P.danger; case "paused": return .orange; default: return P.accent }
+    }
+    private func label(_ s: String) -> String {
+        switch s {
+        case "pending": return "Queued on the cloud computer"
+        case "transcribing": return "Transcribing…"
+        case "saving": return "Saving to your library…"
+        case "paused": return "Paused"
+        case "failed": return "Failed — retry in Activity"
+        case "no_speech": return "No speech found"
+        default: return s
+        }
     }
     private func row(_ e: Entry) -> some View {
         VStack(alignment: .leading, spacing: 3) {

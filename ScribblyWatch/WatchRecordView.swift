@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct WatchRecordView: View {
-    @StateObject private var rec = WatchRecorder()
+    @ObservedObject private var rec = WatchRecorder.shared
 
     private var time: String {
         let t = Int(rec.elapsed); return String(format: "%02d:%02d", t / 60, t % 60)

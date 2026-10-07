@@ -44,18 +44,6 @@ struct LibraryScreen: View {
                         P.bg.ignoresSafeArea()
                         content(for: s)
                     }
-                    // While recording/uploading the native bar hides and the
-                    // recorder capsule takes its exact place.
-                    .safeAreaInset(edge: .bottom, spacing: 0) {
-                        if recorderOwnsBar {
-                            RecordBar(armToken: chrome.armToken, tab: s)
-                        } else {
-                            VStack(spacing: 0) {
-                                RecordBar(armToken: chrome.armToken, tab: s)   // idle: only the saved line, if any
-                                if !chrome.hideRecordBar && !chrome.keyboardUp { GlassTabBar(selection: $chrome.currentTab, onRecord: startRecording) }
-                            }
-                        }
-                    }
                     .toolbar(.hidden, for: .tabBar)
                     .navigationDestination(for: String.self) { id in EntryDetail(entryID: id, preloaded: nil) }
                     .navigationTitle(s == .home ? "" : (s == .more ? (chrome.moreSub?.rawValue ?? "More") : s.rawValue))
@@ -64,6 +52,19 @@ struct LibraryScreen: View {
                     .toolbarBackground(P.bg, for: .navigationBar)
                     .toolbarBackground(.visible, for: .navigationBar)
                     .toolbarColorScheme(.dark, for: .navigationBar)
+                }
+                // On the NavigationStack (not its root) so the live recorder bar
+                // stays at the bottom of EVERY screen, including pushed entries.
+                // While recording/uploading it replaces the tab bar.
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if recorderOwnsBar {
+                        RecordBar(armToken: chrome.armToken, tab: s)
+                    } else {
+                        VStack(spacing: 0) {
+                            RecordBar(armToken: chrome.armToken, tab: s)   // idle: only the saved line, if any
+                            if !chrome.hideRecordBar && !chrome.keyboardUp { GlassTabBar(selection: $chrome.currentTab, onRecord: startRecording) }
+                        }
+                    }
                 }
                 .tabItem { Label(s.rawValue, systemImage: s.icon) }
                 .badge(badgeInt(for: s))
