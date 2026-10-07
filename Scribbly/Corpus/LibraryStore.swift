@@ -31,6 +31,8 @@ final class LibraryStore: ObservableObject {
     }
 
     init() {
+        libraryCount = UserDefaults.standard.integer(forKey: "libraryCount")
+        collectionCount = UserDefaults.standard.integer(forKey: "collectionCount")
         if let d = try? Data(contentsOf: Self.recentCacheURL), let cached = try? JSONDecoder().decode([Entry].self, from: d) {
             recent = cached
         }
@@ -42,6 +44,7 @@ final class LibraryStore: ObservableObject {
             do {
                 let r = try await CorpusAPI.recentEntries(limit: 6)
                 recent = r; recentError = nil
+                if libraryCount == 0 { await loadCounts() }
                 if let d = try? JSONEncoder().encode(r) { try? d.write(to: Self.recentCacheURL, options: .atomic) }
                 return
             } catch {
@@ -51,11 +54,13 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    /// Counts are cached on disk so a bad connection shows the last known
+    /// number instead of "0"; a failed request never overwrites a good value.
     func loadCounts() async {
         async let lib = try? CorpusAPI.count(table: "scribbly_entries")
         async let col = try? CorpusAPI.count(table: "scribbly_collections")
-        libraryCount = (await lib) ?? libraryCount
-        collectionCount = (await col) ?? collectionCount
+        if let n = await lib, n > 0 { libraryCount = n; UserDefaults.standard.set(n, forKey: "libraryCount") }
+        if let n = await col, n > 0 { collectionCount = n; UserDefaults.standard.set(n, forKey: "collectionCount") }
     }
 
     func loadFirstPageIfNeeded() async {

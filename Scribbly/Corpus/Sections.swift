@@ -1011,7 +1011,7 @@ private struct RecentList: View {
                     Divider().background(P.border)
                 }
                 Button { BottomChrome.shared.currentTab = .library } label: {
-                    Text("See all \(store.libraryCount.formatted()) ›")
+                    Text(store.libraryCount > 0 ? "See all \(store.libraryCount.formatted()) ›" : "See all ›")
                         .font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
                         .frame(maxWidth: .infinity).padding(.vertical, 10)
                 }

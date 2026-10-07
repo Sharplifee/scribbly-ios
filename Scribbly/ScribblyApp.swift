@@ -300,26 +300,33 @@ struct RecordBar: View {
     }
 }
 
-/// Live input meter. Mirrors the web app's 28-bar waveform.
+/// Live input meter. Fits whatever width it's given: the bar count is derived
+/// from the available space (8pt per bar), so it can never push the recorder
+/// wider than the screen. (A fixed 28-bar row was ~220pt and, with the timer
+/// and transport, made the whole page wider than the phone — the "zoom".)
 struct WaveBars: View {
     let level: Float
     let active: Bool
-    private let count = 28
 
     var body: some View {
-        HStack(alignment: .center, spacing: 4) {
-            ForEach(0..<count, id: \.self) { i in
-                let d = abs(Double(i) - Double(count) / 2) / (Double(count) / 2)
-                let jitter = 0.55 + Double((i &* 37) % 100) / 110.0
-                let h = active
-                    ? max(4, Double(level) * 58 * (1 - d * 0.65) * jitter)
-                    : 4
-                Capsule()
-                    .fill(active ? AnyShapeStyle(P.brand) : AnyShapeStyle(P.border))
-                    .frame(width: 4, height: h)
-                    .animation(.linear(duration: 0.08), value: level)
+        GeometryReader { geo in
+            let count = max(6, min(28, Int(geo.size.width / 8)))
+            HStack(alignment: .center, spacing: 4) {
+                ForEach(0..<count, id: \.self) { i in
+                    let d = abs(Double(i) - Double(count) / 2) / (Double(count) / 2)
+                    let jitter = 0.55 + Double((i &* 37) % 100) / 110.0
+                    let h = active
+                        ? max(4, Double(level) * 58 * (1 - d * 0.65) * jitter)
+                        : 4
+                    Capsule()
+                        .fill(active ? AnyShapeStyle(P.brand) : AnyShapeStyle(P.border))
+                        .frame(width: 4, height: h)
+                        .animation(.linear(duration: 0.08), value: level)
+                }
             }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
+        .frame(minWidth: 0, maxWidth: .infinity)
     }
 }
 

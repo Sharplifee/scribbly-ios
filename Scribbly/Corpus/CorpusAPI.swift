@@ -258,7 +258,7 @@ enum CorpusAPI {
         guard let http = resp as? HTTPURLResponse,
               let range = http.value(forHTTPHeaderField: "content-range"),
               let total = range.split(separator: "/").last,
-              let n = Int(total) else { return 0 }
+              let n = Int(total) else { throw URLError(.badServerResponse) }
         return n
     }
 
