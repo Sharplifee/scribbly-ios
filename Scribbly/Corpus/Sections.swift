@@ -614,7 +614,9 @@ struct IngestSection: View {
                                     Text("· \(progressSkipped) skipped").font(.system(size: 12)).foregroundColor(.yellow)
                                 }
                                 if progressFailed > 0 {
-                                    Text("· \(progressFailed) failed").font(.system(size: 12)).foregroundColor(.orange)
+                                    NavigationLink { FailedSection().background(P.bg.ignoresSafeArea()).navigationTitle("Didn't work").navigationBarTitleDisplayMode(.inline) } label: {
+                                        Text("· \(progressFailed) failed ›").font(.system(size: 12)).foregroundColor(.orange)
+                                    }.buttonStyle(.plain)
                                 }
                                 Spacer()
                                 if progressActive {
@@ -749,6 +751,10 @@ struct IngestSection: View {
         guard !urls.isEmpty else { return }
         let payload = urls.count == 1 ? urls[0] : urls.joined(separator: "\n")
         let mode = (urls.count == 1 && isChannelOrPlaylist(urls[0])) ? 0 : 1
+        // Submitted = the field resets immediately (restored only if the request errors out).
+        let original = text
+        text = ""
+        pasteFocused = false
         do {
             if mode == 0 {
                 // Channel / playlist: resolve -> preview with countdown -> queue.
@@ -828,7 +834,7 @@ struct IngestSection: View {
                 status = "Queued \(n) YouTube link(s)." + podcastNote + otherNote
                 startProgress(collection: cid, total: n)
             }
-        } catch { status = error.localizedDescription }
+        } catch { status = error.localizedDescription; if text.isEmpty { text = original } }
     }
 
     /// Stops a running batch: everything still queued is parked server-side;

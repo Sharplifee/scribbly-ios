@@ -23,7 +23,7 @@ enum CorpusAPI {
     /// Anon key — client-scoped, same key the web app ships in plain JS.
     static let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxidmFvc3lmaWtrcHZjd2tzaXBoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwMDg0MDksImV4cCI6MjA5MDU4NDQwOX0.Gh9whjmUPz4rdKYr5yo8ZHS0nSNpkQUOwdIladX6mG4"
 
-    private static var restHeaders: [String: String] {
+    static var restHeaders: [String: String] {
         ["apikey": anonKey, "Authorization": "Bearer \(anonKey)"]
     }
 

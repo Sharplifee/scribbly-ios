@@ -65,6 +65,9 @@ struct MoreSection: View {
                 tap(icon: "square.stack.fill", title: "Collections", sub: "Every batch you've queued, with progress.", go: .collections)
                 tap(icon: "sparkle.magnifyingglass", title: "Query", sub: "Ask a question across everything in the library.", go: .query)
                 tap(icon: "waveform.path.ecg", title: "Activity", sub: "Everything processing right now — pause, resume, retry, or cancel.", badge: up.pendingCount, go: .jobs)
+                row(icon: "exclamationmark.triangle.fill", title: "Didn't work", sub: "Every video, link or recording that failed — see why, retry, or remove.") {
+                    FailedSection().background(P.bg.ignoresSafeArea()).navigationTitle("Didn't work").navigationBarTitleDisplayMode(.inline)
+                }
                 tap(icon: "applewatch", title: "Apple Watch", sub: "Record on the wrist; it lands here with the same place title.", go: .watch)
                 tap(icon: "gearshape.fill", title: "Settings", sub: "Permissions, recording, storage, server status.", go: .settings)
             }
