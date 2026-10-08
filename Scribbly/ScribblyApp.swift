@@ -270,14 +270,7 @@ struct RecordBar: View {
                 }
                 // Finish — the ONLY thing that ends a recording
                 Button {
-                    rec.finish { url, dur in
-                        guard let url else { return }
-                        let appending = rec.appendTo != nil
-                        up.upload(fileURL: url, duration: dur, location: rec.place, appendTo: rec.appendTo) { ok, msg in
-                            savedTitle = ok ? (appending ? "Added to the recording" : (msg ?? "Saved to your library")) : nil
-                        }
-                        rec.appendTo = nil
-                    }
+                    rec.finishAndUpload()
                 } label: {
                     circleButton(icon: "checkmark", tint: P.good, size: 30)
                 }

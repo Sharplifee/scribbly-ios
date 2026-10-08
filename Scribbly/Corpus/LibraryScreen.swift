@@ -57,12 +57,12 @@ struct LibraryScreen: View {
                 // stays at the bottom of EVERY screen, including pushed entries.
                 // While recording/uploading it replaces the tab bar.
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if recorderOwnsBar {
+                    // The recorder bar stacks ABOVE the tab bar, so every tab stays
+                    // reachable while recording (it used to replace the tab bar).
+                    VStack(spacing: 6) {
                         RecordBar(armToken: chrome.armToken, tab: s)
-                    } else {
-                        VStack(spacing: 0) {
-                            RecordBar(armToken: chrome.armToken, tab: s)   // idle: only the saved line, if any
-                            if !chrome.hideRecordBar && !chrome.keyboardUp { GlassTabBar(selection: $chrome.currentTab, onRecord: startRecording) }
+                        if !chrome.keyboardUp && (recorderOwnsBar || !chrome.hideRecordBar) {
+                            GlassTabBar(selection: $chrome.currentTab, onRecord: startRecording)
                         }
                     }
                 }
