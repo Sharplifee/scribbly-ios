@@ -26,6 +26,7 @@ struct RecordingActivityAttributes: ActivityAttributes {
 /// the recorder. The app sets the handler at launch; the widget never runs it.
 enum RecordingControl {
     @MainActor static var handler: ((String) -> Void)?
+    @MainActor static var isRecording: (() -> Bool)?
 }
 
 @available(iOS 17.0, *)

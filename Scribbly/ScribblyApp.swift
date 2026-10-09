@@ -6,6 +6,11 @@ import UIKit
 @main
 struct ScribblyApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    init() {
+        // Must exist before any view appears: Siri/Control Center/widgets can
+        // launch Scribbly in the background just to start a recording.
+        MainActor.assumeIsolated { RecordingLiveActivity.shared.bind() }
+    }
     var body: some Scene {
         WindowGroup {
             RootView()

@@ -18,9 +18,15 @@ final class RecordingLiveActivity {
     func bind() {
         guard !started else { return }
         started = true
+        RecordingControl.isRecording = { Recorder.shared.state == .recording }
         RecordingControl.handler = { action in
             let rec = Recorder.shared
             switch action {
+            case "start":
+                guard rec.state == .idle else { return }
+                rec.place = nil
+                PlaceTagger.shared.tag { Recorder.shared.place = $0 }
+                rec.start()
             case "toggle": rec.state == .recording ? rec.pause() : rec.resume()
             case "finish": rec.finishAndUpload()
             default: break
