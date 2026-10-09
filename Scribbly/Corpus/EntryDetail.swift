@@ -136,30 +136,65 @@ struct EntryDetail: View {
         }
     }
 
-    /// Opens a brand-new chat in the Claude app with this entry pre-loaded.
-    /// claude.ai/new?q= is capped ~14k chars, so long transcripts send the
-    /// summary instead of a truncated transcript.
-    /// One body, several destinations. Claude/ChatGPT/Grok take a prompt in the
-    /// URL (?q= — all three verified 2026-09); Codex has no prefill parameter,
-    /// so the body is put on the clipboard and Codex is opened for a paste.
-    private func discussionBody(_ e: Entry, cap: Int) -> String {
-        let transcript = e.transcript ?? ""
-        if transcript.count <= cap {
-            return "Here's a transcript titled \"\(e.title)\" from my Scribbly library. Let's discuss it.\n\n\(transcript)"
-        }
-        return "Here's a summary of \"\(e.title)\" from my Scribbly library (the full transcript is \(transcript.count) characters, too long to paste). Let's discuss it.\n\n\(e.summary ?? "")"
+    /// Send to Claude / GPT / Grok: opens a NEW chat in that app/site with the
+    /// COMPLETE transcript. If the whole thing fits in the chat link it goes in
+    /// directly; if it's too long for that site's link limit (Grok's is ~7,700
+    /// characters, measured 2026-10-09), the chat gets a link to the full
+    /// plain-text transcript plus as much of it inline as fits — never a
+    /// summary — and the full text is also put on the clipboard.
+    private func fullBody(_ e: Entry) -> String {
+        "Here's the full transcript of \"\(e.title)\" from my Scribbly library (\(e.date ?? "")). Let's discuss it.\n\n\(e.transcript ?? "")"
+    }
+
+    private func chatURL(_ dest: Destination, _ text: String) -> URL? {
+        var comps = URLComponents(string: dest.base)!
+        comps.queryItems = [URLQueryItem(name: "q", value: text)]
+        return comps.url
     }
 
     private func send(_ e: Entry, to dest: Destination) {
-        switch dest {
-        case .claude, .chatgpt, .grok:
-            var comps = URLComponents(string: dest.base)!
-            comps.queryItems = [URLQueryItem(name: "q", value: discussionBody(e, cap: dest.cap))]
-            if let url = comps.url { UIApplication.shared.open(url) }
-        case .codex:
-            UIPasteboard.general.string = discussionBody(e, cap: 60_000)
+        let full = fullBody(e)
+        if dest == .codex {
+            UIPasteboard.general.string = full
             if let url = URL(string: dest.base) { UIApplication.shared.open(url) }
+            return
         }
+        // Everything fits → paste it all, done.
+        if let url = chatURL(dest, full), url.absoluteString.count <= dest.cap {
+            UIApplication.shared.open(url); return
+        }
+        UIPasteboard.general.string = full
+        Task { @MainActor in
+            let link = await shareLink(e.id)
+            let words = (e.transcript ?? "").split { $0 == " " || $0 == "\n" }.count
+            let head = link.map {
+                "Read the COMPLETE transcript of \"\(e.title)\" (\(words) words) from my Scribbly library here: \($0) — read all of it before answering. It's also below, as much as fits in this message:\n\n"
+            } ?? "Here's the transcript of \"\(e.title)\" from my Scribbly library (the full text is on my clipboard; I'll paste the rest):\n\n"
+            // Fit as much transcript as the site's link limit allows.
+            let transcript = e.transcript ?? ""
+            var lo = 0, hi = transcript.count
+            while lo < hi {
+                let mid = (lo + hi + 1) / 2
+                let candidate = head + String(transcript.prefix(mid)) + "…"
+                if let u = chatURL(dest, candidate), u.absoluteString.count <= dest.cap { lo = mid } else { hi = mid - 1 }
+            }
+            let text = head + String(transcript.prefix(lo)) + (lo < transcript.count ? "…" : "")
+            if let url = chatURL(dest, text) { _ = await UIApplication.shared.open(url) }
+        }
+    }
+
+    /// Unguessable link to the full plain-text transcript (Sharp's Cloud Computer).
+    private func shareLink(_ entryID: String) async -> String? {
+        let base = CorpusAPI.voiceIngestURL.replacingOccurrences(of: "/upload", with: "")
+        guard let u = URL(string: base + "/share") else { return nil }
+        var req = URLRequest(url: u)
+        req.httpMethod = "POST"; req.timeoutInterval = 8
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["entryId": entryID])
+        guard let (d, _) = try? await URLSession.shared.data(for: req),
+              let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let t = j["token"] as? String else { return nil }
+        return base + "/s/" + t
     }
 
     private enum Destination: String, CaseIterable, Identifiable {
@@ -173,12 +208,14 @@ struct EntryDetail: View {
             case .codex:   return "https://chatgpt.com/codex"
             }
         }
-        /// URL length ceilings differ per site; over the cap the summary is sent.
+        /// Max length of the whole chat URL (percent-encoded) per site. Grok
+        /// measured: 200 OK up to ~7,700 chars, 431 above — kept under that
+        /// with headroom for cookies. Over the cap → link + as much as fits.
         var cap: Int {
             switch self {
             case .claude:  return 13_000
             case .chatgpt: return 8_000
-            case .grok:    return 2_000
+            case .grok:    return 6_000
             case .codex:   return 0
             }
         }
