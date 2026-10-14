@@ -129,6 +129,13 @@ jobs:
           path: ${{ runner.temp }}/export/*.ipa
           retention-days: 30
 
+      - name: Keep dSYMs (symbolicate crash reports sent to the server)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Scribbly-dSYMs
+          path: ${{ runner.temp }}/Scribbly.xcarchive/dSYMs
+          retention-days: 90
+
       - name: Upload to TestFlight
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}

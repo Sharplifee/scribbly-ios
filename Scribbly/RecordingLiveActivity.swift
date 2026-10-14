@@ -21,6 +21,7 @@ final class RecordingLiveActivity {
         RecordingControl.isRecording = { Recorder.shared.state == .recording }
         RecordingControl.handler = { action in
             let rec = Recorder.shared
+            CrashReporter.shared.add("control \(action) (state \(rec.state))")
             switch action {
             case "start":
                 guard rec.state == .idle else { return }
@@ -68,8 +69,13 @@ final class RecordingLiveActivity {
             if let a = Activity<RecordingActivityAttributes>.activities.first {
                 Task { await a.update(content) }
             } else if ActivityAuthorizationInfo().areActivitiesEnabled {
-                _ = try? Activity.request(attributes: RecordingActivityAttributes(title: "Scribbly"),
-                                          content: content, pushType: nil)
+                do {
+                    _ = try Activity.request(attributes: RecordingActivityAttributes(title: "Scribbly"),
+                                             content: content, pushType: nil)
+                    CrashReporter.shared.add("live activity started")
+                } catch {
+                    CrashReporter.shared.add("live activity request failed: \(error.localizedDescription)")
+                }
             }
         case .finishing, .idle:
             for a in Activity<RecordingActivityAttributes>.activities {

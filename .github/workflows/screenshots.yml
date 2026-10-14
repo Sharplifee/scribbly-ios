@@ -27,24 +27,53 @@ jobs:
           rm -rf "$APP/PlugIns" "$APP/Watch"          # unsigned appex/watch can't be placeholdered on the simulator
           xcrun simctl install $UDID "$APP"
           xcrun simctl privacy $UDID grant microphone com.connor.scribbly || true
-      - name: Screenshot each page
+      - name: Crash hunt — drive every flow, check the process survives
         run: |
-          mkdir -p shots
-          shot() { # name, env assignments...
-            name=$1; shift
+          mkdir -p shots crashes
+          alive() { xcrun simctl spawn $UDID launchctl list 2>/dev/null | grep -q 'UIKitApplication:com.connor.scribbly' && echo ALIVE || echo DEAD; }
+          step() { # name sleep env...
+            name=$1; secs=$2; shift 2
             xcrun simctl terminate $UDID com.connor.scribbly 2>/dev/null || true
             env "$@" xcrun simctl launch $UDID com.connor.scribbly >/dev/null
-            sleep 14
-            xcrun simctl io $UDID screenshot shots/$name.png
+            sleep $secs
+            xcrun simctl io $UDID screenshot shots/$name.png >/dev/null 2>&1 || true
+            echo "$name: $(alive)" | tee -a crashes/summary.txt
           }
-          shot home        SIMCTL_CHILD_SCRIBBLY_TAB=home
-          shot library     SIMCTL_CHILD_SCRIBBLY_TAB=library
-          shot groups      SIMCTL_CHILD_SCRIBBLY_TAB=groups
-          shot more        SIMCTL_CHILD_SCRIBBLY_TAB=more
-          shot collections SIMCTL_CHILD_SCRIBBLY_MORE=collections
-          shot settings    SIMCTL_CHILD_SCRIBBLY_MORE=settings
-          shot search      SIMCTL_CHILD_SCRIBBLY_TAB=library SIMCTL_CHILD_SCRIBBLY_SEARCH=chase
-          shot entry       SIMCTL_CHILD_SCRIBBLY_ENTRY=voice_1789579956113
-          shot recording   SIMCTL_CHILD_SCRIBBLY_REC=1
+          step home        14 SIMCTL_CHILD_SCRIBBLY_TAB=home
+          step library     12 SIMCTL_CHILD_SCRIBBLY_TAB=library
+          step groups      10 SIMCTL_CHILD_SCRIBBLY_TAB=groups
+          step more         8 SIMCTL_CHILD_SCRIBBLY_TAB=more
+          step activity    16 SIMCTL_CHILD_SCRIBBLY_MORE=activity
+          step query        8 SIMCTL_CHILD_SCRIBBLY_MORE=query
+          step collections 10 SIMCTL_CHILD_SCRIBBLY_MORE=collections
+          step settings     8 SIMCTL_CHILD_SCRIBBLY_MORE=settings
+          step search      12 SIMCTL_CHILD_SCRIBBLY_TAB=library SIMCTL_CHILD_SCRIBBLY_SEARCH=chase
+          step entry       12 SIMCTL_CHILD_SCRIBBLY_ENTRY=voice_1789579956113
+          step recording   12 SIMCTL_CHILD_SCRIBBLY_REC=1
+          # record → leave the app (Live Activity path) → come back → still recording?
+          xcrun simctl launch $UDID com.apple.Preferences >/dev/null; sleep 10
+          echo "rec-backgrounded: $(alive)" | tee -a crashes/summary.txt
+          xcrun simctl launch $UDID com.connor.scribbly >/dev/null; sleep 6
+          xcrun simctl io $UDID screenshot shots/rec-return.png >/dev/null 2>&1 || true
+          echo "rec-return: $(alive)" | tee -a crashes/summary.txt
+          # record 8s then ✓ → finish → upload → Live Activity ends
+          step rec-finish  22 SIMCTL_CHILD_SCRIBBLY_REC=1 SIMCTL_CHILD_SCRIBBLY_REC_SECS=8
+          # deep link from widget / Control Center fallback, cold and warm
+          xcrun simctl terminate $UDID com.connor.scribbly 2>/dev/null || true
+          xcrun simctl openurl $UDID scribbly://record; sleep 12
+          xcrun simctl io $UDID screenshot shots/deeplink-cold.png >/dev/null 2>&1 || true
+          echo "deeplink-cold: $(alive)" | tee -a crashes/summary.txt
+          xcrun simctl openurl $UDID scribbly://record; sleep 6
+          echo "deeplink-warm: $(alive)" | tee -a crashes/summary.txt
+          sleep 3
+          cp ~/Library/Logs/DiagnosticReports/*Scribbly* crashes/ 2>/dev/null || true
+          cp ~/Library/Logs/DiagnosticReports/*scribbly* crashes/ 2>/dev/null || true
+          DATA=$(xcrun simctl get_app_container $UDID com.connor.scribbly data 2>/dev/null || true)
+          [ -n "$DATA" ] && cp -R "$DATA/Library/Application Support/crash" crashes/app-crash-dir 2>/dev/null || true
+          ls -la crashes; cat crashes/summary.txt
       - uses: actions/upload-artifact@v4
+        if: always()
         with: { name: shots, path: shots }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: crashes, path: crashes }

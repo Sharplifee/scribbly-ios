@@ -9,6 +9,7 @@ struct ScribblyApp: App {
     init() {
         // Must exist before any view appears: Siri/Control Center/widgets can
         // launch Scribbly in the background just to start a recording.
+        CrashReporter.shared.start()
         MainActor.assumeIsolated { RecordingLiveActivity.shared.bind() }
     }
     var body: some Scene {
@@ -68,6 +69,7 @@ struct RootView: View {
         }
         .onAppear { WatchBridge.shared.activate(); RecordingLiveActivity.shared.bind() }
         .onOpenURL { url in
+            CrashReporter.shared.add("open url \(url.scheme ?? "")://\(url.host ?? "") file=\(url.isFileURL)")
             if url.scheme == "scribbly" && url.host == "record" { arm(); return }
             // Files shared/opened into Scribbly (share sheet, Files app, AirDrop) → ingest.
             if url.isFileURL {

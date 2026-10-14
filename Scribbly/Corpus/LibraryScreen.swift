@@ -73,6 +73,7 @@ struct LibraryScreen: View {
         }
         .tint(P.accent)
         .onChange(of: chrome.currentTab) { newTab in
+            CrashReporter.shared.add("tab \(newTab.rawValue)")
             switch newTab {
             case .record: chrome.currentTab = lastRealTab; startRecording()
             case .collections, .query, .jobs, .settings, .watch: chrome.moreSub = newTab; chrome.currentTab = .more
@@ -85,7 +86,14 @@ struct LibraryScreen: View {
             if let t = env["SCRIBBLY_TAB"], let sec = Section(rawValue: t.capitalized) { chrome.currentTab = sec }
             if let m = env["SCRIBBLY_MORE"], let sec = Section(rawValue: m.capitalized) { chrome.moreSub = sec; chrome.currentTab = .more }
             if let id = env["SCRIBBLY_ENTRY"], !id.isEmpty { chrome.currentTab = .library; try? await Task.sleep(nanoseconds: 800_000_000); libPath.append(id) }
-            if env["SCRIBBLY_REC"] == "1" { try? await Task.sleep(nanoseconds: 1_500_000_000); startRecording() }
+            if env["SCRIBBLY_REC"] == "1" {
+                try? await Task.sleep(nanoseconds: 1_500_000_000); startRecording()
+                // QA: SCRIBBLY_REC_SECS=n finishes (✓) after n seconds, exercising finish → upload → Live Activity end.
+                if let s = env["SCRIBBLY_REC_SECS"], let n = UInt64(s) {
+                    try? await Task.sleep(nanoseconds: n * 1_000_000_000)
+                    Recorder.shared.finishAndUpload()
+                }
+            }
             await store.loadCounts()
         }
     }
