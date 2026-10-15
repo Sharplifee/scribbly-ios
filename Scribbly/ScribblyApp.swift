@@ -62,10 +62,13 @@ struct RootView: View {
     var body: some View {
         ZStack {
             P.bg.ignoresSafeArea()
-            // Native tab shell. The recorder lives in the system's bottom
-            // accessory slot (the "mini player" position above the tab bar) on
-            // iOS 26; older systems get it as a safe-area inset above the tabs.
+            // Any size: iPhone portrait/landscape, iPad full screen, Split View,
+            // Slide Over, Stage Manager windows. Below 900pt the app fills the
+            // window; wider than that it stays a comfortable reading column
+            // centred on the dark background (nav bars, lists, recorder, tab bar).
             LibraryScreen(initial: .home)
+                .frame(maxWidth: 900)
+                .frame(maxWidth: .infinity)
         }
         .onAppear { WatchBridge.shared.activate(); RecordingLiveActivity.shared.bind() }
         .onOpenURL { url in
