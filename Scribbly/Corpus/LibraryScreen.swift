@@ -65,6 +65,9 @@ struct LibraryScreen: View {
                             GlassTabBar(selection: $chrome.currentTab, onRecord: startRecording)
                         }
                     }
+                    // On iPad / wide windows the recorder + tab bar stay thumb-sized, centred.
+                    .frame(maxWidth: 620)
+                    .frame(maxWidth: .infinity)
                 }
                 .tabItem { Label(s.rawValue, systemImage: s.icon) }
                 .badge(badgeInt(for: s))
