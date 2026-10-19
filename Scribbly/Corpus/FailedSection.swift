@@ -5,12 +5,18 @@ import SwiftUI
 /// way to retry each one (or all of them) or remove it from the list.
 struct FailedSection: View {
     @StateObject private var model = FailedModel()
+    /// Groups the user expanded past the first few rows. Hundreds of rows with
+    /// three buttons each, built eagerly, froze the phone (watchdog kill, build 220 —
+    /// worst with Voice Control, which labels every button) — so the list is lazy
+    /// and each group shows a handful until asked for more.
+    @State private var expanded: Set<String> = []
+    private let preview = 5
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            LazyVStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text(model.loading ? "Loading…" : "\(model.total) didn't make it into your Library")
+                    Text(model.loading && model.total == 0 ? "Loading…" : "\(model.total) didn't make it into your Library")
                         .font(.system(size: 13)).foregroundColor(P.textSec)
                     Spacer()
                     if model.total > 0 {
@@ -28,21 +34,23 @@ struct FailedSection: View {
                 // Recordings / uploaded files that failed on the cloud computer
                 if !model.voice.isEmpty {
                     group(title: "RECORDINGS & FILES · \(model.voice.count)") {
-                        ForEach(model.voice) { j in
+                        ForEach(Array(model.voice.prefix(expanded.contains("voice") ? model.voice.count : preview))) { j in
                             item(title: j.title ?? "Recording", reason: FailedModel.plain(j.error ?? (j.state == "no_speech" ? "no speech" : "failed")), url: nil,
                                  retry: { await model.retryVoice(j.id) }, remove: { await model.removeVoice(j.id) })
                         }
+                        moreButton(id: "voice", count: model.voice.count)
                     }
                 }
 
                 // YouTube videos, grouped by the batch they came from
                 ForEach(model.groups, id: \.id) { g in
                     group(title: "\(g.name.uppercased()) · \(g.rows.count)", retryAll: { await model.retryCollection(g.id) }) {
-                        ForEach(g.rows) { r in
+                        ForEach(Array(g.rows.prefix(expanded.contains(g.id) ? g.rows.count : preview))) { r in
                             item(title: r.title ?? r.video_id ?? "Video", reason: FailedModel.plain(r.error ?? r.status),
                                  url: r.video_id.flatMap { URL(string: "https://www.youtube.com/watch?v=\($0)") },
                                  retry: { await model.retry(ids: [r.id]) }, remove: { await model.remove(r.id) })
                         }
+                        moreButton(id: g.id, count: g.rows.count)
                     }
                 }
 
@@ -56,6 +64,16 @@ struct FailedSection: View {
         }
         .refreshable { await model.load() }
         .task { await model.load() }
+    }
+
+    @ViewBuilder private func moreButton(id: String, count: Int) -> some View {
+        if count > preview && !expanded.contains(id) {
+            Button { expanded.insert(id) } label: {
+                Text("Show all \(count)").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                    .frame(maxWidth: .infinity).padding(.vertical, 12)
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     private func group<C: View>(title: String, retryAll: (() async -> Void)? = nil, @ViewBuilder _ content: () -> C) -> some View {
@@ -109,7 +127,11 @@ final class FailedModel: ObservableObject {
 
     private let jobs = JobsModel()
 
+    private var inFlight = false
     func load() async {
+        guard !inFlight else { return }
+        inFlight = true
+        defer { inFlight = false }
         loading = true
         defer { loading = false }
         // Every failed/skipped queue row, paged past PostgREST's 1,000 cap.
@@ -137,8 +159,21 @@ final class FailedModel: ObservableObject {
             byCol[cid]!.rows.append(r)
         }
         groups = order.compactMap { byCol[$0] }
-        await jobs.refresh()
-        voice = jobs.voiceJobs.filter { $0.state == "failed" || $0.state == "no_speech" }
+        voice = await loadVoiceFailures()
+    }
+
+    /// Only the cloud computer's /jobs list — not JobsModel.refresh(), which also
+    /// counts every batch (one network call per collection) and kept this screen
+    /// on "Loading…" while it ran.
+    private func loadVoiceFailures() async -> [JobsModel.VoiceJob] {
+        var u = CorpusAPI.voiceIngestURL
+        if let r = u.range(of: "/upload", options: .backwards) { u = String(u[..<r.lowerBound]) }
+        guard let url = URL(string: u + "/jobs") else { return [] }
+        var req = URLRequest(url: url); req.timeoutInterval = 20
+        struct R: Decodable { let jobs: [JobsModel.VoiceJob] }
+        guard let (d, _) = try? await URLSession.shared.data(for: req),
+              let r = try? JSONDecoder().decode(R.self, from: d) else { return voice }
+        return r.jobs.filter { $0.state == "failed" || $0.state == "no_speech" }
     }
 
     func retry(ids: [String]) async {

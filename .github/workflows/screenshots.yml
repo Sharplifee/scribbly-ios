@@ -52,6 +52,9 @@ jobs:
           step settings     8 SIMCTL_CHILD_SCRIBBLY_MORE=settings
           step search      12 SIMCTL_CHILD_SCRIBBLY_TAB=library SIMCTL_CHILD_SCRIBBLY_SEARCH=chase
           step entry       12 SIMCTL_CHILD_SCRIBBLY_ENTRY=voice_1789579956113
+          step failed      25 SIMCTL_CHILD_SCRIBBLY_FAILED=1
+          xcrun simctl spawn $UDID launchctl list 2>/dev/null | grep -q scribbly && echo "failed-cpu: $(ps -A -o %cpu,comm | grep -i Scribbly | grep -v grep | head -1)" | tee -a crashes/summary.txt
+          step upload      10 SIMCTL_CHILD_SCRIBBLY_UPLOAD=1
           step recording   12 SIMCTL_CHILD_SCRIBBLY_REC=1
           # record → leave the app (Live Activity path) → come back → still recording?
           xcrun simctl launch $UDID com.apple.Preferences >/dev/null; sleep 10

@@ -58,6 +58,9 @@ enum P {
 
 struct RootView: View {
     @State private var armToken = 0
+    @ObservedObject private var files = FileIngestModel.shared
+    /// QA hook only: SCRIBBLY_FAILED=1 opens the "Didn't work" screen on launch.
+    @State private var qaFailed = ProcessInfo.processInfo.environment["SCRIBBLY_FAILED"] == "1"
 
     var body: some View {
         ZStack {
@@ -70,7 +73,30 @@ struct RootView: View {
                 .frame(maxWidth: 900)
                 .frame(maxWidth: .infinity)
         }
-        .onAppear { WatchBridge.shared.activate(); RecordingLiveActivity.shared.bind() }
+        // The Upload picker lives at the root, outside the TabView: presented from
+        // inside a tab page it never appeared (Upload "does nothing", build 220).
+        .fullScreenCover(isPresented: $qaFailed) {
+            NavigationStack { FailedSection().background(P.bg.ignoresSafeArea()).navigationTitle("Didn't work") }
+                .preferredColorScheme(.dark)
+        }
+        .fileImporter(isPresented: $files.picking,
+                      allowedContentTypes: FileIngestModel.contentTypes,
+                      allowsMultipleSelection: false) { result in
+            switch result {
+            case .success(let urls):
+                CrashReporter.shared.add("upload picked \(urls.count)")
+                if let url = urls.first { Task { await files.handle(url) } }
+            case .failure(let e):
+                CrashReporter.shared.add("upload picker failed: \(e.localizedDescription)")
+                files.lastError = e.localizedDescription
+            }
+        }
+        .onAppear { WatchBridge.shared.activate(); RecordingLiveActivity.shared.bind()
+            // QA hook: SCRIBBLY_UPLOAD=1 opens the Upload picker after launch.
+            if ProcessInfo.processInfo.environment["SCRIBBLY_UPLOAD"] == "1" {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { files.picking = true }
+            }
+        }
         .onOpenURL { url in
             CrashReporter.shared.add("open url \(url.scheme ?? "")://\(url.host ?? "") file=\(url.isFileURL)")
             if url.scheme == "scribbly" && url.host == "record" { arm(); return }

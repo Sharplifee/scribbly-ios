@@ -494,7 +494,7 @@ struct IngestSection: View {
                     }
 
                     HStack(spacing: 10) {
-                        Button { showPicker = true } label: {
+                        Button { pasteFocused = false; CrashReporter.shared.add("upload tapped"); files.picking = true } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "square.and.arrow.up").font(.system(size: 16, weight: .semibold))
                                 Text("Upload").font(.system(size: 15, weight: .semibold)).lineLimit(1).fixedSize()
@@ -664,13 +664,6 @@ struct IngestSection: View {
                         }
                         .padding(14).background(P.surface.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius: 14))
                         .padding(.horizontal, 16)
-                    }
-                }
-                .fileImporter(isPresented: $showPicker,
-                              allowedContentTypes: FileIngestModel.contentTypes,
-                              allowsMultipleSelection: false) { result in
-                    if case .success(let urls) = result, let url = urls.first {
-                        Task { await files.handle(url) }
                     }
                 }
 
