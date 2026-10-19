@@ -1,6 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import AVFoundation
+import PhotosUI
+import CoreTransferable
 
 /// Picks an audio OR video file and sends it through the same
 /// transcribe-and-summarize path a live recording uses.
@@ -17,6 +19,8 @@ import AVFoundation
 final class FileIngestModel: ObservableObject {
     static let shared = FileIngestModel()
     @Published var picking = false
+    /// Photos library picker (videos). Photos never appear in the Files picker.
+    @Published var pickingPhotos = false
     @Published var working = false
     @Published var status: String?
     @Published var lastError: String?
@@ -48,7 +52,9 @@ final class FileIngestModel: ObservableObject {
     private func prepare(_ url: URL) async throws -> (URL, String, String, Bool) {
         let ext = url.pathExtension.lowercased()
         let base = url.deletingPathExtension().lastPathComponent
-        let isVideo = ["mp4", "mov", "m4v", "webm"].contains(ext)
+        // Any video container (mp4, mov, m4v, hevc, 3gp, avi, mkv, webm…), by UTType not a hand list.
+        let type = UTType(filenameExtension: ext)
+        let isVideo = type?.conforms(to: .movie) == true || ["mkv", "webm", "avi", "3gp", "3g2", "mts", "m2ts", "ts", "wmv", "flv"].contains(ext)
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
 
         // Audio, or small video: copy into our sandbox FIRST. The picker URL is
@@ -70,8 +76,35 @@ final class FileIngestModel: ObservableObject {
 
         // Large video: extract audio to m4a to avoid uploading the video stream.
         status = "Extracting audio from video…"
-        let m4a = try await extractAudio(from: url)
-        return (m4a, "audio/m4a", base, true)
+        if let m4a = try? await extractAudio(from: url) {
+            return (m4a, "audio/m4a", base, true)
+        }
+        // A container AVFoundation can't read (mkv, avi, wmv…): send it whole —
+        // the server's ffmpeg pulls the audio out.
+        status = "Preparing video…"
+        let local = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pick-\(UUID().uuidString).\(ext)")
+        try FileManager.default.copyItem(at: url, to: local)
+        return (local, mime(for: ext), base, true)
+    }
+
+    /// A video chosen from the Photos library: copy it out, then the same path as Files.
+    func handlePhoto(_ item: PhotosPickerItem) async {
+        working = true; lastError = nil; status = "Getting the video from Photos…"
+        CrashReporter.shared.add("photos picked")
+        do {
+            guard let movie = try await item.loadTransferable(type: PickedMovie.self) else {
+                throw NSError(domain: "Ingest", code: 3, userInfo: [NSLocalizedDescriptionKey:
+                    "Photos didn't hand over that video. If it's in iCloud, open it in Photos once so it downloads, then try again."])
+            }
+            working = false
+            await handle(movie.url)
+            try? FileManager.default.removeItem(at: movie.url)
+        } catch {
+            working = false
+            lastError = error.localizedDescription
+            status = nil
+        }
     }
 
     private func extractAudio(from url: URL) async throws -> URL {
@@ -91,7 +124,11 @@ final class FileIngestModel: ObservableObject {
     }
 
     private func mime(for ext: String) -> String {
+        if let m = UTType(filenameExtension: ext)?.preferredMIMEType, !m.isEmpty { return m }
         switch ext {
+        case "mkv": return "video/x-matroska"
+        case "opus", "ogg", "oga": return "audio/ogg"
+        case "flac": return "audio/flac"
         case "mp3": return "audio/mpeg"
         case "wav": return "audio/wav"
         case "m4a", "aac": return "audio/m4a"
@@ -106,7 +143,12 @@ final class FileIngestModel: ObservableObject {
     /// normalize. The box runs ffmpeg on whatever arrives, so we accept broadly
     /// (all audio + all movie/video UTTypes) rather than a hand-picked list.
     static var contentTypes: [UTType] {
-        [.audio, .mpeg4Audio, .mp3, .wav, .aiff, .movie, .mpeg4Movie, .quickTimeMovie, .video, .mpeg2Video, .avi]
+        var t: [UTType] = [.audiovisualContent, .audio, .mpeg4Audio, .mp3, .wav, .aiff, .movie, .mpeg4Movie,
+                           .quickTimeMovie, .video, .mpeg2Video, .avi]
+        for ext in ["mkv", "webm", "flac", "ogg", "opus", "amr", "caf", "3gp", "wma", "wmv", "aac", "m4b"] {
+            if let u = UTType(filenameExtension: ext) { t.append(u) }
+        }
+        return t
     }
 }
 
@@ -117,6 +159,20 @@ enum IngestError: LocalizedError {
         switch self {
         case .exportFailed: return "Could not extract audio from that video."
         case .server(let c, let m): return "Server \(c): \(m.prefix(160))"
+        }
+    }
+}
+
+/// A Photos video, copied into our sandbox so it can be read after the picker closes.
+struct PickedMovie: Transferable {
+    let url: URL
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .movie) { SentTransferredFile($0.url) } importing: { received in
+            let ext = received.file.pathExtension.isEmpty ? "mov" : received.file.pathExtension
+            let dst = FileManager.default.temporaryDirectory
+                .appendingPathComponent("photos-\(UUID().uuidString).\(ext)")
+            try FileManager.default.copyItem(at: received.file, to: dst)
+            return PickedMovie(url: dst)
         }
     }
 }

@@ -44,7 +44,7 @@ struct GroupsSection: View {
                 if q.isEmpty {
                     if !store.groups.isEmpty {
                         Text("\(store.groups.count) groups · \(fmt(store.groups.reduce(0){$0+$1.totalVideos})) videos")
-                            .font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).tracking(0.8)
+                            .monoLabel(10, color: P.textSec)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
                     }
                     ForEach(hits.map { $0.0 }) { group in
@@ -62,7 +62,7 @@ struct GroupsSection: View {
                         }
                     }
                     if hits.isEmpty {
-                        Text("No creators or collections match.").font(.system(size: 13)).foregroundColor(P.textDim).padding(30)
+                        Text("No creators or collections match.").font(.geist(size: 13)).foregroundColor(P.textDim).padding(30)
                     }
                 }
             }
@@ -81,23 +81,23 @@ struct GroupCard: View {
     var body: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(group.channel).font(.system(size: 22, weight: .bold)).foregroundColor(.white)
+                Text(group.channel).font(.geist(size: 22, weight: .semibold)).foregroundColor(P.ink)
                 if let sub = ChannelSubtitles.map[group.channel] {
-                    Text(sub).font(.system(size: 11)).foregroundColor(P.textDim.opacity(0.85))
+                    Text(sub).font(.geist(size: 11)).foregroundColor(P.textDim.opacity(0.85))
                 }
                 Text("\(group.totalVideos) videos · \(group.batchCount) batches")
-                    .font(.system(size: 13)).foregroundColor(P.textSec)
-                Text(group.badgeRange).font(.system(size: 12)).foregroundColor(P.textDim)
+                    .font(.geist(size: 13)).foregroundColor(P.textSec)
+                Text(group.badgeRange).font(.geist(size: 12)).foregroundColor(P.textDim)
             }
             Spacer()
             VStack(spacing: 2) {
-                Text("\(group.totalVideos)").font(.system(size: 26, weight: .bold)).foregroundColor(.white)
-                Text("videos").font(.system(size: 11)).foregroundColor(P.textDim)
+                Text("\(group.totalVideos)").font(.geist(size: 26, weight: .semibold)).foregroundColor(P.ink)
+                Text("videos").font(.geist(size: 11)).foregroundColor(P.textDim)
             }
         }
         .padding(16)
-        .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
+        .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
         .padding(.horizontal, 16)
     }
 }
@@ -121,7 +121,7 @@ struct GroupDetail: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Reassign") { showReassign = true }
-                    .font(.system(size: 14, weight: .semibold)).foregroundColor(P.accent)
+                    .font(.geist(size: 14, weight: .semibold)).foregroundColor(P.accent)
             }
         }
         .sheet(isPresented: $showReassign) {
@@ -153,9 +153,9 @@ struct ReassignSheet: View {
                             onPick(g.channel); dismiss()
                         } label: {
                             HStack {
-                                Text(g.channel).foregroundColor(.white)
+                                Text(g.channel).foregroundColor(P.ink)
                                 Spacer()
-                                Text("\(g.totalVideos)").foregroundColor(P.textSec).font(.system(size: 13))
+                                Text("\(g.totalVideos)").foregroundColor(P.textSec).font(.geist(size: 13))
                             }
                         }
                     }
@@ -233,7 +233,7 @@ struct CollectionsSection: View {
                             }
                         }
                     }
-                    if grouped.isEmpty { Text("No collections match.").font(.system(size: 13)).foregroundColor(P.textDim).padding(30) }
+                    if grouped.isEmpty { Text("No collections match.").font(.geist(size: 13)).foregroundColor(P.textDim).padding(30) }
                 }
             }.padding(.vertical, 8)
         }
@@ -248,26 +248,26 @@ struct CollectionCard: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    Text(collection.badge).font(.system(size: 13, weight: .bold)).foregroundColor(P.accent)
+                    Text(collection.badge).font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                         .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(P.accent.opacity(0.14)).clipShape(RoundedRectangle(cornerRadius: 7))
-                    Text(collection.displayName).font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.white).lineLimit(1)
+                        .background(P.accent.opacity(0.14)).clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    Text(collection.displayName).font(.geist(size: 17, weight: .semibold))
+                        .foregroundColor(P.ink).lineLimit(1)
                 }
                 if let ch = collection.channel, !ch.isEmpty, ch != collection.displayName {
-                    Text("↳ \(ch)").font(.system(size: 13)).foregroundColor(P.textSec)
+                    Text("↳ \(ch)").font(.geist(size: 13)).foregroundColor(P.textSec)
                 }
                 Text("\(collection.saved_videos ?? 0) saved · \(collection.skipped_videos ?? 0) skipped")
-                    .font(.system(size: 12)).foregroundColor(P.textDim)
+                    .font(.geist(size: 12)).foregroundColor(P.textDim)
             }
             Spacer()
             VStack(spacing: 2) {
-                Text("\(collection.saved_videos ?? 0)").font(.system(size: 22, weight: .bold)).foregroundColor(.white)
-                Text("videos").font(.system(size: 11)).foregroundColor(P.textDim)
+                Text("\(collection.saved_videos ?? 0)").font(.geist(size: 22, weight: .semibold)).foregroundColor(P.ink)
+                Text("videos").font(.geist(size: 11)).foregroundColor(P.textDim)
             }
         }
-        .padding(16).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
+        .padding(16).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
         .padding(.horizontal, 16)
     }
 }
@@ -311,12 +311,12 @@ struct QuerySection: View {
                     TextField("Topic, phrase, keyword, concept…", text: $query)
                         .textInputAutocapitalization(.never).submitLabel(.search)
                         .onSubmit { Task { await run() } }
-                        .padding(12).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(P.border))
+                        .padding(12).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(P.border))
                     Button { Task { await run() } } label: {
-                        Text("Search").font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
+                        Text("Search").font(.geist(size: 15, weight: .semibold)).foregroundColor(P.ink)
                             .padding(.horizontal, 18).padding(.vertical, 12)
-                            .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 12))
+                            .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                 }
                 .padding(.horizontal, 16).padding(.top, 14)
@@ -326,10 +326,10 @@ struct QuerySection: View {
                     Text("No matches.").foregroundColor(P.textDim).padding(.top, 30)
                 } else if !ran {
                     VStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass").font(.system(size: 30)).foregroundColor(P.textDim)
-                        Text("Search your corpus").font(.system(size: 18, weight: .semibold))
+                        Image(systemName: "magnifyingglass").font(.geist(size: 30)).foregroundColor(P.textDim)
+                        Text("Search your corpus").font(.geist(size: 18, weight: .semibold))
                         Text("Searches titles, summaries, transcripts, and tags. Ranked by relevance.")
-                            .font(.system(size: 13)).foregroundColor(P.textSec).multilineTextAlignment(.center)
+                            .font(.geist(size: 13)).foregroundColor(P.textSec).multilineTextAlignment(.center)
                     }.padding(.top, 40).padding(.horizontal, 40)
                 }
 
@@ -358,13 +358,13 @@ struct HitRow: View {
     let query: String
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(hit.title).font(.system(size: 16, weight: .semibold)).foregroundColor(.white).lineLimit(2)
-            Text("\(hit.date ?? "") · \(hit.origin ?? "")").font(.system(size: 11)).foregroundColor(P.textDim)
-            Text(hit.snippet(for: query)).font(.system(size: 13)).foregroundColor(P.textSec).lineLimit(3)
+            Text(hit.title).font(.geist(size: 16, weight: .semibold)).foregroundColor(P.ink).lineLimit(2)
+            Text("\(hit.date ?? "") · \(hit.origin ?? "")").font(.geist(size: 11)).foregroundColor(P.textDim)
+            Text(hit.snippet(for: query)).font(.geist(size: 13)).foregroundColor(P.textSec).lineLimit(3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(P.border))
+        .padding(14).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(P.border))
         .padding(.horizontal, 16)
     }
 }
@@ -388,13 +388,13 @@ struct HitDestination: View {
             } else if loaded {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text(hit.title).font(.system(size: 22, weight: .bold)).foregroundColor(.white)
-                        Text("\(hit.date ?? "") · \(hit.origin ?? "")").font(.system(size: 12)).foregroundColor(P.textDim)
+                        Text(hit.title).font(.geist(size: 22, weight: .semibold)).foregroundColor(P.ink)
+                        Text("\(hit.date ?? "") · \(hit.origin ?? "")").font(.geist(size: 12)).foregroundColor(P.textDim)
                         if let s = hit.summary, !s.isEmpty {
-                            Text(s).font(.system(size: 15)).foregroundColor(P.textSec)
+                            Text(s).font(.geist(size: 15)).foregroundColor(P.textSec)
                         }
                         if let u = hit.source_url, let url = URL(string: u) {
-                            Link("Open source", destination: url).font(.system(size: 15, weight: .semibold)).foregroundColor(P.accent)
+                            Link("Open source", destination: url).font(.geist(size: 15, weight: .semibold)).foregroundColor(P.accent)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(18)
@@ -443,18 +443,33 @@ struct IngestSection: View {
             VStack(spacing: 14) {
 
                 // ── Hero, exactly as the web home: wordmark, tagline, one line.
-                VStack(spacing: 10) {
-                    HStack(spacing: 8) {
-                        Text("◈").foregroundColor(P.accent)
-                        Text("Scribbly").font(.system(size: 15, weight: .bold)).foregroundColor(P.textSec)
+                VStack(spacing: 16) {
+                    HStack(alignment: .firstTextBaseline) {
+                        HStack(alignment: .top, spacing: 1) {
+                            Text("Scribbly").font(.geist(size: 24, weight: .semibold)).tracking(-1.1).foregroundColor(P.ink)
+                            Text("®").font(.geist(size: 9)).foregroundColor(P.textSec)
+                        }
+                        Spacer()
+                        if let store, store.libraryCount > 0 {
+                            Text("\(store.libraryCount.formatted()) saved").monoLabel(10)
+                        }
                     }
-                    Text("One link.\nOne library.")
-                        .font(.system(size: 34, weight: .heavy)).tracking(-1.2)
-                        .multilineTextAlignment(.center).foregroundColor(.white)
-                    Text("Transcribed, summarized, searchable.")
-                        .font(.system(size: 14)).foregroundColor(P.textSec)
+                    .padding(.horizontal, 4)
+                    ZStack(alignment: .bottomLeading) {
+                        FinsBackground()
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("One link.\nOne library.")
+                                .font(.geist(size: 32, weight: .semibold)).tracking(-1.4).lineSpacing(-2)
+                                .foregroundColor(P.ink)
+                            Text("Transcribed · summarized · searchable").monoLabel(9.5, color: Color(hex: 0xD9DCDD))
+                        }
+                        .padding(20)
+                    }
+                    .frame(height: 196)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .accessibilityElement(children: .combine)
                 }
-                .padding(.top, 2).padding(.bottom, 4)
+                .padding(.horizontal, 16).padding(.top, 8)
                 .task { if let store { await store.loadRecent() } }
 
                 // ── ONE open tile. Paste anything — a channel grabs every video, one
@@ -462,10 +477,11 @@ struct IngestSection: View {
                 // Upload lives inside the tile as a button, not a second box.
                 let det = detect(text)
                 VStack(alignment: .leading, spacing: 10) {
+                    Text("Paste anything").monoLabel(9.5)
                     // Return = Go (same as Fetch) and the keyboard goes away; pasted blocks keep their lines.
-                    TextField("Paste anything here — a channel, a playlist, one link or twenty…", text: $text, axis: .vertical)
+                    TextField("A channel, a playlist, one link or twenty…", text: $text, axis: .vertical)
                         .lineLimit(3...8)
-                        .font(.system(size: 14)).foregroundColor(.white)
+                        .font(.geist(size: 14)).foregroundColor(P.ink)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .keyboardType(.URL)
                         .submitLabel(.go)
@@ -475,113 +491,113 @@ struct IngestSection: View {
                         .toolbar {
                             ToolbarItemGroup(placement: .keyboard) {
                                 Spacer()
-                                Button("Done") { pasteFocused = false }.font(.system(size: 15, weight: .semibold)).foregroundColor(P.accent)
+                                Button("Done") { pasteFocused = false }.font(.geist(size: 15, weight: .semibold)).foregroundColor(P.accent)
                             }
                         }
-                    .background(Color.black.opacity(0.35)).clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(text.isEmpty ? P.border : P.accent.opacity(0.55)))
+                    .background(Color.black).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(text.isEmpty ? P.border : P.accent.opacity(0.6)))
 
-                    if det.isEmpty {
-                        Color.clear.frame(height: 20)
-                    } else {
+                    if !det.isEmpty {
                         HStack(spacing: 6) {
                             ForEach(det, id: \.self) { d in
-                                Text(d).font(.system(size: 11, weight: .bold)).foregroundColor(P.accent)
-                                    .padding(.horizontal, 8).padding(.vertical, 3)
-                                    .background(P.accent.opacity(0.15)).clipShape(Capsule())
+                                Text(d).monoLabel(9.5, color: Color(hex: 0xF2A57F))
+                                    .padding(.horizontal, 8).frame(height: 20)
+                                    .background(P.accent.opacity(0.16)).clipShape(Capsule())
                             }
                         }
+                        .transition(.opacity)
                     }
 
                     HStack(spacing: 10) {
-                        Button { pasteFocused = false; CrashReporter.shared.add("upload tapped"); files.picking = true } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "square.and.arrow.up").font(.system(size: 16, weight: .semibold))
-                                Text("Upload").font(.system(size: 15, weight: .semibold)).lineLimit(1).fixedSize()
+                        // Upload: a video from Photos, or any audio/video file from Files.
+                        Menu {
+                            Button { pasteFocused = false; CrashReporter.shared.add("upload photos tapped"); files.pickingPhotos = true } label: {
+                                Label("Photo Library", systemImage: "photo.on.rectangle")
                             }
-                            .foregroundColor(.white).frame(maxWidth: .infinity).frame(height: 48)
-                            .background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 12))
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.14)))
+                            Button { pasteFocused = false; CrashReporter.shared.add("upload tapped"); files.picking = true } label: {
+                                Label("Files", systemImage: "folder")
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "square.and.arrow.up").font(.system(size: 15, weight: .medium))
+                                Text("Upload").lineLimit(1).fixedSize()
+                            }
+                            .font(.geist(size: 15, weight: .medium)).foregroundColor(P.ink)
+                            .frame(maxWidth: .infinity).frame(height: 46)
+                            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .sinkyGlass(RoundedRectangle(cornerRadius: 12, style: .continuous), interactive: true)
                         }
                         .frame(maxWidth: .infinity)
                         Button { pasteFocused = false; Task { await submit() } } label: {
-                            ZStack {
-                                if det.isEmpty {
-                                    RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06))
-                                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(P.border))
-                                } else {
-                                    RoundedRectangle(cornerRadius: 12).fill(P.brand)
-                                }
-                                Text(fetchLabel(det))
-                                    .font(.system(size: 15, weight: .bold)).foregroundColor(det.isEmpty ? P.textDim : .white)
-                            }
-                            .frame(maxWidth: .infinity).frame(height: 48)
+                            Text(fetchLabel(det))
                         }
+                        .buttonStyle(SinkyPrimaryButtonStyle(enabled: !det.isEmpty))
                         .frame(maxWidth: .infinity)
                         .disabled(det.isEmpty)
                     }
                 }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(P.surface)
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(P.border)))
+                .padding(14)
+                .animation(.easeOut(duration: 0.18), value: det.isEmpty)
+                .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(P.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(P.border)))
                 .padding(.horizontal, 16)
                 if files.working {
                     ProgressView(value: up.progress).tint(P.accent).padding(.horizontal, 32)
                 }
                 if let st = files.status {
-                    Text(st).font(.system(size: 13)).foregroundColor(P.textSec).multilineTextAlignment(.center).padding(.horizontal, 24)
+                    Text(st).font(.geist(size: 13)).foregroundColor(P.textSec).multilineTextAlignment(.center).padding(.horizontal, 24)
                 }
                 if let fe = files.lastError {
-                    Text(fe).font(.system(size: 13)).foregroundColor(P.danger).multilineTextAlignment(.center).padding(.horizontal, 24)
+                    Text(fe).font(.geist(size: 13)).foregroundColor(P.danger).multilineTextAlignment(.center).padding(.horizontal, 24)
                 }
 
                 SwiftUI.Group {
 
                     if progressActive && showWalkAway {
                         HStack(spacing: 8) {
-                            Image(systemName: "checkmark.seal.fill").foregroundColor(P.good).font(.system(size: 13))
+                            Image(systemName: "checkmark.seal.fill").foregroundColor(P.good).font(.geist(size: 13))
                             Text("Queue and walk away — processing runs on the server. Lock the phone, close the app; it keeps going.")
-                                .font(.system(size: 12)).foregroundColor(P.textSec)
+                                .font(.geist(size: 12)).foregroundColor(P.textSec)
                             Spacer()
                             Button { showWalkAway = false } label: {
-                                Image(systemName: "xmark").font(.system(size: 11)).foregroundColor(P.textDim)
+                                Image(systemName: "xmark").font(.geist(size: 11)).foregroundColor(P.textDim)
                             }
                         }
-                        .padding(10).background(P.surface.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(10).background(P.surface.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .padding(.horizontal, 16)
                     }
 
                     if !previewVideos.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text(previewName).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                            Text(previewName).font(.geist(size: 15, weight: .semibold)).foregroundColor(P.ink)
                             Text("\(previewVideos.count) to process" + (previewExisting > 0 ? " · \(previewExisting) already in your Library" : ""))
-                                .font(.system(size: 12)).foregroundColor(P.textSec)
+                                .font(.geist(size: 12)).foregroundColor(P.textSec)
                             ScrollView {
                                 VStack(alignment: .leading, spacing: 6) {
                                     ForEach(Array(previewVideos.prefix(60).enumerated()), id: \.offset) { i, v in
                                         Text("\(i + 1).  \((v["title"] as? String) ?? (v["videoId"] as? String) ?? "")")
-                                            .font(.system(size: 12)).foregroundColor(P.textSec).lineLimit(1)
+                                            .font(.geist(size: 12)).foregroundColor(P.textSec).lineLimit(1)
                                     }
                                     if previewVideos.count > 60 {
-                                        Text("… and \(previewVideos.count - 60) more").font(.system(size: 12)).foregroundColor(P.textSec)
+                                        Text("… and \(previewVideos.count - 60) more").font(.geist(size: 12)).foregroundColor(P.textSec)
                                     }
                                 }
                             }.frame(maxHeight: 190)
                             HStack(spacing: 10) {
                                 Button { cancelPreview() } label: {
-                                    Text("Cancel").font(.system(size: 14, weight: .semibold)).foregroundColor(.red)
+                                    Text("Cancel").font(.geist(size: 14, weight: .semibold)).foregroundColor(.red)
                                         .frame(maxWidth: .infinity).padding(.vertical, 11)
-                                        .background(Color.red.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 12))
+                                        .background(Color.red.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                 }
                                 Button { Task { await startQueue() } } label: {
                                     Text(countdown > 0 ? "Starting in \(countdown)…" : "Start now")
-                                        .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                                        .font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink)
                                         .frame(maxWidth: .infinity).padding(.vertical, 11)
-                                        .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 12))
+                                        .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                 }
                             }
                         }
-                        .padding(14).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 14))
+                        .padding(14).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .padding(.horizontal, 16)
                     }
 
@@ -594,7 +610,7 @@ struct IngestSection: View {
                                     HStack(spacing: 6) {
                                         ForEach(batchChips, id: \.label) { c in
                                             Text("\(c.label) · \(c.done)/\(c.total)")
-                                                .font(.system(size: 11, weight: .semibold))
+                                                .font(.geist(size: 11, weight: .semibold))
                                                 .foregroundColor(c.done >= c.total ? P.good : P.textSec)
                                                 .padding(.horizontal, 8).padding(.vertical, 4)
                                                 .background(P.surface).clipShape(Capsule())
@@ -604,18 +620,18 @@ struct IngestSection: View {
                             }
                             if progressActive && !nowProcessing.isEmpty {
                                 Text("Now: \(nowProcessing)")
-                                    .font(.system(size: 12)).foregroundColor(.white).lineLimit(1)
+                                    .font(.geist(size: 12)).foregroundColor(P.ink).lineLimit(1)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             HStack {
                                 Text(progressActive ? "Processing · \(progressDone)/\(progressTotal)" : "Finished · \(progressDone)/\(progressTotal)")
-                                    .font(.system(size: 12, weight: .semibold)).foregroundColor(P.textSec)
+                                    .font(.geist(size: 12, weight: .semibold)).foregroundColor(P.textSec)
                                 if progressSkipped > 0 {
-                                    Text("· \(progressSkipped) skipped").font(.system(size: 12)).foregroundColor(.yellow)
+                                    Text("· \(progressSkipped) skipped").font(.geist(size: 12)).foregroundColor(.yellow)
                                 }
                                 if progressFailed > 0 {
                                     NavigationLink { FailedSection().background(P.bg.ignoresSafeArea()).navigationTitle("Didn't work").navigationBarTitleDisplayMode(.inline) } label: {
-                                        Text("· \(progressFailed) failed ›").font(.system(size: 12)).foregroundColor(.orange)
+                                        Text("· \(progressFailed) failed ›").font(.geist(size: 12)).foregroundColor(.orange)
                                     }.buttonStyle(.plain)
                                 }
                                 Spacer()
@@ -623,7 +639,7 @@ struct IngestSection: View {
                                     Button {
                                         Task { await cancelBatch() }
                                     } label: {
-                                        Text("Cancel").font(.system(size: 12, weight: .semibold)).foregroundColor(.red)
+                                        Text("Cancel").font(.geist(size: 12, weight: .semibold)).foregroundColor(.red)
                                     }
                                     ProgressView().controlSize(.small).tint(P.accent)
                                 }
@@ -634,9 +650,9 @@ struct IngestSection: View {
                     if !progressActive && !skippedNoCaptions.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Skipped — no captions (\(skippedNoCaptions.count))")
-                                .font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                                .font(.geist(size: 13, weight: .semibold)).foregroundColor(P.ink)
                             ForEach(skippedNoCaptions.prefix(8), id: \.self) { v in
-                                Text(v["title"] ?? v["videoId"] ?? "").font(.system(size: 12)).foregroundColor(P.textSec).lineLimit(1)
+                                Text(v["title"] ?? v["videoId"] ?? "").font(.geist(size: 12)).foregroundColor(P.textSec).lineLimit(1)
                             }
                             HStack(spacing: 10) {
                                 Button {
@@ -644,9 +660,9 @@ struct IngestSection: View {
                                         .compactMap { $0["videoId"].map { "https://www.youtube.com/watch?v=\($0)" } }
                                         .joined(separator: "\n")
                                 } label: {
-                                    Text("Copy URLs").font(.system(size: 13, weight: .semibold)).foregroundColor(P.textSec)
+                                    Text("Copy URLs").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.textSec)
                                         .frame(maxWidth: .infinity).padding(.vertical, 10)
-                                        .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 10))
+                                        .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 }
                                 Button {
                                     Task {
@@ -656,19 +672,19 @@ struct IngestSection: View {
                                         startProgress(collection: cid, total: progressTotal)
                                     }
                                 } label: {
-                                    Text("Retry").font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                                    Text("Retry").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.ink)
                                         .frame(maxWidth: .infinity).padding(.vertical, 10)
-                                        .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 10))
+                                        .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 }
                             }
                         }
-                        .padding(14).background(P.surface.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius: 14))
+                        .padding(14).background(P.surface.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .padding(.horizontal, 16)
                     }
                 }
 
                 if let s = status {
-                    Text(s).font(.system(size: 13)).foregroundColor(P.textSec)
+                    Text(s).font(.geist(size: 13)).foregroundColor(P.textSec)
                         .multilineTextAlignment(.center).padding(.horizontal, 20)
                 }
                 if let store {
@@ -1006,7 +1022,7 @@ private struct RecentList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("RECENT ACTIVITY").font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).tracking(0.8)
+            Text("RECENT ACTIVITY").monoLabel(10, color: P.textSec)
             VStack(spacing: 0) {
                 // ── Live: what's processing right now
                 ForEach(up.pendingItems()) { item in
@@ -1033,7 +1049,7 @@ private struct RecentList: View {
                     HStack(spacing: 8) {
                         if store.recentError == nil { ProgressView().tint(P.accent) }
                         Text(store.recentError == nil ? "Loading…" : "Couldn't load recent entries — pull down to retry.")
-                            .font(.system(size: 13)).foregroundColor(P.textDim)
+                            .font(.geist(size: 13)).foregroundColor(P.textDim)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 18)
                 }
@@ -1043,13 +1059,13 @@ private struct RecentList: View {
                 }
                 Button { BottomChrome.shared.currentTab = .library } label: {
                     Text(store.libraryCount > 0 ? "See all \(store.libraryCount.formatted()) ›" : "See all ›")
-                        .font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                        .font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                         .frame(maxWidth: .infinity).padding(.vertical, 10)
                 }
             }
             .padding(.horizontal, 14)
-            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
+            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
         }
         .padding(.horizontal, 16)
         // Live feed: jobs every 5s, saved entries every 10s, while Home is on screen.
@@ -1075,8 +1091,8 @@ private struct RecentList: View {
             if spinning { ProgressView().tint(tint).scaleEffect(0.8).frame(width: 18).padding(.top, 2) }
             else { Image(systemName: icon).foregroundColor(tint).frame(width: 18).padding(.top, 2) }
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(2).multilineTextAlignment(.leading)
-                Text(sub).font(.system(size: 11)).foregroundColor(P.textDim).lineLimit(2)
+                Text(title).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink).lineLimit(2).multilineTextAlignment(.leading)
+                Text(sub).font(.geist(size: 11)).foregroundColor(P.textDim).lineLimit(2)
             }
             Spacer(minLength: 0)
         }
@@ -1101,8 +1117,8 @@ private struct RecentList: View {
     }
     private func row(_ e: Entry) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(e.title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(2).multilineTextAlignment(.leading)
-            Text(meta(e)).font(.system(size: 11)).foregroundColor(P.textDim)
+            Text(e.title).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink).lineLimit(2).multilineTextAlignment(.leading)
+            Text(meta(e)).font(.geist(size: 11)).foregroundColor(P.textDim)
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 11)
     }

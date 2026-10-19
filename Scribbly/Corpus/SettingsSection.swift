@@ -46,7 +46,7 @@ struct SettingsSection: View {
                 }
                 header("SEND TO")
                 card {
-                    HStack { Text("Default destination").foregroundColor(.white)
+                    HStack { Text("Default destination").foregroundColor(P.ink)
                         Spacer()
                         Picker("", selection: $defaultDestination) { ForEach(["Claude", "GPT", "Grok"], id: \.self) { Text($0) } }
                             .pickerStyle(.menu).tint(P.textDim)
@@ -80,16 +80,16 @@ struct SettingsSection: View {
     }
 
     private func header(_ t: String) -> some View {
-        Text(t).font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).tracking(0.8).padding(.top, 6)
+        Text(t).monoLabel(10, color: P.textSec).padding(.top, 6)
     }
     private func card<C: View>(@ViewBuilder _ c: () -> C) -> some View {
         VStack(spacing: 0) { c() }
             .padding(.horizontal, 14)
-            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
+            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
     }
     private func plainRow(_ l: String, _ v: String, good: Bool = false) -> some View {
-        HStack { Text(l).foregroundColor(.white); Spacer(); Text(v).foregroundColor(good ? P.good : P.textDim).font(.system(size: 14)) }
+        HStack { Text(l).foregroundColor(P.ink); Spacer(); Text(v).foregroundColor(good ? P.good : P.textDim).font(.geist(size: 14)) }
             .padding(.vertical, 12).overlay(Rectangle().fill(P.border).frame(height: 1), alignment: .bottom)
     }
     private func linkRow(_ l: String, _ v: String, good: Bool) -> some View {
@@ -98,11 +98,11 @@ struct SettingsSection: View {
         }.buttonStyle(.plain)
     }
     private func navRow(_ l: String) -> some View {
-        HStack { Text(l).foregroundColor(.white); Spacer(); Image(systemName: "chevron.right").foregroundColor(P.textDim) }
+        HStack { Text(l).foregroundColor(P.ink); Spacer(); Image(systemName: "chevron.right").foregroundColor(P.textDim) }
             .padding(.vertical, 12).overlay(Rectangle().fill(P.border).frame(height: 1), alignment: .bottom)
     }
     private func toggleRow(_ l: String, _ b: Binding<Bool>) -> some View {
-        Toggle(l, isOn: b).tint(P.good).foregroundColor(.white).padding(.vertical, 10)
+        Toggle(l, isOn: b).tint(P.good).foregroundColor(P.ink).padding(.vertical, 10)
             .overlay(Rectangle().fill(P.border).frame(height: 1), alignment: .bottom)
     }
 }
@@ -112,18 +112,18 @@ struct WatchInfoSection: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                Text("HOW IT WORKS").font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).tracking(0.8)
+                Text("HOW IT WORKS").monoLabel(10, color: P.textSec)
                 Text("Tap Record on the watch; it records on the wrist without the phone. Finish sends the file to this iPhone — queued until it's nearby — and it lands in the library with the same place title as a phone memo.")
-                    .font(.system(size: 14.5)).foregroundColor(P.textSec).lineSpacing(3)
+                    .font(.geist(size: 14.5)).foregroundColor(P.textSec).lineSpacing(3)
                     .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
-                Text("INSTALL").font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).tracking(0.8).padding(.top, 8)
+                    .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
+                Text("INSTALL").monoLabel(10, color: P.textSec).padding(.top, 8)
                 Text("Open the Watch app on this iPhone → Available Apps → Scribbly → Install.")
-                    .font(.system(size: 14)).foregroundColor(P.textSec)
+                    .font(.geist(size: 14)).foregroundColor(P.textSec)
                     .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
+                    .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
             }
             .padding(16)
         }

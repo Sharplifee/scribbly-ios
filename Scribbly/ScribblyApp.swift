@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import PhotosUI
 
 // MARK: - App entry
 
@@ -10,6 +11,7 @@ struct ScribblyApp: App {
         // Must exist before any view appears: Siri/Control Center/widgets can
         // launch Scribbly in the background just to start a recording.
         CrashReporter.shared.start()
+        SinkyAppearance.apply()
         MainActor.assumeIsolated { RecordingLiveActivity.shared.bind() }
     }
     var body: some Scene {
@@ -37,20 +39,27 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
-// MARK: - Palette (matches the web app)
+// MARK: - Palette (Sinky: true black, warm ink, copper + teal)
 
 enum P {
-    static let bg = Color(red: 0.02, green: 0.02, blue: 0.04)
-    static let surface = Color.white.opacity(0.045)
-    static let border = Color.white.opacity(0.09)
-    static let textSec = Color(red: 0.60, green: 0.63, blue: 0.68)
-    static let textDim = Color(red: 0.42, green: 0.44, blue: 0.50)
-    static let accent = Color(red: 0.66, green: 0.33, blue: 0.97)
-    static let magenta = Color(red: 0.75, green: 0.15, blue: 0.83)
-    static let danger = Color(red: 0.98, green: 0.45, blue: 0.52)
-    static let good = Color(red: 0.20, green: 0.83, blue: 0.60)
+    static let bg = Color.black
+    static let surface = Color(hex: 0x0E0F10)
+    static let surface2 = Color(hex: 0x16181A)
+    static let border = Color(hex: 0x24272A)
+    static let divider = Color(hex: 0x1A1C1E)
+    static let ink = Color(hex: 0xF3F2EE)
+    static let textSec = Color(hex: 0xA3A8AB)
+    static let textDim = Color(hex: 0x7C8285)
+    static let accent = Color(hex: 0xE8875A)      // copper
+    static let tan = Color(hex: 0xC9A27A)
+    static let teal = Color(hex: 0x4FA3AE)
+    /// Kept for existing call sites; Sinky's second colour is teal.
+    static let magenta = teal
+    static let danger = Color(hex: 0xF07167)
+    static let good = Color(hex: 0x6CC9A1)
+    /// Copper → tan → teal, the Sinky "rule".
     static var brand: LinearGradient {
-        LinearGradient(colors: [accent, magenta], startPoint: .topLeading, endPoint: .bottomTrailing)
+        LinearGradient(colors: [accent, tan, teal], startPoint: .leading, endPoint: .trailing)
     }
 }
 
@@ -59,6 +68,7 @@ enum P {
 struct RootView: View {
     @State private var armToken = 0
     @ObservedObject private var files = FileIngestModel.shared
+    @State private var photoItem: PhotosPickerItem?
     /// QA hook only: SCRIBBLY_FAILED=1 opens the "Didn't work" screen on launch.
     @State private var qaFailed = ProcessInfo.processInfo.environment["SCRIBBLY_FAILED"] == "1"
 
@@ -78,6 +88,14 @@ struct RootView: View {
         .fullScreenCover(isPresented: $qaFailed) {
             NavigationStack { FailedSection().background(P.bg.ignoresSafeArea()).navigationTitle("Didn't work") }
                 .preferredColorScheme(.dark)
+        }
+        // Videos from the Photos library (they never show up in the Files picker).
+        .photosPicker(isPresented: $files.pickingPhotos, selection: $photoItem, matching: .videos,
+                      preferredItemEncoding: .current)
+        .onChange(of: photoItem) { item in
+            guard let item else { return }
+            photoItem = nil
+            Task { await files.handlePhoto(item) }
         }
         .fileImporter(isPresented: $files.picking,
                       allowedContentTypes: FileIngestModel.contentTypes,
@@ -156,7 +174,7 @@ struct RecordBar: View {
             barBody
         } else if !isActive, tab == .home, chrome.currentTab == .home, let t = chrome.savedTitle {
             Label(t, systemImage: "checkmark.circle.fill")
-                .font(.system(size: 12)).foregroundColor(P.good)
+                .font(.geist(size: 12)).foregroundColor(P.good)
                 .padding(.horizontal, 20).padding(.bottom, 6).lineLimit(1)
         } else {
             EmptyView()
@@ -168,24 +186,24 @@ struct RecordBar: View {
             // The "saved" line shows on Home only, and never follows you around.
             if let t = savedTitle, !up.isUploading, chrome.currentTab == .home {
                 Label(t, systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 12)).foregroundColor(P.good)
+                    .font(.geist(size: 12)).foregroundColor(P.good)
                     .padding(.horizontal, 20).lineLimit(1)
             }
             if up.pendingCount > 0 && !up.isUploading {
                 Label("\(up.pendingCount) recording\(up.pendingCount == 1 ? "" : "s") waiting — tap to manage",
                       systemImage: "arrow.clockwise.circle")
-                    .font(.system(size: 12)).foregroundColor(.orange)
+                    .font(.geist(size: 12)).foregroundColor(.orange)
                     .onTapGesture { showPendingSheet = true }
             }
             if let e = rec.lastError ?? up.lastError {
                 VStack(spacing: 4) {
-                    Text(e).font(.system(size: 12)).foregroundColor(P.danger)
+                    Text(e).font(.geist(size: 12)).foregroundColor(P.danger)
                         .multilineTextAlignment(.center).padding(.horizontal, 24)
                     if e.localizedCaseInsensitiveContains("Microphone access") {
                         Button("Open Settings") {
                             if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) }
                         }
-                        .font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                        .font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                     }
                 }
             }
@@ -202,17 +220,13 @@ struct RecordBar: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(
-                Capsule().fill(.ultraThinMaterial)
-                    .overlay(Capsule().stroke(Color.white.opacity(0.10)))
-                    .shadow(color: .black.opacity(0.45), radius: 16, y: 8)
-            )
+            .sinkyGlass(Capsule())
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
             .animation(.spring(response: 0.3, dampingFraction: 0.88), value: isActive)
         }
         .padding(.top, 4)
-        .background(P.bg)
+        .sinkyHaptic(rec.state == .idle)
         .onChange(of: armToken) { _ in
             guard chrome.currentTab == tab else { return }
             if rec.state == .idle && !up.isUploading {
@@ -240,11 +254,10 @@ struct RecordBar: View {
         } label: {
             HStack(spacing: 10) {
                 ZStack {
-                    Circle().fill(P.brand).frame(width: 36, height: 36)
-                        .shadow(color: P.accent.opacity(0.45), radius: 10, y: 3)
-                    Image(systemName: "mic.fill").font(.system(size: 15)).foregroundColor(.white)
+                    Circle().fill(P.ink).frame(width: 36, height: 36)
+                    Circle().fill(P.accent).frame(width: 12, height: 12)
                 }
-                Text("Record").font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
+                Text("Record").font(.geist(size: 15, weight: .semibold)).foregroundColor(P.ink)
             }
             .frame(maxWidth: .infinity)
         }
@@ -255,8 +268,9 @@ struct RecordBar: View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(timeString)
-                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                Text(statusText).font(.system(size: 9, weight: .medium)).foregroundColor(statusColor)
+                    .font(.geist(size: 16, weight: .medium, design: .monospaced)).monospacedDigit()
+                    .foregroundColor(P.ink)
+                Text(statusText).monoLabel(8.5, color: statusColor)
             }
             .frame(width: 58, alignment: .leading)
             WaveBars(level: rec.level, active: rec.state == .recording).frame(height: 18)
@@ -269,7 +283,7 @@ struct RecordBar: View {
         VStack(spacing: 4) {
             ProgressView(value: up.progress).tint(P.accent)
             Text(up.stage.isEmpty ? (up.progress < 1 ? "Uploading…" : "Transcribing…") : up.stage)
-                .font(.system(size: 12, weight: .medium)).lineLimit(1)
+                .font(.geist(size: 12, weight: .medium)).lineLimit(1)
         }
     }
 
@@ -285,7 +299,7 @@ struct RecordBar: View {
 
     private var statusColor: Color {
         if rec.interrupted { return .orange }
-        return rec.state == .recording ? P.magenta : P.textDim
+        return rec.state == .recording ? P.accent : P.textDim
     }
 
     @ViewBuilder private var controls: some View {
@@ -323,7 +337,7 @@ struct RecordBar: View {
                 .overlay(Circle().stroke(P.border, lineWidth: 1))
                 .frame(width: size, height: size)
             Image(systemName: icon)
-                .font(.system(size: size * 0.34, weight: .semibold))
+                .font(.geist(size: size * 0.34, weight: .semibold))
                 .foregroundColor(tint)
         }
     }
@@ -348,7 +362,7 @@ struct WaveBars: View {
                         ? max(4, Double(level) * 58 * (1 - d * 0.65) * jitter)
                         : 4
                     Capsule()
-                        .fill(active ? AnyShapeStyle(P.brand) : AnyShapeStyle(P.border))
+                        .fill(active ? AnyShapeStyle(P.accent) : AnyShapeStyle(P.border))
                         .frame(width: 4, height: h)
                         .animation(.linear(duration: 0.08), value: level)
                 }
@@ -371,26 +385,26 @@ struct PendingRecoverySheet: View {
         NavigationStack {
             List {
                 if let e = uploader.lastError {
-                    Text(e).font(.system(size: 12)).foregroundColor(.orange)
+                    Text(e).font(.geist(size: 12)).foregroundColor(.orange)
                 }
                 ForEach(items) { item in
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(item.title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                        Text(item.title).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink)
                         Text("\(ByteCountFormatter.string(fromByteCount: Int64(item.bytes), countStyle: .file)) · \(item.createdAt.formatted(.relative(presentation: .named)))"
                              + (item.attempts > 0 ? " · \(item.attempts) attempt\(item.attempts == 1 ? "" : "s")" : ""))
-                            .font(.system(size: 12)).foregroundColor(P.textSec)
+                            .font(.geist(size: 12)).foregroundColor(P.textSec)
                         HStack(spacing: 14) {
                             Button("Retry") {
                                 uploader.resumePending(); dismiss()
-                            }.font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                            }.font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                             ShareLink(item: item.fileURL) {
-                                Text("Export file").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                                Text("Export file").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                             }
                             Button("Discard", role: .destructive) {
                                 uploader.discard(id: item.id)
                                 items = uploader.pendingItems()
                                 if items.isEmpty { dismiss() }
-                            }.font(.system(size: 13, weight: .semibold))
+                            }.font(.geist(size: 13, weight: .semibold))
                         }.buttonStyle(.borderless)
                     }.padding(.vertical, 4)
                 }

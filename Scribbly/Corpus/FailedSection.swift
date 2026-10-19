@@ -17,18 +17,18 @@ struct FailedSection: View {
             LazyVStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text(model.loading && model.total == 0 ? "Loading…" : "\(model.total) didn't make it into your Library")
-                        .font(.system(size: 13)).foregroundColor(P.textSec)
+                        .font(.geist(size: 13)).foregroundColor(P.textSec)
                     Spacer()
                     if model.total > 0 {
                         Button { Task { await model.retryAll() } } label: {
-                            Text("Retry all").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                            Text("Retry all").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                         }
                     }
                 }
                 .padding(.horizontal, 18)
 
                 if let m = model.message {
-                    Text(m).font(.system(size: 12)).foregroundColor(P.good).padding(.horizontal, 18)
+                    Text(m).font(.geist(size: 12)).foregroundColor(P.good).padding(.horizontal, 18)
                 }
 
                 // Recordings / uploaded files that failed on the cloud computer
@@ -56,7 +56,7 @@ struct FailedSection: View {
 
                 if !model.loading && model.total == 0 {
                     Text("Nothing failed. Everything you've added is in your Library.")
-                        .font(.system(size: 14)).foregroundColor(P.textDim)
+                        .font(.geist(size: 14)).foregroundColor(P.textDim)
                         .frame(maxWidth: .infinity).padding(.top, 40)
                 }
             }
@@ -69,7 +69,7 @@ struct FailedSection: View {
     @ViewBuilder private func moreButton(id: String, count: Int) -> some View {
         if count > preview && !expanded.contains(id) {
             Button { expanded.insert(id) } label: {
-                Text("Show all \(count)").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                Text("Show all \(count)").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
             }
             .buttonStyle(.plain)
@@ -79,30 +79,30 @@ struct FailedSection: View {
     private func group<C: View>(title: String, retryAll: (() async -> Void)? = nil, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(title).font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).tracking(0.8).lineLimit(1)
+                Text(title).monoLabel(10, color: P.textSec).lineLimit(1)
                 Spacer()
                 if let retryAll {
                     Button { Task { await retryAll() } } label: {
-                        Text("Retry these").font(.system(size: 12, weight: .semibold)).foregroundColor(P.accent)
+                        Text("Retry these").font(.geist(size: 12, weight: .semibold)).foregroundColor(P.accent)
                     }
                 }
             }
             VStack(spacing: 0) { content() }
                 .padding(.horizontal, 14)
-                .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
+                .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
         }
         .padding(.horizontal, 16)
     }
 
     private func item(title: String, reason: String, url: URL?, retry: @escaping () async -> Void, remove: @escaping () async -> Void) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(2)
-            Text(reason).font(.system(size: 12)).foregroundColor(.orange).lineLimit(3)
+            Text(title).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink).lineLimit(2)
+            Text(reason).font(.geist(size: 12)).foregroundColor(.orange).lineLimit(3)
             HStack(spacing: 16) {
-                Button { Task { await retry() } } label: { Text("Retry").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent) }
-                if let url { Link("Open video", destination: url).font(.system(size: 13, weight: .semibold)).foregroundColor(P.textSec) }
-                Button { Task { await remove() } } label: { Text("Remove").font(.system(size: 13, weight: .semibold)).foregroundColor(P.danger) }
+                Button { Task { await retry() } } label: { Text("Retry").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent) }
+                if let url { Link("Open video", destination: url).font(.geist(size: 13, weight: .semibold)).foregroundColor(P.textSec) }
+                Button { Task { await remove() } } label: { Text("Remove").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.danger) }
             }
             .buttonStyle(.plain)
             Divider().background(P.border).padding(.top, 6)

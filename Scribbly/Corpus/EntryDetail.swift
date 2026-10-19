@@ -24,8 +24,8 @@ struct EntryDetail: View {
         ScrollView {
             if let e = entry {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(e.title).font(.system(size: 22, weight: .bold)).foregroundColor(.white)
-                    Text("\(e.date ?? "") · \(e.displayType)").font(.system(size: 13)).foregroundColor(P.textDim)
+                    Text(e.title).font(.geist(size: 22, weight: .semibold)).foregroundColor(P.ink)
+                    Text("\(e.date ?? "") · \(e.displayType)").font(.geist(size: 13)).foregroundColor(P.textDim)
 
                     if !e.tagList.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -35,7 +35,7 @@ struct EntryDetail: View {
 
                     if let s = e.summary, !s.isEmpty {
                         sectionLabel("Summary")
-                        Text(s).font(.system(size: 15)).foregroundColor(P.textSec)
+                        Text(s).font(.geist(size: 15)).foregroundColor(P.textSec)
                     }
                     sectionLabel("Send to")
                     sendToClaudeButton(e)
@@ -43,19 +43,19 @@ struct EntryDetail: View {
                     // Copy · Export · Share · Delete
                     HStack {
                         Button { UIPasteboard.general.string = exportText(); copied = true } label: {
-                            Text(copied ? "Copied" : "Copy").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                            Text(copied ? "Copied" : "Copy").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                         }
                         Spacer()
                         ShareLink(item: exportText(), preview: SharePreview(e.title)) {
-                            Text("Export").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                            Text("Export").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                         }
                         Spacer()
                         ShareLink(item: URL(string: "https://getscribbly.vercel.app/?tab=library")!) {
-                            Text("Share").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                            Text("Share").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                         }
                         Spacer()
                         Button { confirmDelete = true } label: {
-                            Text("Delete").font(.system(size: 13, weight: .semibold)).foregroundColor(P.danger)
+                            Text("Delete").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.danger)
                         }
                     }
                     .padding(.vertical, 2)
@@ -73,18 +73,18 @@ struct EntryDetail: View {
                             HStack(spacing: 12) {
                                 ZStack {
                                     Circle().fill(P.brand).frame(width: 38, height: 38)
-                                    Image(systemName: "mic.fill").foregroundColor(.white).font(.system(size: 16, weight: .semibold))
+                                    Image(systemName: "mic.fill").foregroundColor(P.ink).font(.geist(size: 16, weight: .semibold))
                                 }
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Add to this recording").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                                    Text("Add to this recording").font(.geist(size: 15, weight: .semibold)).foregroundColor(P.ink)
                                     Text("Record more now — it's transcribed and appended to this transcript.")
-                                        .font(.system(size: 12)).foregroundColor(P.textSec).multilineTextAlignment(.leading)
+                                        .font(.geist(size: 12)).foregroundColor(P.textSec).multilineTextAlignment(.leading)
                                 }
                                 Spacer()
                             }
                             .padding(12)
-                            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 14))
-                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(P.accent.opacity(0.35)))
+                            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(P.accent.opacity(0.35)))
                         }
                         .buttonStyle(.plain)
                     }
@@ -93,7 +93,7 @@ struct EntryDetail: View {
 
                     if let t = e.transcript, !t.isEmpty {
                         sectionLabel("Transcript")
-                        Text(t).font(.system(size: 14)).foregroundColor(P.textSec.opacity(0.85))
+                        Text(t).font(.geist(size: 14)).foregroundColor(P.textSec.opacity(0.85))
                     }
                 }
                 .padding(18)
@@ -244,19 +244,19 @@ struct EntryDetail: View {
                         Image(d.logo).resizable().scaledToFit().frame(width: 22, height: 22)
                             .padding(d == .chatgpt ? 3 : 0)
                             .background(d == .chatgpt ? Color.white : Color.clear)
-                            .clipShape(RoundedRectangle(cornerRadius: 5))
-                        Text(d.label).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        Text(d.label).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
-                    .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(P.border))
+                    .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(P.border))
                 }
             }
         }
     }
 
     private func sectionLabel(_ t: String) -> some View {
-        Text(t.uppercased()).font(.system(size: 12, weight: .bold)).foregroundColor(P.textDim).kerning(0.5)
+        Text(t.uppercased()).monoLabel(10, color: P.textSec)
     }
 }
 
@@ -279,25 +279,25 @@ struct AskBox: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.system(size: 14, weight: .bold)).foregroundColor(.white).padding(.top, 8)
+            Text(title).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink).padding(.top, 8)
             ForEach(turns.indices, id: \.self) { i in
                 let turn = turns[i]
                 HStack {
                     if turn.role == "user" { Spacer() }
-                    Text(turn.text).font(.system(size: 14))
+                    Text(turn.text).font(.geist(size: 14))
                         .foregroundColor(turn.role == "user" ? .white : P.textSec)
                         .padding(10)
                         .background(turn.role == "user" ? P.accent.opacity(0.25) : P.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     if turn.role != "user" { Spacer() }
                 }
             }
             HStack {
                 TextField("Ask…", text: $question).submitLabel(.send).onSubmit { Task { await ask() } }
-                    .padding(10).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 10))
+                    .padding(10).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 Button { Task { await ask() } } label: {
                     if asking { ProgressView().tint(.white) }
-                    else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 26)).foregroundColor(P.accent) }
+                    else { Image(systemName: "arrow.up.circle.fill").font(.geist(size: 26)).foregroundColor(P.accent) }
                 }.disabled(asking)
             }
             if !turns.isEmpty {
@@ -306,14 +306,14 @@ struct AskBox: View {
                 } label: {
                     Label(saving ? "Saving…" : (savedNote ?? "Save discussion to library"),
                           systemImage: savedNote == nil ? "tray.and.arrow.down" : "checkmark")
-                        .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                        .font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink)
                         .frame(maxWidth: .infinity).padding(.vertical, 11)
-                        .background(P.accent).clipShape(RoundedRectangle(cornerRadius: 12))
+                        .background(P.accent).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }.disabled(saving || savedNote != nil)
             }
         }
-        .padding(14).background(P.surface.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
+        .padding(14).background(P.surface.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
     }
 
     /// Appends this Q&A to the entry's transcript, re-summarises, and saves —

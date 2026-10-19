@@ -10,47 +10,60 @@ struct GlassTabBar: View {
     private let left: [LibraryScreen.Section]  = [.home, .library]
     private let right: [LibraryScreen.Section] = [.groups, .more]
 
+    @State private var recordTaps = 0
+    @Namespace private var glassNS
+
     var body: some View {
         ZStack {
             HStack(spacing: 0) {
                 ForEach(left) { tab(for: $0) }
-                Spacer().frame(width: 76)             // room under the mic (fixed size)
+                Spacer().frame(width: 76)             // room under the record button (fixed size)
                 ForEach(right) { tab(for: $0) }
             }
             .padding(.horizontal, 6).padding(.vertical, 6)
             .fixedSize(horizontal: false, vertical: true)
-            .background(
-                Capsule().fill(.ultraThinMaterial)
-                    .overlay(Capsule().stroke(Color.white.opacity(0.10)))
-                    .shadow(color: .black.opacity(0.45), radius: 16, y: 8)
-            )
-            Button(action: onRecord) {
+            .sinkyGlass(Capsule())
+            // Sinky record button: an ink disc with a copper dot, ringed off the glass.
+            Button { recordTaps += 1; onRecord() } label: {
                 ZStack {
-                    Circle().fill(P.bg).frame(width: 76, height: 76)   // dark ring separating mic from glass
-                    Circle().fill(P.brand).frame(width: 64, height: 64)
-                        .shadow(color: P.accent.opacity(0.6), radius: 14, y: 6)
-                    Image(systemName: "mic.fill").font(.system(size: 26, weight: .semibold)).foregroundColor(.white)
+                    Circle().fill(P.bg).frame(width: 76, height: 76)
+                    Circle().stroke(P.border, lineWidth: 1).frame(width: 76, height: 76)
+                    Circle().fill(P.ink).frame(width: 62, height: 62)
+                        .shadow(color: .black.opacity(0.5), radius: 10, y: 4)
+                    Circle().fill(P.accent).frame(width: 20, height: 20)
                 }
+                .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Record")
+            .sinkyHaptic(recordTaps)
         }
         .frame(height: 74)
         .padding(.horizontal, 16).padding(.bottom, 2)
+        .sinkyHaptic(selection)
     }
 
     private func tab(for s: LibraryScreen.Section) -> some View {
         let on = selection == s
-        return Button { selection = s } label: {
-            VStack(spacing: 3) {
-                Image(systemName: s.icon).font(.system(size: 20, weight: .medium))
-                Text(s.rawValue).font(.system(size: 10, weight: .semibold))
+        return Button {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { selection = s }
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: s.icon).font(.system(size: 19, weight: on ? .semibold : .regular))
+                Text(s.rawValue).font(.geist(size: 10.5, weight: .medium))
             }
-            .foregroundColor(on ? P.accent : P.textSec)
+            .foregroundColor(on ? P.ink : P.textDim)
             .frame(maxWidth: .infinity).padding(.vertical, 8)
-            .background(on ? Capsule().fill(P.accent.opacity(0.18)) : nil)
+            .background {
+                if on {
+                    Capsule().fill(Color.white.opacity(0.09))
+                        .matchedGeometryEffect(id: "sel", in: glassNS)
+                }
+            }
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
@@ -87,25 +100,28 @@ struct MoreSection: View {
         SwiftUI.Group {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 11).fill(Color.white.opacity(0.06)).frame(width: 40, height: 40)
-                    Image(systemName: icon).font(.system(size: 17, weight: .semibold)).foregroundColor(P.accent)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(P.surface2).frame(width: 38, height: 38)
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(P.border))
+                    Image(systemName: icon).font(.system(size: 16, weight: .medium)).foregroundColor(P.accent)
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Text(title).font(.system(size: 16, weight: .bold)).foregroundColor(.white)
+                        Text(title).font(.geist(size: 16, weight: .semibold)).tracking(-0.3).foregroundColor(P.ink)
                         if badge > 0 {
-                            Text("\(badge)").font(.system(size: 11, weight: .bold)).foregroundColor(.white)
-                                .padding(.horizontal, 7).padding(.vertical, 1).background(P.accent).clipShape(Capsule())
+                            Text("\(badge)").monoLabel(10, color: Color(hex: 0xF2A57F))
+                                .padding(.horizontal, 8).frame(height: 20)
+                                .background(P.accent.opacity(0.16)).clipShape(Capsule())
                         }
                     }
-                    Text(sub).font(.system(size: 12.5)).foregroundColor(P.textSec).multilineTextAlignment(.leading)
+                    Text(sub).font(.geist(size: 12.5)).foregroundColor(P.textSec).multilineTextAlignment(.leading)
                 }
                 Spacer()
-                Image(systemName: "chevron.right").foregroundColor(P.textDim)
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(P.textDim)
             }
             .padding(14)
-            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(P.border))
+            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(P.border))
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
     }
 }

@@ -49,14 +49,12 @@ struct LibraryScreen: View {
                     .navigationTitle(s == .home ? "" : (s == .more ? (chrome.moreSub?.rawValue ?? "More") : s.rawValue))
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar(s == .home ? .hidden : .visible, for: .navigationBar)
-                    .toolbarBackground(P.bg, for: .navigationBar)
-                    .toolbarBackground(.visible, for: .navigationBar)
-                    .toolbarColorScheme(.dark, for: .navigationBar)
+                    .sinkyNavBar()
                 }
                 // On the NavigationStack (not its root) so the live recorder bar
                 // stays at the bottom of EVERY screen, including pushed entries.
                 // While recording/uploading it replaces the tab bar.
-                .safeAreaInset(edge: .bottom, spacing: 0) {
+                .sinkyBottomBar {
                     // The recorder bar stacks ABOVE the tab bar, so every tab stays
                     // reachable while recording (it used to replace the tab bar).
                     VStack(spacing: 6) {
@@ -205,7 +203,7 @@ struct LibrarySection: View {
                         NavigationLink { EntryDetail(entryID: entry.id, preloaded: entry) } label: { EntryRow(entry: entry) }
                             .buttonStyle(.plain)
                             .onAppear { if entry.id == store.entries.last?.id { Task { await store.loadNextPage() } } }
-                        Divider().overlay(P.border).padding(.leading, 18)
+                        Rectangle().fill(P.divider).frame(height: 1).padding(.leading, 18)
                     }
                 } else {
                     ForEach(groupedHits, id: \.header) { g in
@@ -214,23 +212,23 @@ struct LibrarySection: View {
                             ForEach(g.items) { entry in
                                 NavigationLink { EntryDetail(entryID: entry.id, preloaded: entry) } label: { EntryRow(entry: entry) }
                                     .buttonStyle(.plain)
-                                Divider().overlay(P.border).padding(.leading, 18)
+                                Rectangle().fill(P.divider).frame(height: 1).padding(.leading, 18)
                             }
                         }
                     }
                     if groupedHits.isEmpty {
                         Text("No matches in the loaded entries — pull down to load more, or use Query for the whole library.")
-                            .font(.system(size: 13)).foregroundColor(P.textDim).multilineTextAlignment(.center).padding(30)
+                            .font(.geist(size: 13)).foregroundColor(P.textDim).multilineTextAlignment(.center).padding(30)
                     }
                 }
                 if store.loadingEntries { ProgressView().tint(P.accent).padding(24) }
                 if store.entries.isEmpty && !store.loadingEntries {
                     VStack(spacing: 8) {
                         Text(store.error == nil ? "Nothing loaded yet" : "Couldn't load the library")
-                            .font(.system(size: 15, weight: .semibold)).foregroundColor(P.textSec)
-                        Text(store.error ?? "Pull down to load.").font(.system(size: 12)).foregroundColor(P.textDim).multilineTextAlignment(.center)
+                            .font(.geist(size: 15, weight: .semibold)).foregroundColor(P.textSec)
+                        Text(store.error ?? "Pull down to load.").font(.geist(size: 12)).foregroundColor(P.textDim).multilineTextAlignment(.center)
                         Button("Try again") { Task { await store.refreshAll() } }
-                            .font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                            .font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                     }
                     .frame(maxWidth: .infinity).padding(40)
                 }
@@ -255,7 +253,7 @@ struct LibrarySection: View {
             if let u = exportURL {
                 ShareLink(item: u) {
                     Label("Share export", systemImage: "square.and.arrow.up")
-                        .font(.system(size: 12, weight: .semibold)).foregroundColor(P.good)
+                        .font(.geist(size: 12, weight: .semibold)).foregroundColor(P.good)
                 }
             } else {
                 Button {
@@ -280,7 +278,7 @@ struct LibrarySection: View {
                     if exporting { ProgressView().controlSize(.mini).tint(P.accent) }
                     else {
                         Label("Export all", systemImage: "square.and.arrow.up")
-                            .font(.system(size: 12, weight: .semibold)).foregroundColor(P.textSec)
+                            .font(.geist(size: 12, weight: .semibold)).foregroundColor(P.textSec)
                     }
                 }.disabled(exporting)
             }
@@ -294,17 +292,16 @@ struct EntryRow: View {
     let entry: Entry
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(entry.title).font(.system(size: 17, weight: .semibold))
-                .foregroundColor(.white).lineLimit(2)
-            Text("\(entry.date ?? "") · \(entry.displayType)")
-                .font(.system(size: 12)).foregroundColor(P.textDim)
+            Text(entry.title).font(.geist(size: 16, weight: .medium)).tracking(-0.2)
+                .foregroundColor(P.ink).lineLimit(2)
+            Text("\(entry.displayType) · \(entry.date ?? "")").monoLabel(9.5, color: P.textDim)
             if !entry.tagList.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) { ForEach(entry.tagList.prefix(6), id: \.self) { TagChip($0) } }
                 }
             }
             if !entry.summaryLead.isEmpty {
-                Text(entry.summaryLead).font(.system(size: 14)).foregroundColor(P.textSec)
+                Text(entry.summaryLead).font(.geist(size: 14)).foregroundColor(P.textSec)
                     .lineLimit(2)
             }
         }
@@ -318,10 +315,10 @@ struct TagChip: View {
     let text: String
     init(_ t: String) { text = t }
     var body: some View {
-        Text(text).font(.system(size: 12, weight: .medium)).foregroundColor(P.accent)
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(P.accent.opacity(0.13)).clipShape(Capsule())
-            .overlay(Capsule().stroke(P.accent.opacity(0.35)))
+        Text(text).font(.geist(size: 12)).foregroundColor(Color(hex: 0xD9DCDD))
+            .padding(.horizontal, 10).frame(height: 24)
+            .background(P.surface2).clipShape(Capsule())
+            .overlay(Capsule().stroke(P.border))
     }
 }
 
@@ -336,7 +333,9 @@ struct MoreHost: View {
             VStack(spacing: 0) {
                 HStack {
                     Button { chrome.moreSub = nil } label: {
-                        Label("More", systemImage: "chevron.left").font(.system(size: 15)).foregroundColor(P.accent)
+                        Label("More", systemImage: "chevron.left").font(.geist(size: 15, weight: .medium)).foregroundColor(P.ink)
+                            .padding(.horizontal, 12).frame(height: 34)
+                            .sinkyGlass(Capsule(), interactive: true)
                     }
                     Spacer()
                 }

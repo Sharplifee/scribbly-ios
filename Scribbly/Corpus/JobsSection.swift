@@ -21,12 +21,12 @@ struct JobsSection: View {
                             HStack(alignment: .top, spacing: 10) {
                                 Image(systemName: "iphone").foregroundColor(.orange).padding(.top, 2)
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                                    Text(item.title).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink)
                                     Text(pendingSubtitle(item))
-                                        .font(.system(size: 12)).foregroundColor(P.textSec)
+                                        .font(.geist(size: 12)).foregroundColor(P.textSec)
                                     if item.held {
                                         Text("Recovered after a crash — on hold until you approve it")
-                                            .font(.system(size: 11)).foregroundColor(.orange)
+                                            .font(.geist(size: 11)).foregroundColor(.orange)
                                     }
                                     HStack(spacing: 14) {
                                         if item.held {
@@ -46,7 +46,7 @@ struct JobsSection: View {
                 // ── Server-side voice/file jobs
                 card(title: "VOICE & FILES ON SHARP'S CLOUD COMPUTER · \(model.voiceJobs.count)") {
                     if model.voiceJobs.isEmpty {
-                        Text("Nothing processing.").font(.system(size: 13)).foregroundColor(P.textDim)
+                        Text("Nothing processing.").font(.geist(size: 13)).foregroundColor(P.textDim)
                     }
                     ForEach(model.voiceJobs) { j in
                         HStack(alignment: .top, spacing: 10) {
@@ -57,22 +57,22 @@ struct JobsSection: View {
                                     NavigationLink { EntryDetail(entryID: eid, preloaded: nil) } label: {
                                         HStack(alignment: .top) {
                                             VStack(alignment: .leading, spacing: 4) {
-                                                Text(j.title ?? j.id).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(2).multilineTextAlignment(.leading)
-                                                Text(voiceSubtitle(j)).font(.system(size: 12)).foregroundColor(P.textSec)
+                                                Text(j.title ?? j.id).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink).lineLimit(2).multilineTextAlignment(.leading)
+                                                Text(voiceSubtitle(j)).font(.geist(size: 12)).foregroundColor(P.textSec)
                                             }
                                             Spacer(minLength: 6)
-                                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(P.textDim).padding(.top, 3)
+                                            Image(systemName: "chevron.right").font(.geist(size: 12, weight: .semibold)).foregroundColor(P.textDim).padding(.top, 3)
                                         }
                                         .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
                                 } else {
-                                    Text(j.title ?? j.id).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(2)
+                                    Text(j.title ?? j.id).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink).lineLimit(2)
                                     Text(voiceSubtitle(j))
-                                        .font(.system(size: 12)).foregroundColor(P.textSec)
+                                        .font(.geist(size: 12)).foregroundColor(P.textSec)
                                 }
                                 if let e = j.error, j.state == "failed" || j.state == "no_speech" {
-                                    Text(e).font(.system(size: 11)).foregroundColor(P.danger).lineLimit(3)
+                                    Text(e).font(.geist(size: 11)).foregroundColor(P.danger).lineLimit(3)
                                 }
                                 HStack(spacing: 14) {
                                     switch j.state {
@@ -98,7 +98,7 @@ struct JobsSection: View {
                 // ── YouTube batches
                 card(title: "YOUTUBE BATCHES · \(model.batches.count) active") {
                     if model.batches.isEmpty {
-                        Text("No batches in the queue.").font(.system(size: 13)).foregroundColor(P.textDim)
+                        Text("No batches in the queue.").font(.geist(size: 13)).foregroundColor(P.textDim)
                     }
                     ForEach(model.batches) { b in
                         VStack(alignment: .leading, spacing: 6) {
@@ -106,18 +106,18 @@ struct JobsSection: View {
                             NavigationLink { CollectionDetail(collection: Collection(id: b.id, name: b.name, channel: nil, type: nil, source_url: nil, total_videos: b.total, saved_videos: b.done, skipped_videos: nil, failed_videos: nil, batch_number: nil, created_at: nil)) } label: {
                                 HStack {
                                     Image(systemName: "play.rectangle.fill").foregroundColor(P.accent)
-                                    Text(b.name).font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                                    Text(b.name).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink).lineLimit(1)
                                     Spacer()
-                                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(P.textDim)
+                                    Image(systemName: "chevron.right").font(.geist(size: 12, weight: .semibold)).foregroundColor(P.textDim)
                                 }
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             ProgressView(value: Double(b.done), total: Double(max(b.total, 1))).tint(P.accent)
                             Text(batchSubtitle(b))
-                                .font(.system(size: 12)).foregroundColor(P.textSec)
+                                .font(.geist(size: 12)).foregroundColor(P.textSec)
                             if let now = b.now, !now.isEmpty {
-                                Text("Now: \(now)").font(.system(size: 12)).foregroundColor(P.textDim).lineLimit(1)
+                                Text("Now: \(now)").font(.geist(size: 12)).foregroundColor(P.textDim).lineLimit(1)
                             }
                             HStack(spacing: 14) {
                                 if b.pending > 0 {
@@ -133,10 +133,10 @@ struct JobsSection: View {
                 }
 
                 if let e = model.error {
-                    Text(e).font(.system(size: 12)).foregroundColor(P.danger).multilineTextAlignment(.center).padding(.horizontal, 20)
+                    Text(e).font(.geist(size: 12)).foregroundColor(P.danger).multilineTextAlignment(.center).padding(.horizontal, 20)
                 }
                 Text(model.lastRefresh.map { "Updated \($0.formatted(date: .omitted, time: .standard))" } ?? "Loading…")
-                    .font(.system(size: 11)).foregroundColor(P.textDim)
+                    .font(.geist(size: 11)).foregroundColor(P.textDim)
             }
             .padding(.top, 8).padding(.bottom, 30)
         }
@@ -147,7 +147,7 @@ struct JobsSection: View {
 
     private var header: some View {
         HStack {
-            Text("Live jobs").font(.system(size: 22, weight: .heavy)).kerning(-0.5)
+            Text("Live jobs").font(.geist(size: 22, weight: .semibold)).kerning(-0.5)
             Spacer()
             Button { Task { await model.refresh() } } label: {
                 Image(systemName: "arrow.clockwise").foregroundColor(P.accent)
@@ -158,7 +158,7 @@ struct JobsSection: View {
 
     private func card<Content: View>(title: String, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.system(size: 11, weight: .semibold)).foregroundColor(P.textDim).kerning(0.4)
+            Text(title).font(.geist(size: 11, weight: .semibold)).foregroundColor(P.textDim).kerning(0.4)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -170,11 +170,11 @@ struct JobsSection: View {
 
     private func action(_ label: String, tint: Color, _ f: @escaping () async -> Void) -> some View {
         Button { Task { await f() } } label: {
-            Text(label).font(.system(size: 13, weight: .semibold)).foregroundColor(tint)
+            Text(label).font(.geist(size: 13, weight: .semibold)).foregroundColor(tint)
         }.buttonStyle(.borderless)
     }
     private func action(_ label: String, tint: Color, _ f: @escaping () -> Void) -> some View {
-        Button(action: f) { Text(label).font(.system(size: 13, weight: .semibold)).foregroundColor(tint) }
+        Button(action: f) { Text(label).font(.geist(size: 13, weight: .semibold)).foregroundColor(tint) }
             .buttonStyle(.borderless)
     }
 
