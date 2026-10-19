@@ -24,8 +24,9 @@ struct EntryDetail: View {
         ScrollView {
             if let e = entry {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(e.title).font(.geist(size: 22, weight: .semibold)).foregroundColor(P.ink)
-                    Text("\(e.date ?? "") · \(e.displayType)").font(.geist(size: 13)).foregroundColor(P.textDim)
+                    Text("\(e.displayType) · \(e.date ?? "")").monoLabel(10, color: P.accent)
+                    Text(e.title).font(.geist(size: 26, weight: .semibold)).tracking(-0.8).foregroundColor(P.ink)
+                    GradientRule(width: 64)
 
                     if !e.tagList.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -99,7 +100,7 @@ struct EntryDetail: View {
                 .padding(18)
             }
         }
-        .background(P.bg.ignoresSafeArea())
+        .background(SinkyBackdrop())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -249,14 +250,14 @@ struct EntryDetail: View {
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
                     .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(P.border))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(P.edge))
                 }
             }
         }
     }
 
     private func sectionLabel(_ t: String) -> some View {
-        Text(t.uppercased()).monoLabel(10, color: P.textSec)
+        Text(t.uppercased()).sectionHead()
     }
 }
 
@@ -313,7 +314,7 @@ struct AskBox: View {
             }
         }
         .padding(14).background(P.surface.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.edge))
     }
 
     /// Appends this Q&A to the entry's transcript, re-summarises, and saves —

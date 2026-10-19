@@ -44,7 +44,7 @@ struct GroupsSection: View {
                 if q.isEmpty {
                     if !store.groups.isEmpty {
                         Text("\(store.groups.count) groups · \(fmt(store.groups.reduce(0){$0+$1.totalVideos})) videos")
-                            .monoLabel(10, color: P.textSec)
+                            .sectionHead()
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
                     }
                     ForEach(hits.map { $0.0 }) { group in
@@ -91,13 +91,13 @@ struct GroupCard: View {
             }
             Spacer()
             VStack(spacing: 2) {
-                Text("\(group.totalVideos)").font(.geist(size: 26, weight: .semibold)).foregroundColor(P.ink)
+                Text("\(group.totalVideos)").font(.geist(size: 26, weight: .semibold)).foregroundStyle(P.brand)
                 Text("videos").font(.geist(size: 11)).foregroundColor(P.textDim)
             }
         }
         .padding(16)
         .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.edge))
         .padding(.horizontal, 16)
     }
 }
@@ -116,7 +116,7 @@ struct GroupDetail: View {
                 }
             }.padding(.vertical, 14)
         }
-        .background(P.bg.ignoresSafeArea())
+        .background(SinkyBackdrop())
         .navigationTitle(group.channel).navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -262,12 +262,12 @@ struct CollectionCard: View {
             }
             Spacer()
             VStack(spacing: 2) {
-                Text("\(collection.saved_videos ?? 0)").font(.geist(size: 22, weight: .semibold)).foregroundColor(P.ink)
+                Text("\(collection.saved_videos ?? 0)").font(.geist(size: 22, weight: .semibold)).foregroundStyle(P.brand)
                 Text("videos").font(.geist(size: 11)).foregroundColor(P.textDim)
             }
         }
         .padding(16).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.edge))
         .padding(.horizontal, 16)
     }
 }
@@ -286,7 +286,7 @@ struct CollectionDetail: View {
                 }
             }
         }
-        .background(P.bg.ignoresSafeArea())
+        .background(SinkyBackdrop())
         .navigationTitle(collection.name).navigationBarTitleDisplayMode(.inline)
         .overlay { if loading { ProgressView().tint(P.accent) } }
         .task {
@@ -312,7 +312,7 @@ struct QuerySection: View {
                         .textInputAutocapitalization(.never).submitLabel(.search)
                         .onSubmit { Task { await run() } }
                         .padding(12).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(P.border))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(P.edge))
                     Button { Task { await run() } } label: {
                         Text("Search").font(.geist(size: 15, weight: .semibold)).foregroundColor(P.ink)
                             .padding(.horizontal, 18).padding(.vertical, 12)
@@ -364,7 +364,7 @@ struct HitRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14).background(P.surface).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(P.border))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(P.edge))
         .padding(.horizontal, 16)
     }
 }
@@ -399,9 +399,9 @@ struct HitDestination: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(18)
                 }
-                .background(P.bg.ignoresSafeArea())
+                .background(SinkyBackdrop())
             } else {
-                ProgressView().tint(P.accent).frame(maxWidth: .infinity, maxHeight: .infinity).background(P.bg.ignoresSafeArea())
+                ProgressView().tint(P.accent).frame(maxWidth: .infinity, maxHeight: .infinity).background(SinkyBackdrop())
             }
         }
         .task {
@@ -539,10 +539,10 @@ struct IngestSection: View {
                 .padding(14)
                 .animation(.easeOut(duration: 0.18), value: det.isEmpty)
                 .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(P.surface)
-                    .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(P.border)))
+                    .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(P.edge)))
                 .padding(.horizontal, 16)
                 if files.working {
-                    ProgressView(value: up.progress).tint(P.accent).padding(.horizontal, 32)
+                    GradientProgress(value: up.progress).padding(.horizontal, 32)
                 }
                 if let st = files.status {
                     Text(st).font(.geist(size: 13)).foregroundColor(P.textSec).multilineTextAlignment(.center).padding(.horizontal, 24)
@@ -603,8 +603,7 @@ struct IngestSection: View {
 
                     if progressActive || progressTotal > 0 {
                         VStack(spacing: 6) {
-                            ProgressView(value: Double(progressDone + progressFailed), total: Double(max(progressTotal, 1)))
-                                .tint(P.accent)
+                            GradientProgress(value: Double(progressDone + progressFailed), total: Double(max(progressTotal, 1)))
                             if progressActive && batchChips.count > 1 {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 6) {
@@ -630,7 +629,7 @@ struct IngestSection: View {
                                     Text("· \(progressSkipped) skipped").font(.geist(size: 12)).foregroundColor(.yellow)
                                 }
                                 if progressFailed > 0 {
-                                    NavigationLink { FailedSection().background(P.bg.ignoresSafeArea()).navigationTitle("Didn't work").navigationBarTitleDisplayMode(.inline) } label: {
+                                    NavigationLink { FailedSection().background(SinkyBackdrop()).navigationTitle("Didn't work").navigationBarTitleDisplayMode(.inline) } label: {
                                         Text("· \(progressFailed) failed ›").font(.geist(size: 12)).foregroundColor(.orange)
                                     }.buttonStyle(.plain)
                                 }
@@ -1022,7 +1021,7 @@ private struct RecentList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("RECENT ACTIVITY").monoLabel(10, color: P.textSec)
+            Text("RECENT ACTIVITY").sectionHead()
             VStack(spacing: 0) {
                 // ── Live: what's processing right now
                 ForEach(up.pendingItems()) { item in
@@ -1065,7 +1064,7 @@ private struct RecentList: View {
             }
             .padding(.horizontal, 14)
             .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.edge))
         }
         .padding(.horizontal, 16)
         // Live feed: jobs every 5s, saved entries every 10s, while Home is on screen.

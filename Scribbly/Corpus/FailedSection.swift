@@ -79,7 +79,7 @@ struct FailedSection: View {
     private func group<C: View>(title: String, retryAll: (() async -> Void)? = nil, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(title).monoLabel(10, color: P.textSec).lineLimit(1)
+                Text(title).sectionHead().lineLimit(1)
                 Spacer()
                 if let retryAll {
                     Button { Task { await retryAll() } } label: {
@@ -90,7 +90,7 @@ struct FailedSection: View {
             VStack(spacing: 0) { content() }
                 .padding(.horizontal, 14)
                 .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.edge))
         }
         .padding(.horizontal, 16)
     }

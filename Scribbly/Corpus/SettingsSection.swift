@@ -80,13 +80,13 @@ struct SettingsSection: View {
     }
 
     private func header(_ t: String) -> some View {
-        Text(t).monoLabel(10, color: P.textSec).padding(.top, 6)
+        Text(t).sectionHead().padding(.top, 6)
     }
     private func card<C: View>(@ViewBuilder _ c: () -> C) -> some View {
         VStack(spacing: 0) { c() }
             .padding(.horizontal, 14)
             .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.edge))
     }
     private func plainRow(_ l: String, _ v: String, good: Bool = false) -> some View {
         HStack { Text(l).foregroundColor(P.ink); Spacer(); Text(v).foregroundColor(good ? P.good : P.textDim).font(.geist(size: 14)) }
@@ -112,18 +112,18 @@ struct WatchInfoSection: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                Text("HOW IT WORKS").monoLabel(10, color: P.textSec)
+                Text("HOW IT WORKS").sectionHead()
                 Text("Tap Record on the watch; it records on the wrist without the phone. Finish sends the file to this iPhone — queued until it's nearby — and it lands in the library with the same place title as a phone memo.")
                     .font(.geist(size: 14.5)).foregroundColor(P.textSec).lineSpacing(3)
                     .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                     .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
-                Text("INSTALL").monoLabel(10, color: P.textSec).padding(.top, 8)
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.edge))
+                Text("INSTALL").sectionHead().padding(.top, 8)
                 Text("Open the Watch app on this iPhone → Available Apps → Scribbly → Install.")
                     .font(.geist(size: 14)).foregroundColor(P.textSec)
                     .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                     .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.edge))
             }
             .padding(16)
         }

@@ -86,7 +86,7 @@ struct ListSearch: View {
         .font(.geist(size: 15))
         .padding(.horizontal, 12).frame(height: 44)
         .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(P.border))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(P.edge))
         .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 4)
     }
 }

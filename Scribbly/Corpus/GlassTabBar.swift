@@ -50,13 +50,15 @@ struct GlassTabBar: View {
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: s.icon).font(.system(size: 19, weight: on ? .semibold : .regular))
+                    .foregroundStyle(on ? AnyShapeStyle(P.brand) : AnyShapeStyle(P.textDim))
                 Text(s.rawValue).font(.geist(size: 10.5, weight: .medium))
+                    .foregroundColor(on ? P.ink : P.textDim)
             }
-            .foregroundColor(on ? P.ink : P.textDim)
             .frame(maxWidth: .infinity).padding(.vertical, 8)
             .background {
                 if on {
-                    Capsule().fill(Color.white.opacity(0.09))
+                    Capsule().fill(Color.white.opacity(0.07))
+                        .overlay(alignment: .bottom) { GradientRule(width: 18).padding(.bottom, 3) }
                         .matchedGeometryEffect(id: "sel", in: glassNS)
                 }
             }
@@ -79,7 +81,7 @@ struct MoreSection: View {
                 tap(icon: "sparkle.magnifyingglass", title: "Query", sub: "Ask a question across everything in the library.", go: .query)
                 tap(icon: "waveform.path.ecg", title: "Activity", sub: "Everything processing right now — pause, resume, retry, or cancel.", badge: up.pendingCount, go: .jobs)
                 row(icon: "exclamationmark.triangle.fill", title: "Didn't work", sub: "Every video, link or recording that failed — see why, retry, or remove.") {
-                    FailedSection().background(P.bg.ignoresSafeArea()).navigationTitle("Didn't work").navigationBarTitleDisplayMode(.inline)
+                    FailedSection().background(SinkyBackdrop()).navigationTitle("Didn't work").navigationBarTitleDisplayMode(.inline)
                 }
                 tap(icon: "applewatch", title: "Apple Watch", sub: "Record on the wrist; it lands here with the same place title.", go: .watch)
                 tap(icon: "gearshape.fill", title: "Settings", sub: "Permissions, recording, storage, server status.", go: .settings)
@@ -101,8 +103,8 @@ struct MoreSection: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous).fill(P.surface2).frame(width: 38, height: 38)
-                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(P.border))
-                    Image(systemName: icon).font(.system(size: 16, weight: .medium)).foregroundColor(P.accent)
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(P.edge))
+                    Image(systemName: icon).font(.system(size: 16, weight: .medium)).foregroundStyle(P.brand)
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
@@ -120,7 +122,7 @@ struct MoreSection: View {
             }
             .padding(14)
             .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(P.border))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(P.edge))
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
     }

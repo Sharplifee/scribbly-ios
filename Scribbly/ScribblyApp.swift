@@ -86,7 +86,7 @@ struct RootView: View {
         // The Upload picker lives at the root, outside the TabView: presented from
         // inside a tab page it never appeared (Upload "does nothing", build 220).
         .fullScreenCover(isPresented: $qaFailed) {
-            NavigationStack { FailedSection().background(P.bg.ignoresSafeArea()).navigationTitle("Didn't work") }
+            NavigationStack { FailedSection().background(SinkyBackdrop()).navigationTitle("Didn't work") }
                 .preferredColorScheme(.dark)
         }
         // Videos from the Photos library (they never show up in the Files picker).
@@ -220,7 +220,10 @@ struct RecordBar: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .sinkyGlass(Capsule())
+            .sinkyGlass(Capsule(), tint: rec.state == .recording ? P.accent.opacity(0.22) : nil)
+            .overlay(alignment: .bottom) {
+                if rec.state == .recording { GradientRule().padding(.horizontal, 28).padding(.bottom, 1) }
+            }
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
             .animation(.spring(response: 0.3, dampingFraction: 0.88), value: isActive)
@@ -281,7 +284,7 @@ struct RecordBar: View {
     // Upload/handoff panel.
     private var uploadingPanel: some View {
         VStack(spacing: 4) {
-            ProgressView(value: up.progress).tint(P.accent)
+            GradientProgress(value: up.progress)
             Text(up.stage.isEmpty ? (up.progress < 1 ? "Uploading…" : "Transcribing…") : up.stage)
                 .font(.geist(size: 12, weight: .medium)).lineLimit(1)
         }

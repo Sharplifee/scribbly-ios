@@ -41,7 +41,7 @@ struct LibraryScreen: View {
             ForEach(Section.pages) { s in
                 NavigationStack(path: s == .library ? $libPath : .constant(NavigationPath())) {
                     ZStack {
-                        P.bg.ignoresSafeArea()
+                        SinkyBackdrop(intensity: s == .home ? 0.5 : 1)
                         content(for: s)
                     }
                     .toolbar(.hidden, for: .tabBar)
@@ -318,7 +318,7 @@ struct TagChip: View {
         Text(text).font(.geist(size: 12)).foregroundColor(Color(hex: 0xD9DCDD))
             .padding(.horizontal, 10).frame(height: 24)
             .background(P.surface2).clipShape(Capsule())
-            .overlay(Capsule().stroke(P.border))
+            .overlay(Capsule().stroke(P.edge))
     }
 }
 

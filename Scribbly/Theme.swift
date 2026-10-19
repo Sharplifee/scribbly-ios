@@ -180,3 +180,99 @@ enum SinkyAppearance {
             [.font: UIFont(name: "Geist-Medium", size: 13) ?? button], for: .normal)
     }
 }
+
+// MARK: - Gradient everywhere (copper → tan → teal)
+
+extension P {
+    /// Card / field outline: copper at one corner, teal at the other, quiet in between.
+    static var edge: LinearGradient {
+        LinearGradient(colors: [accent.opacity(0.55), border, border, teal.opacity(0.5)],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+    static var brandVertical: LinearGradient {
+        LinearGradient(colors: [accent, tan, teal], startPoint: .top, endPoint: .bottom)
+    }
+}
+
+/// Every page sits on this: true black with a soft teal/copper glow and faint
+/// fins at the top, fading out before the content — the Sinky hero, quietly.
+struct SinkyBackdrop: View {
+    var intensity: Double = 1
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            ZStack(alignment: .top) {
+                Color.black
+                ZStack {
+                    Circle().fill(P.teal).frame(width: w * 0.9).offset(x: -w * 0.28, y: -w * 0.42)
+                    Circle().fill(P.accent).frame(width: w * 0.8).offset(x: w * 0.34, y: -w * 0.46)
+                }
+                .blur(radius: 70)
+                .opacity(0.30 * intensity)
+                .frame(width: w, height: w * 0.9, alignment: .top)
+                .clipped()
+                FinsStripes()
+                    .frame(height: w * 0.55)
+                    .mask(LinearGradient(colors: [.white.opacity(0.5), .clear], startPoint: .top, endPoint: .bottom))
+                    .opacity(0.45 * intensity)
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The vertical fin stripes on their own, drawn over whatever is behind them.
+struct FinsStripes: View {
+    var body: some View {
+        Canvas { ctx, size in
+            var x: CGFloat = 7
+            while x < size.width {
+                ctx.fill(Path(CGRect(x: x, y: 0, width: 2, height: size.height)), with: .color(.black.opacity(0.55)))
+                x += 9
+            }
+        }
+    }
+}
+
+/// 1.5pt copper → teal hairline (under headers, between sections).
+struct GradientRule: View {
+    var width: CGFloat? = nil
+    var body: some View {
+        Capsule().fill(P.brand).frame(width: width, height: 1.5)
+    }
+}
+
+/// Progress in the brand gradient instead of a flat tint.
+struct GradientProgress: View {
+    var value: Double
+    var total: Double = 1
+    var height: CGFloat = 4
+    var body: some View {
+        GeometryReader { geo in
+            let f = total > 0 ? min(max(value / total, 0), 1) : 0
+            ZStack(alignment: .leading) {
+                Capsule().fill(P.divider)
+                Capsule().fill(P.brand).frame(width: max(height, geo.size.width * f))
+                    .animation(.easeOut(duration: 0.3), value: f)
+            }
+        }
+        .frame(height: height)
+        .accessibilityElement()
+        .accessibilityValue("\(Int((total > 0 ? value / total : 0) * 100)) percent")
+    }
+}
+
+/// Section heading: a short copper→teal tick, then the mono label.
+struct SectionHead: ViewModifier {
+    func body(content: Content) -> some View {
+        HStack(spacing: 8) {
+            GradientRule(width: 14)
+            content.monoLabel(10, color: P.textSec)
+        }
+    }
+}
+extension View {
+    func sectionHead() -> some View { modifier(SectionHead()) }
+}

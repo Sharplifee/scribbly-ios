@@ -113,7 +113,7 @@ struct JobsSection: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            ProgressView(value: Double(b.done), total: Double(max(b.total, 1))).tint(P.accent)
+                            GradientProgress(value: Double(b.done), total: Double(max(b.total, 1)))
                             Text(batchSubtitle(b))
                                 .font(.geist(size: 12)).foregroundColor(P.textSec)
                             if let now = b.now, !now.isEmpty {
@@ -164,7 +164,7 @@ struct JobsSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(P.surface)
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(P.border)))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(P.edge)))
         .padding(.horizontal, 16)
     }
 
