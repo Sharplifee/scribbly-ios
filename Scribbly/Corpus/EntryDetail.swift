@@ -16,7 +16,7 @@ struct EntryDetail: View {
         var out = "\(e.title)\n\(e.type ?? "") · \(e.date ?? "")\n"
         if let t = e.tags, !t.isEmpty { out += "Tags: \(t)\n" }
         if let s = e.summary, !s.isEmpty { out += "\nSUMMARY\n\(s)\n" }
-        if let tr = e.transcript, !tr.isEmpty { out += "\nTRANSCRIPT\n\(tr)\n" }
+        if let tr = e.cleanTranscript, !tr.isEmpty { out += "\nTRANSCRIPT\n\(tr)\n" }
         return out
     }
 
@@ -71,28 +71,34 @@ struct EntryDetail: View {
                             PlaceTagger.shared.tag { Recorder.shared.place = $0 }
                             rec.start()
                         } label: {
-                            HStack(spacing: 12) {
+                            // Same record button as the centre of the Home tab bar:
+                            // an ink disc with a copper dot, ringed off the background.
+                            VStack(spacing: 10) {
                                 ZStack {
-                                    Circle().fill(P.brand).frame(width: 38, height: 38)
-                                    Image(systemName: "mic.fill").foregroundColor(P.ink).font(.geist(size: 16, weight: .semibold))
+                                    Circle().fill(P.bg).frame(width: 76, height: 76)
+                                    Circle().stroke(P.border, lineWidth: 1).frame(width: 76, height: 76)
+                                    Circle().fill(P.ink).frame(width: 62, height: 62)
+                                        .shadow(color: .black.opacity(0.5), radius: 10, y: 4)
+                                    Circle().fill(P.accent).frame(width: 20, height: 20)
                                 }
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Add to this recording").font(.geist(size: 15, weight: .semibold)).foregroundColor(P.ink)
-                                    Text("Record more now — it's transcribed and appended to this transcript.")
-                                        .font(.geist(size: 12)).foregroundColor(P.textSec).multilineTextAlignment(.leading)
-                                }
-                                Spacer()
+                                Text("Add to this recording").font(.geist(size: 15, weight: .semibold)).foregroundColor(P.ink)
+                                Text("Tap to record more — it's transcribed and added to the end of this transcript.")
+                                    .font(.geist(size: 12)).foregroundColor(P.textSec)
+                                    .multilineTextAlignment(.center).frame(maxWidth: 280)
                             }
-                            .padding(12)
-                            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(P.accent.opacity(0.35)))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 18)
+                            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(P.edge))
+                            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                         }
+                        .accessibilityLabel("Add to this recording")
                         .buttonStyle(.plain)
                     }
 
                     AskBox(entry: e)
 
-                    if let t = e.transcript, !t.isEmpty {
+                    if let t = e.cleanTranscript, !t.isEmpty {
                         sectionLabel("Transcript")
                         Text(t).font(.geist(size: 14)).foregroundColor(P.textSec.opacity(0.85))
                     }
@@ -127,7 +133,7 @@ struct EntryDetail: View {
             }
         }
         .overlay { if loading && entry == nil { ProgressView().tint(P.accent) } }
-        .onAppear { BottomChrome.shared.hideRecordBar = true }
+        .onAppear { BottomChrome.shared.hideRecordBar = true; BottomChrome.shared.savedTitle = nil }
         .onDisappear { BottomChrome.shared.hideRecordBar = false }
         .task {
             entry = preloaded
@@ -144,7 +150,7 @@ struct EntryDetail: View {
     /// plain-text transcript plus as much of it inline as fits — never a
     /// summary — and the full text is also put on the clipboard.
     private func fullBody(_ e: Entry) -> String {
-        "Here's the full transcript of \"\(e.title)\" from my Scribbly library (\(e.date ?? "")). Let's discuss it.\n\n\(e.transcript ?? "")"
+        "Here's the full transcript of \"\(e.title)\" from my Scribbly library (\(e.date ?? "")). Let's discuss it.\n\n\(e.cleanTranscript ?? "")"
     }
 
     private func chatURL(_ dest: Destination, _ text: String) -> URL? {
@@ -167,12 +173,12 @@ struct EntryDetail: View {
         UIPasteboard.general.string = full
         Task { @MainActor in
             let link = await shareLink(e.id)
-            let words = (e.transcript ?? "").split { $0 == " " || $0 == "\n" }.count
+            let words = (e.cleanTranscript ?? "").split { $0 == " " || $0 == "\n" }.count
             let head = link.map {
                 "Read the COMPLETE transcript of \"\(e.title)\" (\(words) words) from my Scribbly library here: \($0) — read all of it before answering. It's also below, as much as fits in this message:\n\n"
             } ?? "Here's the transcript of \"\(e.title)\" from my Scribbly library (the full text is on my clipboard; I'll paste the rest):\n\n"
             // Fit as much transcript as the site's link limit allows.
-            let transcript = e.transcript ?? ""
+            let transcript = e.cleanTranscript ?? ""
             var lo = 0, hi = transcript.count
             while lo < hi {
                 let mid = (lo + hi + 1) / 2

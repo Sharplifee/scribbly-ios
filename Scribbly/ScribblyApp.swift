@@ -144,7 +144,20 @@ final class BottomChrome: ObservableObject {
     /// True while the paste field owns the keyboard — the glass bar steps out of the way.
     @Published var keyboardUp = false
     @Published var armToken = 0
-    @Published var savedTitle: String?
+    /// The green "saved" confirmation. It shows on Home only, for 10 seconds,
+    /// and is cleared the moment you leave Home or open an entry.
+    @Published var savedTitle: String? {
+        didSet {
+            clearTask?.cancel()
+            guard savedTitle != nil else { return }
+            clearTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                guard !Task.isCancelled else { return }
+                self?.savedTitle = nil
+            }
+        }
+    }
+    private var clearTask: Task<Void, Never>?
 }
 
 struct RecordBar: View {

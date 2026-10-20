@@ -117,3 +117,28 @@ enum Ranker {
         return total
     }
 }
+
+// MARK: - Transcript clean-up
+
+/// Speech-to-text sometimes "hears" stock Japanese/Chinese/Korean phrases in
+/// silence or background noise (the classic Whisper hallucination:
+/// "ご視聴ありがとうございました" = "thanks for watching"). This library is
+/// English-only, so any run of CJK/kana/hangul script is dropped before display,
+/// export, Send-to, or word counts.
+enum TranscriptCleaner {
+    private static let cjkRun =
+        "[\\p{Han}\\p{Hiragana}\\p{Katakana}\\p{Hangul}\\u3000-\\u303F\\uFF00-\\uFFEF]" +
+        "[\\s\\p{Han}\\p{Hiragana}\\p{Katakana}\\p{Hangul}\\u3000-\\u303F\\uFF00-\\uFFEF0-9]*"
+
+    static func clean(_ s: String) -> String {
+        var out = s.replacingOccurrences(of: cjkRun, with: " ", options: .regularExpression)
+        out = out.replacingOccurrences(of: "[ \\t]{2,}", with: " ", options: .regularExpression)
+        out = out.replacingOccurrences(of: " ([.,!?;:])", with: "$1", options: .regularExpression)
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+extension Entry {
+    /// The transcript with foreign-script hallucinations removed.
+    var cleanTranscript: String? { transcript.map(TranscriptCleaner.clean) }
+}

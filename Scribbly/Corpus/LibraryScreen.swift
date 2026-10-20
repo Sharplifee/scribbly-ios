@@ -75,6 +75,7 @@ struct LibraryScreen: View {
         .tint(P.accent)
         .onChange(of: chrome.currentTab) { newTab in
             CrashReporter.shared.add("tab \(newTab.rawValue)")
+            if newTab != .home { chrome.savedTitle = nil }
             switch newTab {
             case .record: chrome.currentTab = lastRealTab; startRecording()
             case .collections, .query, .jobs, .settings, .watch: chrome.moreSub = newTab; chrome.currentTab = .more
