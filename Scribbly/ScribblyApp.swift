@@ -18,6 +18,7 @@ struct ScribblyApp: App {
         WindowGroup {
             RootView()
                 .preferredColorScheme(.dark)
+                .modifier(AppTextSize())
                 // Anything that didn't finish uploading is retried here, so a
                 // recording can never be stranded by a crash, a dead network,
                 // or the app being swiped away mid-upload.

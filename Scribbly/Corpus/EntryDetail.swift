@@ -73,26 +73,21 @@ struct EntryDetail: View {
                         } label: {
                             // Same record button as the centre of the Home tab bar:
                             // an ink disc with a copper dot, ringed off the background.
-                            VStack(spacing: 10) {
+                            VStack(spacing: 6) {
                                 ZStack {
-                                    Circle().fill(P.bg).frame(width: 76, height: 76)
-                                    Circle().stroke(P.border, lineWidth: 1).frame(width: 76, height: 76)
-                                    Circle().fill(P.ink).frame(width: 62, height: 62)
-                                        .shadow(color: .black.opacity(0.5), radius: 10, y: 4)
-                                    Circle().fill(P.accent).frame(width: 20, height: 20)
+                                    Circle().fill(P.bg).frame(width: 46, height: 46)
+                                    Circle().stroke(P.border, lineWidth: 1).frame(width: 46, height: 46)
+                                    Circle().fill(P.ink).frame(width: 38, height: 38)
+                                    Circle().fill(P.accent).frame(width: 12, height: 12)
                                 }
-                                Text("Add to this recording").font(.geist(size: 15, weight: .semibold)).foregroundColor(P.ink)
-                                Text("Tap to record more — it's transcribed and added to the end of this transcript.")
-                                    .font(.geist(size: 12)).foregroundColor(P.textSec)
-                                    .multilineTextAlignment(.center).frame(maxWidth: 280)
+                                Text("Add to this recording").font(.geist(size: 13, weight: .medium)).foregroundColor(P.textSec)
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 18)
-                            .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(P.edge))
-                            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
                         }
                         .accessibilityLabel("Add to this recording")
+                        .accessibilityHint("Records more; it's transcribed and added to the end of this transcript.")
                         .buttonStyle(.plain)
                     }
 

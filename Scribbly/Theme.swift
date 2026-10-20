@@ -276,3 +276,38 @@ struct SectionHead: ViewModifier {
 extension View {
     func sectionHead() -> some View { modifier(SectionHead()) }
 }
+
+// MARK: - Text size (Settings → Text size)
+
+/// App-wide text size. Every Geist font is relative to .body, so this scales
+/// the whole app. "Default" follows the iPhone's own Text Size setting.
+enum TextSizeOption: String, CaseIterable, Identifiable {
+    case small = "Small", standard = "Default", large = "Large", xLarge = "Larger", xxLarge = "Largest"
+    var id: String { rawValue }
+    var size: DynamicTypeSize? {
+        switch self {
+        case .small: return .small
+        case .standard: return nil
+        case .large: return .xLarge
+        case .xLarge: return .xxLarge
+        case .xxLarge: return .xxxLarge
+        }
+    }
+    /// Sample size for the picker's "A".
+    var sample: CGFloat {
+        switch self { case .small: return 13; case .standard: return 16; case .large: return 19; case .xLarge: return 22; case .xxLarge: return 25 }
+    }
+    static let storageKey = "scribbly.textSize"
+}
+
+struct AppTextSize: ViewModifier {
+    @AppStorage(TextSizeOption.storageKey) private var raw = TextSizeOption.standard.rawValue
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let s = (TextSizeOption(rawValue: raw) ?? .standard).size {
+            content.dynamicTypeSize(s)
+        } else {
+            content.dynamicTypeSize(...DynamicTypeSize.accessibility2)
+        }
+    }
+}

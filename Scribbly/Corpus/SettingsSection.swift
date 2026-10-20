@@ -8,6 +8,7 @@ struct SettingsSection: View {
     @AppStorage("keepRecordingInBackground") private var keepBackground = true
     @AppStorage("autoApproveRecoveries") private var autoApprove = false
     @AppStorage("defaultDestination") private var defaultDestination = "Claude"
+    @AppStorage(TextSizeOption.storageKey) private var textSize = TextSizeOption.standard.rawValue
     @ObservedObject private var up = Uploader.shared
     @State private var serverOK: Bool? = nil
     @State private var entryCount: Int = 0
@@ -33,6 +34,35 @@ struct SettingsSection: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
+                header("TEXT SIZE")
+                card {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(alignment: .bottom, spacing: 8) {
+                            ForEach(TextSizeOption.allCases) { o in
+                                let on = textSize == o.rawValue
+                                Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { textSize = o.rawValue } } label: {
+                                    VStack(spacing: 6) {
+                                        Text("A").font(.custom("Geist-SemiBold", fixedSize: o.sample))
+                                            .foregroundColor(on ? .black : P.ink)
+                                            .frame(maxWidth: .infinity).frame(height: 44)
+                                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(on ? P.ink : P.surface2))
+                                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(on ? Color.clear : P.border))
+                                        Text(o.rawValue).font(.custom("GeistMono-Regular", fixedSize: 9)).textCase(.uppercase)
+                                            .foregroundColor(on ? P.ink : P.textDim).lineLimit(1).minimumScaleFactor(0.7)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Text size \(o.rawValue)")
+                                .accessibilityAddTraits(on ? .isSelected : [])
+                            }
+                        }
+                        Text("Transcribed, summarized, searchable — this is how text will look.")
+                            .font(.geist(size: 14)).foregroundColor(P.textSec)
+                        Text("Default follows your iPhone's Text Size setting.")
+                            .font(.geist(size: 12)).foregroundColor(P.textDim)
+                    }
+                    .padding(.vertical, 14)
+                }
                 header("PERMISSIONS")
                 card {
                     linkRow("Microphone", micStatus, good: micStatus == "Allowed")

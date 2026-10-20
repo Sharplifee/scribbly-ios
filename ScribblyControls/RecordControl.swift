@@ -11,7 +11,7 @@ struct RecordControl: ControlWidget {
             ControlWidgetButton(action: StartScribblyRecordingIntent()) {
                 Label("Scribbly", image: "scribbly.mark")   // our own mark, not a stock mic
             }
-            .tint(Color(red: 0.66, green: 0.33, blue: 0.97))
+            .tint(Sinky.copper)
         }
         .displayName("Scribbly Record")
         .description("Start a Scribbly recording instantly, even when locked.")
