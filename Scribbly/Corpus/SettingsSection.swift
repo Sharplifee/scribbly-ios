@@ -11,7 +11,9 @@ struct SettingsSection: View {
     @AppStorage(TextSizeOption.storageKey) private var textSize = TextSizeOption.standard.rawValue
     @ObservedObject private var up = Uploader.shared
     @State private var serverOK: Bool? = nil
-    @State private var entryCount: Int = 0
+    /// Last known library size (shared with Home/Library), refreshed from the server on open.
+    @State private var entryCount: Int = UserDefaults.standard.integer(forKey: "libraryCount")
+    @State private var countFailed = false
 
     private var micStatus: String {
         switch AVAudioSession.sharedInstance().recordPermission {
@@ -89,7 +91,9 @@ struct SettingsSection: View {
                 header("SERVER")
                 card {
                     plainRow("Sharp's Cloud Computer", serverOK == nil ? "Checking…" : (serverOK! ? "Online" : "Unreachable"), good: serverOK == true)
-                    plainRow("Library", entryCount > 0 ? "\(entryCount.formatted()) entries" : "—")
+                    plainRow("Library", entryCount > 0
+                             ? "\(entryCount.formatted()) entries" + (countFailed ? " (last known)" : "")
+                             : (countFailed ? "Couldn't count" : "Counting…"))
                 }
                 header("ABOUT")
                 card {
@@ -105,7 +109,11 @@ struct SettingsSection: View {
                let (d, _) = try? await URLSession.shared.data(from: u) {
                 serverOK = String(data: d, encoding: .utf8)?.contains("\"ok\":true") == true
             } else { serverOK = false }
-            entryCount = (try? await CorpusAPI.count(table: "scribbly_entries")) ?? 0
+            do {
+                let n = try await CorpusAPI.count(table: "scribbly_entries")
+                entryCount = n; countFailed = false
+                UserDefaults.standard.set(n, forKey: "libraryCount")
+            } catch { countFailed = true }
         }
     }
 

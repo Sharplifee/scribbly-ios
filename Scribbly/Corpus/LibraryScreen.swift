@@ -215,7 +215,7 @@ struct LibrarySection: View {
                         Text("Showing the first \(CorpusAPI.entrySearchLimit) matches — add words to narrow it, or use Query.")
                             .font(.geist(size: 12)).foregroundColor(P.textDim).multilineTextAlignment(.center).padding(20)
                     }
-                    if store.entries.isEmpty && !store.loadingEntries && store.error == nil {
+                    if store.entries.isEmpty && store.reachedEnd && store.error == nil {
                         Text("No entries match \"\(store.query.search)\"" + (typeFilter == "All" ? "." : " in \(typeFilter)."))
                             .font(.geist(size: 13)).foregroundColor(P.textDim).multilineTextAlignment(.center).padding(30)
                     }
@@ -232,7 +232,7 @@ struct LibrarySection: View {
                         .font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                     }
                     .frame(maxWidth: .infinity).padding(40)
-                } else if store.entries.isEmpty && !store.loadingEntries && !searching {
+                } else if store.entries.isEmpty && store.reachedEnd && !searching {
                     Text(typeFilter == "All" ? "Nothing here yet." : "No \(typeFilter) entries yet.")
                         .font(.geist(size: 13)).foregroundColor(P.textDim).padding(40)
                 }

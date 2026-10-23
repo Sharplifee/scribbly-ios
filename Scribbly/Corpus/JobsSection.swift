@@ -1,12 +1,13 @@
 import SwiftUI
 
 /// Everything that is (or was recently) processing, in one live list, with the
-/// controls to stop, pause, or restart it. Three sources, refreshed every 5s:
+/// controls to stop, pause, or restart it. Three sources, refreshed every 5s
+/// while this page (or Home's Recent list) is on screen:
 ///   1. Voice/file jobs on Sharp's Cloud Computer   — pause / resume / retry / cancel
 ///   2. YouTube batches in the server queue          — cancel / resume the whole batch
 ///   3. Uploads still waiting on this phone          — retry / discard
 struct JobsSection: View {
-    @StateObject private var model = JobsModel()
+    @ObservedObject private var model = JobsModel.shared
     @ObservedObject private var up = Uploader.shared
 
     var body: some View {
@@ -140,20 +141,9 @@ struct JobsSection: View {
             }
             .padding(.top, 8).padding(.bottom, 30)
         }
-        .task { await model.startPolling() }
-        .onDisappear { model.stopPolling() }
+        .onAppear { model.watch("activity") }
+        .onDisappear { model.unwatch("activity") }
         .refreshable { await model.refresh() }
-    }
-
-    private var header: some View {
-        HStack {
-            Text("Live jobs").font(.geist(size: 22, weight: .semibold)).kerning(-0.5)
-            Spacer()
-            Button { Task { await model.refresh() } } label: {
-                Image(systemName: "arrow.clockwise").foregroundColor(P.accent)
-            }
-        }
-        .padding(.horizontal, 18).padding(.top, 8)
     }
 
     private func card<Content: View>(title: String, @ViewBuilder _ content: () -> Content) -> some View {
@@ -227,8 +217,12 @@ struct JobsSection: View {
 
 // MARK: - Model
 
+/// One shared model for Activity and Home → Recent, with a single 5s poller
+/// that runs only while at least one of those screens is visible.
 @MainActor
 final class JobsModel: ObservableObject {
+    static let shared = JobsModel()
+
     struct VoiceJob: Decodable, Identifiable {
         let id: String; let state: String; let title: String?; let attempts: Int
         let bytes: Int; let createdAt: Double; let entryId: String?; let error: String?
@@ -245,6 +239,9 @@ final class JobsModel: ObservableObject {
     @Published var lastRefresh: Date?
     @Published private var tick = 0
     private var polling: Task<Void, Never>?
+    /// Screens currently showing jobs; polling stops when this is empty.
+    private var watchers = Set<String>()
+    private var refreshing = false
 
     /// Base of the voice server = the upload URL minus its last path component.
     private var voiceBase: String {
@@ -255,19 +252,27 @@ final class JobsModel: ObservableObject {
 
     func bump() { tick += 1 }
 
-    func startPolling() async {
-        stopPolling()
-        await refresh()
+    /// A screen showing jobs appeared. Idempotent per id.
+    func watch(_ id: String) {
+        watchers.insert(id)
+        guard polling == nil else { return }
         polling = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
                 await self?.refresh()
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
             }
         }
     }
-    func stopPolling() { polling?.cancel(); polling = nil }
+    /// That screen went away; the poller stops once no screen is watching.
+    func unwatch(_ id: String) {
+        watchers.remove(id)
+        if watchers.isEmpty { polling?.cancel(); polling = nil }
+    }
 
     func refresh() async {
+        guard !refreshing else { return }
+        refreshing = true
+        defer { refreshing = false }
         async let v: () = loadVoice()
         async let b: () = loadBatches()
         _ = await (v, b)
@@ -276,81 +281,92 @@ final class JobsModel: ObservableObject {
 
     private func loadVoice() async {
         do {
-            let (d, _) = try await URLSession.shared.data(from: URL(string: voiceBase + "/jobs")!)
+            var req = URLRequest(url: URL(string: voiceBase + "/jobs")!)
+            req.timeoutInterval = 20
+            let d = try await CorpusAPI.send(req)
             struct R: Decodable { let jobs: [VoiceJob] }
             voiceJobs = try JSONDecoder().decode(R.self, from: d).jobs
             error = nil
         } catch { self.error = "Cloud computer unreachable: \(error.localizedDescription)" }
     }
 
-    /// One row per collection with anything not finished, plus counts.
+    /// One row per collection with videos still queued or running. Only
+    /// pending/processing rows are "active" (failed is finished, not active);
+    /// they come from one queue read (paged past the 1,000-row cap only when a
+    /// batch is that big), and done/failed/skipped totals come from the
+    /// collections' own counters in one more request — no per-collection polling.
     private func loadBatches() async {
-        struct QRow: Decodable { let collection_id: String?; let status: String }
-        struct CRow: Decodable { let id: String; let name: String }
+        struct QRow: Decodable { let collection_id: String?; let status: String; let title: String? }
+        struct CRow: Decodable {
+            let id: String; let name: String
+            let total_videos: Int?; let saved_videos: Int?; let failed_videos: Int?; let skipped_videos: Int?
+        }
         do {
-            // Only the unfinished rows matter for "what's processing"; done rows are summed per collection.
-            let live = try await rest("scribbly_queue?select=collection_id,status&status=in.(pending,failed,skipped)&limit=1000", as: [QRow].self)
+            var live: [QRow] = []
+            var lastID: String? = nil
+            while true {
+                struct Paged: Decodable { let id: String; let collection_id: String?; let status: String; let title: String? }
+                var items: [URLQueryItem] = [
+                    URLQueryItem(name: "select", value: "id,collection_id,status,title"),
+                    URLQueryItem(name: "status", value: "in.(pending,processing)"),
+                    URLQueryItem(name: "order", value: "id.asc"),
+                    URLQueryItem(name: "limit", value: "1000")
+                ]
+                if let lastID { items.append(URLQueryItem(name: "id", value: "gt.\(CorpusAPI.quoted(lastID))")) }
+                let page = try await CorpusAPI.getJSON(CorpusAPI.restURL("scribbly_queue", items), as: [Paged].self)
+                live += page.map { QRow(collection_id: $0.collection_id, status: $0.status, title: $0.title) }
+                guard page.count == 1000, let l = page.last else { break }
+                lastID = l.id
+            }
             let ids = Array(Set(live.compactMap { $0.collection_id }))
             guard !ids.isEmpty else { batches = []; return }
-            let idList = ids.map { "\"\($0)\"" }.joined(separator: ",")
-            let names = try await rest("scribbly_collections?select=id,name&id=in.(\(idList))", as: [CRow].self)
-            let nameOf = Dictionary(uniqueKeysWithValues: names.map { ($0.id, $0.name) })
+            let idList = ids.map(CorpusAPI.quoted).joined(separator: ",")
+            let cols = try await CorpusAPI.getJSON(CorpusAPI.restURL("scribbly_collections", [
+                URLQueryItem(name: "select", value: "id,name,total_videos,saved_videos,failed_videos,skipped_videos"),
+                URLQueryItem(name: "id", value: "in.(\(idList))")
+            ]), as: [CRow].self)
+            let colOf = Dictionary(cols.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             var out: [Batch] = []
             for cid in ids {
                 let rows = live.filter { $0.collection_id == cid }
-                let pending = rows.filter { $0.status == "pending" }.count
-                let failed  = rows.filter { $0.status == "failed" }.count
-                let skipped = rows.filter { $0.status == "skipped" }.count
-                // done count needs a separate exact count (could exceed 1000)
-                let done = (try? await count("scribbly_queue?collection_id=eq.\(cid)&status=eq.done&select=id")) ?? 0
-                var b = Batch(id: cid, name: nameOf[cid] ?? cid, total: done + pending + failed + skipped,
-                              done: done, pending: pending, failed: failed, skipped: skipped, now: nil)
-                if pending > 0, let st = try? await ingest(["action": "queue-status", "collectionId": cid]),
-                   let now = (st["nowProcessing"] as? [String])?.first ?? ((st["nowProcessing"] as? [[String: Any]])?.first?["title"] as? String) {
-                    b.now = now
-                }
-                out.append(b)
+                let c = colOf[cid]
+                let done = c?.saved_videos ?? 0
+                let failed = c?.failed_videos ?? 0
+                let skipped = c?.skipped_videos ?? 0
+                let total = max(c?.total_videos ?? 0, done + failed + skipped + rows.count)
+                let now = rows.first(where: { $0.status == "processing" })?.title
+                out.append(Batch(id: cid, name: c?.name ?? cid, total: total, done: done,
+                                 pending: rows.count, failed: failed, skipped: skipped, now: now))
             }
             batches = out.sorted { $0.pending > $1.pending }
         } catch { self.error = "Queue read failed: \(error.localizedDescription)" }
     }
 
     func op(_ id: String, _ op: String) async {
-        var req = URLRequest(url: URL(string: voiceBase + "/job?jobId=\(id)&op=\(op)")!)
+        var c = URLComponents(string: voiceBase + "/job")!
+        c.queryItems = [URLQueryItem(name: "jobId", value: id), URLQueryItem(name: "op", value: op)]
+        var req = URLRequest(url: c.url!)
         req.httpMethod = "POST"
-        _ = try? await URLSession.shared.data(for: req)
+        req.timeoutInterval = 20
+        do { try await CorpusAPI.send(req) }
+        catch { self.error = "Couldn't \(op) that job: \(error.localizedDescription)" }
         await refresh()
     }
 
     func collection(_ cid: String, _ action: String) async {
-        _ = try? await ingest(["action": action, "collectionId": cid])
+        do { _ = try await ingest(["action": action, "collectionId": cid]) }
+        catch { self.error = "Couldn't update that batch: \(error.localizedDescription)" }
         await refresh()
     }
 
     // MARK: helpers
-    private func rest<T: Decodable>(_ path: String, as: T.Type) async throws -> T {
-        var req = URLRequest(url: URL(string: "\(CorpusAPI.restBase)/\(path)")!)
-        req.setValue(CorpusAPI.anonKey, forHTTPHeaderField: "apikey")
-        req.setValue("Bearer \(CorpusAPI.anonKey)", forHTTPHeaderField: "Authorization")
-        let (d, _) = try await URLSession.shared.data(for: req)
-        return try JSONDecoder().decode(T.self, from: d)
-    }
-    private func count(_ path: String) async throws -> Int {
-        var req = URLRequest(url: URL(string: "\(CorpusAPI.restBase)/\(path)")!)
-        req.httpMethod = "HEAD"
-        req.setValue(CorpusAPI.anonKey, forHTTPHeaderField: "apikey")
-        req.setValue("Bearer \(CorpusAPI.anonKey)", forHTTPHeaderField: "Authorization")
-        req.setValue("count=exact", forHTTPHeaderField: "Prefer")
-        let (_, r) = try await URLSession.shared.data(for: req)
-        let cr = (r as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Range") ?? ""
-        return Int(cr.split(separator: "/").last ?? "") ?? 0
-    }
     private func ingest(_ body: [String: Any]) async throws -> [String: Any] {
         var req = URLRequest(url: URL(string: "\(CorpusAPI.appBase)/api/ingest")!)
         req.httpMethod = "POST"
+        req.timeoutInterval = 60
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (d, _) = try await URLSession.shared.data(for: req)
+        let d = try await CorpusAPI.send(req)
         return (try JSONSerialization.jsonObject(with: d) as? [String: Any]) ?? [:]
     }
 }

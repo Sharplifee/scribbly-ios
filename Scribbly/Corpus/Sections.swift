@@ -490,6 +490,8 @@ struct IngestSection: View {
     @State private var previewExisting = 0
     @State private var countdown = -1
     @State private var countdownTask: Task<Void, Never>? = nil
+    /// The live progress poller; cancelled when Home leaves the screen, restarted when it returns.
+    @State private var progressTask: Task<Void, Never>? = nil
     @State private var nowProcessing = ""
     @State private var progressSkipped = 0
     @State private var skippedNoCaptions: [[String: String]] = []
@@ -761,6 +763,10 @@ struct IngestSection: View {
         .scrollDismissesKeyboard(.immediately)
         .refreshable { if let store { await store.loadRecent() } }
         .onChange(of: pasteFocused) { BottomChrome.shared.keyboardUp = $0 }
+        .onAppear {
+            if progressActive, progressTask == nil, let cid = progressCollection { pollProgress(collection: cid, total: progressTotal) }
+        }
+        .onDisappear { progressTask?.cancel(); progressTask = nil }
         .onReceive(BottomChrome.shared.$savedTitle) { if $0 != nil, let store { Task { await store.loadRecent() } } }
     }
 
@@ -821,92 +827,126 @@ struct IngestSection: View {
     private func submit() async {
         let urls = extractURLs(text)
         guard !urls.isEmpty else { return }
-        let payload = urls.count == 1 ? urls[0] : urls.joined(separator: "\n")
-        let mode = (urls.count == 1 && isChannelOrPlaylist(urls[0])) ? 0 : 1
+        // Channel / playlist links always take the whole-list path, even when
+        // pasted alongside other links; everything else is handled link-by-link.
+        let channelURLs = urls.filter(isChannelOrPlaylist)
+        let linkURLs = urls.filter { !isChannelOrPlaylist($0) }
         // Submitted = the field resets immediately (restored only if the request errors out).
         let original = text
         text = ""
         pasteFocused = false
         do {
-            if mode == 0 {
-                // Channel / playlist: resolve -> preview with countdown -> queue.
-                status = "Fetching video list…"
-                let resolved = try await ingest(["action": "resolve", "url": payload])
-                guard let videos = resolved["videos"] as? [[String: Any]], !videos.isEmpty else {
-                    status = (resolved["error"] as? String) ?? "No videos found."; return
-                }
-                let name = (resolved["name"] as? String) ?? "Batch"
-                let ids = videos.compactMap { $0["videoId"] as? String }
-                let existing = try await CorpusAPI.existingVideoIDs(ids)
-                let fresh = videos.filter { v in
-                    guard let id = v["videoId"] as? String else { return false }
-                    return !existing.contains(id)
-                }
-                if fresh.isEmpty { status = "All \(videos.count) videos are already in your Library."; return }
-                // Preview + a 3-2-1 auto-start the user can stop or skip.
-                previewName = name
-                previewVideos = fresh
-                previewExisting = videos.count - fresh.count
-                status = nil
-                countdown = 3
-                countdownTask = Task {
-                    for t in stride(from: 3, through: 1, by: -1) {
-                        await MainActor.run { countdown = t }
-                        try? await Task.sleep(nanoseconds: 1_000_000_000)
-                        if Task.isCancelled { return }
-                    }
-                    // Detach from this countdown task before queuing: startQueue()
-                    // cancels countdownTask, and cancelling the task we're running in
-                    // aborted every network call with "cancelled".
-                    await MainActor.run { countdown = 0; countdownTask = nil }
-                    Task { await startQueue() }
-                }
+            if channelURLs.isEmpty {
+                try await submitLinks(linkURLs)
             } else {
-                // Individual links: one URL per line.
-                let urls = payload.split(whereSeparator: \.isNewline).map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-                let podcasts = urls.filter { $0.contains("podcasts.apple.com") || $0.contains("open.spotify.com/episode") || $0.contains("open.spotify.com/show") }
-                var podcastNote = ""
-                if !podcasts.isEmpty {
-                    status = "Processing \(podcasts.count) podcast link(s)…"
-                    var okCount = 0
-                    for pu in podcasts {
-                        if let r = try? await ingest(["action": "process-podcast", "podcastUrl": pu]),
-                           (r["success"] as? Bool) == true || r["skipped"] == nil { okCount += 1 }
-                    }
-                    podcastNote = " \(okCount) podcast(s) saved."
-                }
-                let videos: [[String: Any]] = urls.compactMap { u in
-                    guard let id = CorpusAPI.youtubeID(from: u) else { return nil }
-                    return ["videoId": id, "title": u, "url": u]
-                }
-                // Instagram + any other direct URL: the pipeline endpoint fetches,
-                // transcribes, summarises and saves — same path the web app uses.
-                let others = urls.filter { CorpusAPI.youtubeID(from: $0) == nil && !$0.contains("podcasts.apple.com") && !$0.contains("open.spotify.com") }
-                var otherSaved = 0, otherFailed = 0
-                for u in others {
-                    status = "Processing \(u.contains("instagram.com") ? "Instagram" : "web") link…"
-                    if await processDirectURL(u) { otherSaved += 1 } else { otherFailed += 1 }
-                }
-                let unknown: [String] = []
-                var otherNote = ""
-                if !others.isEmpty {
-                    otherNote = " \(otherSaved) link(s) queued" + (otherFailed > 0 ? ", \(otherFailed) failed" : "") + " — transcribing on the server; see Activity."
-                }
-                guard !videos.isEmpty else {
-                    status = (podcasts.isEmpty && others.isEmpty)
-                        ? "No links recognised."
-                        : "Done —\(podcastNote)\(otherNote)"
-                    return
-                }
-                status = "Queuing \(videos.count) link(s)…"
-                let col = try await ingest(["action": "create-collection", "name": "Links — \(Date().formatted(date: .abbreviated, time: .shortened))", "videos": videos])
-                guard let cid = col["collectionId"] as? String else { status = "Could not create the collection (server). Tap Fetch again."; return }
-                let q = try await ingest(["action": "enqueue", "videos": videos, "collectionId": cid])
-                let n = (q["queued"] as? Int) ?? 0
-                status = "Queued \(n) YouTube link(s)." + podcastNote + otherNote
-                startProgress(collection: cid, total: n)
+                try await submitChannels(channelURLs, plusLinks: linkURLs)
             }
         } catch { status = error.localizedDescription; if text.isEmpty { text = original } }
+    }
+
+    private func isPodcast(_ u: String) -> Bool {
+        u.contains("podcasts.apple.com") || u.contains("open.spotify.com/episode") || u.contains("open.spotify.com/show")
+    }
+
+    /// Podcasts, social videos, articles and direct media — everything that isn't
+    /// a YouTube video. Returns a status note like " 2 podcast(s) saved."
+    private func processNonYouTube(_ urls: [String]) async -> String {
+        let podcasts = urls.filter(isPodcast)
+        var note = ""
+        if !podcasts.isEmpty {
+            status = "Processing \(podcasts.count) podcast link(s)…"
+            var okCount = 0, failCount = 0
+            for pu in podcasts {
+                if let r = try? await ingest(["action": "process-podcast", "podcastUrl": pu]),
+                   (r["success"] as? Bool) == true { okCount += 1 } else { failCount += 1 }
+            }
+            note += " \(okCount) podcast(s) saved" + (failCount > 0 ? ", \(failCount) not saved." : ".")
+        }
+        // Instagram + any other direct URL: social links go to Sharp's Cloud Computer,
+        // the rest through the pipeline endpoint (fetch, transcribe, summarise, save).
+        let others = urls.filter { CorpusAPI.youtubeID(from: $0) == nil && !$0.contains("podcasts.apple.com") && !$0.contains("open.spotify.com") }
+        var otherSaved = 0, otherFailed = 0
+        for u in others {
+            status = "Processing \(u.contains("instagram.com") ? "Instagram" : "web") link…"
+            if await processDirectURL(u) { otherSaved += 1 } else { otherFailed += 1 }
+        }
+        if !others.isEmpty {
+            note += " \(otherSaved) link(s) queued" + (otherFailed > 0 ? ", \(otherFailed) failed" : "") + " — transcribing on the server; see Activity."
+        }
+        return note
+    }
+
+    /// Individual links: YouTube videos become one "Links" batch; the rest are processed one by one.
+    private func submitLinks(_ urls: [String]) async throws {
+        let note = await processNonYouTube(urls)
+        let videos: [[String: Any]] = urls.compactMap { u in
+            guard let id = CorpusAPI.youtubeID(from: u) else { return nil }
+            return ["videoId": id, "title": u, "url": u]
+        }
+        guard !videos.isEmpty else {
+            status = note.isEmpty ? "No links recognised." : "Done —\(note)"
+            return
+        }
+        status = "Queuing \(videos.count) link(s)…"
+        let col = try await ingest(["action": "create-collection", "name": "Links — \(Date().formatted(date: .abbreviated, time: .shortened))", "videos": videos])
+        guard let cid = col["collectionId"] as? String else { status = "Could not create the collection (server). Tap Fetch again."; return }
+        let q = try await ingest(["action": "enqueue", "videos": videos, "collectionId": cid])
+        let n = (q["queued"] as? Int) ?? 0
+        status = "Queued \(n) YouTube link(s)." + note
+        startProgress(collection: cid, total: n)
+    }
+
+    /// Channel / playlist: resolve every list -> preview with countdown -> queue.
+    /// Single YouTube videos pasted alongside join the same batch; other links
+    /// (podcasts, social, articles) are processed right away.
+    private func submitChannels(_ channels: [String], plusLinks links: [String]) async throws {
+        let note = await processNonYouTube(links)
+        status = "Fetching video list…"
+        var names: [String] = []
+        var videos: [[String: Any]] = []
+        var seen = Set<String>()
+        var problems: [String] = []
+        for ch in channels {
+            let resolved = try await ingest(["action": "resolve", "url": ch])
+            guard let vs = resolved["videos"] as? [[String: Any]], !vs.isEmpty else {
+                problems.append((resolved["error"] as? String) ?? "No videos found for \(ch).")
+                continue
+            }
+            names.append((resolved["name"] as? String) ?? "Batch")
+            for v in vs { if let id = v["videoId"] as? String, seen.insert(id).inserted { videos.append(v) } }
+        }
+        for u in links {
+            if let id = CorpusAPI.youtubeID(from: u), seen.insert(id).inserted { videos.append(["videoId": id, "title": u, "url": u]) }
+        }
+        guard !videos.isEmpty else {
+            status = (problems.first ?? "No videos found.") + note; return
+        }
+        let ids = videos.compactMap { $0["videoId"] as? String }
+        let existing = try await CorpusAPI.existingVideoIDs(ids)
+        let fresh = videos.filter { v in
+            guard let id = v["videoId"] as? String else { return false }
+            return !existing.contains(id)
+        }
+        if fresh.isEmpty { status = "All \(videos.count) videos are already in your Library." + note; return }
+        // Preview + a 3-2-1 auto-start the user can stop or skip.
+        previewName = names.isEmpty ? "Links" : (names.count == 1 ? names[0] : names.joined(separator: " + "))
+        previewVideos = fresh
+        previewExisting = videos.count - fresh.count
+        let extra = (problems.isEmpty ? "" : " " + problems.joined(separator: " ")) + note
+        status = extra.isEmpty ? nil : extra.trimmingCharacters(in: .whitespaces)
+        countdown = 3
+        countdownTask = Task {
+            for t in stride(from: 3, through: 1, by: -1) {
+                await MainActor.run { countdown = t }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if Task.isCancelled { return }
+            }
+            // Detach from this countdown task before queuing: startQueue()
+            // cancels countdownTask, and cancelling the task we're running in
+            // aborted every network call with "cancelled".
+            await MainActor.run { countdown = 0; countdownTask = nil }
+            Task { await startQueue() }
+        }
     }
 
     /// Stops a running batch: everything still queued is parked server-side;
@@ -953,10 +993,18 @@ struct IngestSection: View {
         progressTotal = total
         progressDone = 0
         progressFailed = 0
+        progressSkipped = 0
         progressActive = true
-        Task {
-            while progressActive, progressCollection == collection {
+        pollProgress(collection: collection, total: total)
+    }
+
+    /// Polls queue-status every 3s while Home is on screen and the batch is running.
+    private func pollProgress(collection: String, total: Int) {
+        progressTask?.cancel()
+        progressTask = Task {
+            while !Task.isCancelled, progressActive, progressCollection == collection {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if Task.isCancelled { break }
                 guard let st = try? await ingest(["action": "queue-status", "collectionId": collection]),
                       let byLabel = st["byLabel"] as? [String: [String: Int]] else { continue }
                 var done = 0, failed = 0, pending = 0, skipped = 0
@@ -982,11 +1030,16 @@ struct IngestSection: View {
                 skippedNoCaptions = ((st["skippedNoCaptions"] as? [[String: Any]]) ?? []).map { d in
                     ["videoId": (d["videoId"] as? String) ?? "", "title": (d["title"] as? String) ?? ""]
                 }
-                if pending == 0 && done + failed >= total {
+                // Skipped videos are finished too — without them a batch with skips never completed.
+                if pending == 0 && done + failed + skipped >= total {
                     progressActive = false
-                    status = "Done — \(done) added to Library" + (failed > 0 ? ", \(failed) had no captions." : ".")
+                    status = "Done — \(done) added to Library"
+                        + (failed > 0 ? ", \(failed) failed" : "")
+                        + (skipped > 0 ? ", \(skipped) skipped" : "") + "."
                 }
             }
+            // A cancelled poller was replaced or stopped by whoever cancelled it.
+            if !Task.isCancelled { progressTask = nil }
         }
     }
 
@@ -1025,29 +1078,32 @@ struct IngestSection: View {
                 return false
             }
         }
+        // (Instagram never reaches here — it's a social link, handled above.)
         do {
-            let isIG = url.contains("instagram.com")
             let low = url.lowercased()
             let audioExts = [".mp3", ".m4a", ".wav", ".aac", ".ogg", ".mp4", ".mov", ".m4v", ".flac"]
             let isAudio = audioExts.contains { low.split(separator: "?").first?.hasSuffix($0) ?? false }
-            let body: [String: Any] = isIG ? ["action": "instagram-transcript", "instagramUrl": url]
-                     : isAudio            ? ["action": "transcribe-url", "audioUrl": url, "sourceType": "Media"]
-                                          : ["action": "article-text", "url": url]
+            let body: [String: Any] = isAudio ? ["action": "transcribe-url", "audioUrl": url, "sourceType": "Media"]
+                                              : ["action": "article-text", "url": url]
             let t = try await pipeline(body)
             guard let transcript = t["transcript"] as? String, !transcript.isEmpty else { return false }
-            let sourceType = isIG ? "Instagram" : (isAudio ? "Media" : "Article")
+            let sourceType = isAudio ? "Media" : "Article"
             let pageTitle = (t["title"] as? String) ?? ""
             let sum = try await pipeline(["action": "summarize", "transcript": transcript, "sourceType": sourceType, "title": pageTitle])
             var summary = (sum["summary"] as? String) ?? ""
             if let kp = sum["key_points"] as? [String], !kp.isEmpty { summary += "\n\nKey Points:\n" + kp.map { "• " + $0 }.joined(separator: "\n") }
             if let tp = sum["topics"] as? [String], !tp.isEmpty { summary += "\n\nTopics: " + tp.joined(separator: ", ") }
             let finalTitle = (sum["title"] as? String) ?? (pageTitle.isEmpty ? "Untitled" : pageTitle)
-            try await CorpusAPI.saveEntry(id: "entry_\(Int(Date().timeIntervalSince1970 * 1000))",
+            // Same URL → same id, so a retry updates the entry instead of duplicating it.
+            try await CorpusAPI.saveEntry(id: CorpusAPI.stableEntryID(for: url),
                                           title: finalTitle, type: sourceType,
                                           tags: (sum["tags"] as? String) ?? "",
                                           summary: summary, transcript: transcript)
             return true
-        } catch { return false }
+        } catch {
+            status = "Couldn't save \(url): \(error.localizedDescription)"
+            return false
+        }
     }
 
     private func ingest(_ body: [String: Any]) async throws -> [String: Any] {
@@ -1071,10 +1127,10 @@ struct IngestSection: View {
 /// "Recent" on Home — the four newest entries, then a link to the whole library.
 private struct RecentList: View {
     @ObservedObject var store: LibraryStore
-    @StateObject private var jobs = JobsModel()
+    /// Shared with Activity — one poller for both, running only while either is visible.
+    @ObservedObject private var jobs = JobsModel.shared
     @ObservedObject private var up = Uploader.shared
-    @State private var loop: Task<Void, Never>?
-    private func meta(_ e: Entry) -> String { (e.date ?? "") + " · " + (e.type ?? "") }
+    private func meta(_ e: Entry) -> String { e.displayDate + " · " + (e.type ?? "") }
 
     /// Anything still moving: server voice/file jobs that aren't finished,
     /// uploads waiting on this phone, and YouTube batches with videos queued.
@@ -1131,22 +1187,13 @@ private struct RecentList: View {
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.edge))
         }
         .padding(.horizontal, 16)
-        // Live feed: jobs every 5s, saved entries every 10s, while Home is on screen.
-        .onAppear {
-            loop?.cancel()
-            loop = Task {
-                var n = 0
-                while !Task.isCancelled {
-                    let wasLive = liveJobs.count + liveBatches.count
-                    await jobs.refresh()
-                    let nowLive = liveJobs.count + liveBatches.count
-                    if n % 2 == 0 || nowLive < wasLive { await store.loadRecent() }
-                    n += 1
-                    try? await Task.sleep(nanoseconds: 5_000_000_000)
-                }
-            }
+        // Live feed comes from the shared jobs poller while Home is on screen; when
+        // something finishes (fewer live items), the saved list reloads to show it.
+        .onAppear { jobs.watch("home") }
+        .onDisappear { jobs.unwatch("home") }
+        .onChange(of: liveJobs.count + liveBatches.count) { [old = liveJobs.count + liveBatches.count] now in
+            if now < old { Task { await store.loadRecent() } }
         }
-        .onDisappear { loop?.cancel(); loop = nil }
     }
 
     private func liveRow(icon: String, tint: Color, title: String, sub: String, spinning: Bool = false) -> some View {

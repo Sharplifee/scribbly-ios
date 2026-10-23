@@ -134,6 +134,7 @@ final class LibraryStore: ObservableObject {
         loadingEntries = false
         switch result {
         case .success(let page):
+            error = nil
             entries.append(contentsOf: page)
             if !q.search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 reachedEnd = true                     // search returns its matches in one go

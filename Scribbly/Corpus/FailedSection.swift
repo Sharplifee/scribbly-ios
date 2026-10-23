@@ -125,7 +125,7 @@ final class FailedModel: ObservableObject {
     @Published var message: String?
     var total: Int { groups.reduce(0) { $0 + $1.rows.count } + voice.count }
 
-    private let jobs = JobsModel()
+    private var jobs: JobsModel { JobsModel.shared }
 
     private var inFlight = false
     func load() async {
@@ -146,7 +146,7 @@ final class FailedModel: ObservableObject {
         var names: [String: String] = [:]
         for chunk in stride(from: 0, to: ids.count, by: 80).map({ Array(ids[$0..<min($0 + 80, ids.count)]) }) {
             struct C: Decodable { let id: String; let name: String }
-            let list = chunk.map { "\"\($0)\"" }.joined(separator: ",")
+            let list = chunk.map { "%22\($0)%22" }.joined(separator: ",")   // %22 = ", pre-encoded: URL(string:) rejects raw quotes on iOS 16
             if let cs: [C] = try? await get("scribbly_collections?select=id,name&id=in.(\(list))") {
                 for c in cs { names[c.id] = c.name }
             }
@@ -178,8 +178,9 @@ final class FailedModel: ObservableObject {
 
     func retry(ids: [String]) async {
         for chunk in stride(from: 0, to: ids.count, by: 100).map({ Array(ids[$0..<min($0 + 100, ids.count)]) }) {
-            let list = chunk.map { "\"\($0)\"" }.joined(separator: ",")
-            await patch("scribbly_queue?id=in.(\(list))", ["status": "pending", "attempts": 0, "error": NSNull()])
+            let list = chunk.map { "%22\($0)%22" }.joined(separator: ",")   // %22 = ", pre-encoded: URL(string:) rejects raw quotes on iOS 16
+            do { try await patch("scribbly_queue?id=in.(\(list))", ["status": "pending", "attempts": 0, "error": NSNull()]) }
+            catch { message = "Couldn't queue a retry: \(error.localizedDescription)"; await load(); return }
         }
         message = "Queued \(ids.count) to try again — watch them on Home."
         await load()
@@ -196,7 +197,8 @@ final class FailedModel: ObservableObject {
         var req = URLRequest(url: URL(string: "\(CorpusAPI.restBase)/scribbly_queue?id=eq.\(id)")!)
         req.httpMethod = "DELETE"
         CorpusAPI.restHeaders.forEach { req.setValue($1, forHTTPHeaderField: $0) }
-        _ = try? await URLSession.shared.data(for: req)
+        do { try await CorpusAPI.send(req) }
+        catch { message = "Couldn't remove it: \(error.localizedDescription)"; return }
         for i in groups.indices { groups[i].rows.removeAll { $0.id == id } }
         groups.removeAll { $0.rows.isEmpty }
     }
@@ -223,12 +225,12 @@ final class FailedModel: ObservableObject {
         let (d, _) = try await URLSession.shared.data(for: req)
         return try JSONDecoder().decode(T.self, from: d)
     }
-    private func patch(_ path: String, _ body: [String: Any]) async {
+    private func patch(_ path: String, _ body: [String: Any]) async throws {
         var req = URLRequest(url: URL(string: "\(CorpusAPI.restBase)/\(path)")!)
         req.httpMethod = "PATCH"
         CorpusAPI.restHeaders.forEach { req.setValue($1, forHTTPHeaderField: $0) }
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        _ = try? await URLSession.shared.data(for: req)
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        try await CorpusAPI.send(req)
     }
 }
