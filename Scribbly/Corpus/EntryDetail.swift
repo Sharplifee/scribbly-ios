@@ -28,6 +28,20 @@ struct EntryDetail: View {
         return "Open original"
     }
 
+    /// Copy choices: just the summary, just the transcript, or the full entry.
+    private func summaryText() -> String {
+        guard let e = entry else { return "" }
+        return (e.summary ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    private func transcriptText() -> String {
+        guard let e = entry else { return "" }
+        return (e.cleanTranscript ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    private func copy(_ text: String) {
+        UIPasteboard.general.string = text
+        copied = true
+    }
+
     private func exportText() -> String {
         guard let e = entry else { return "" }
         var out = "\(e.title)\n\(e.type ?? "") · \(e.displayDate)\n"
@@ -76,7 +90,13 @@ struct EntryDetail: View {
 
                     // Copy · Export · Share · Delete
                     HStack {
-                        Button { UIPasteboard.general.string = exportText(); copied = true } label: {
+                        Menu {
+                            Button { copy(summaryText()) } label: { Label("Summary", systemImage: "text.alignleft") }
+                                .disabled(summaryText().isEmpty)
+                            Button { copy(transcriptText()) } label: { Label("Transcript", systemImage: "text.quote") }
+                                .disabled(transcriptText().isEmpty)
+                            Button { copy(exportText()) } label: { Label("Both — summary + transcript", systemImage: "doc.on.doc") }
+                        } label: {
                             Text(copied ? "Copied" : "Copy").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                         }
                         Spacer()
@@ -146,9 +166,9 @@ struct EntryDetail: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button {
-                        UIPasteboard.general.string = exportText()
-                    } label: { Label("Copy entry", systemImage: "doc.on.doc") }
+                    Button { copy(summaryText()) } label: { Label("Copy summary", systemImage: "text.alignleft") }
+                    Button { copy(transcriptText()) } label: { Label("Copy transcript", systemImage: "text.quote") }
+                    Button { copy(exportText()) } label: { Label("Copy both", systemImage: "doc.on.doc") }
                     ShareLink(item: exportText(), preview: SharePreview(entry?.title ?? "Entry")) {
                         Label("Export…", systemImage: "square.and.arrow.up")
                     }
