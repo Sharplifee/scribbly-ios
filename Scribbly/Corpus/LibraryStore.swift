@@ -1,8 +1,9 @@
 import Foundation
 import SwiftUI
 
-/// Backing store for the five Library sub-tabs. Loads lazily, paginates the
-/// entries feed, and derives groups from collections in memory.
+/// Backing store for the Library and its sibling pages. The Library feed is
+/// filtered, sorted, searched and paginated by the server (keyset cursor), so
+/// filters and search cover the whole library, not just the rows loaded so far.
 @MainActor
 final class LibraryStore: ObservableObject {
     @Published var entries: [Entry] = []
@@ -14,15 +15,32 @@ final class LibraryStore: ObservableObject {
 
     @Published var libraryCount = 0
     @Published var collectionCount = 0
-    @Published var groupCount = 0
+    /// Rows per entry type ("Voice Note", "YouTube", …); a type missing here hasn't been counted yet.
+    @Published var typeCounts: [String: Int] = [:]
 
     @Published var loadingEntries = false
     @Published var loadingCollections = false
     @Published var reachedEnd = false
     @Published var error: String?
 
-    private var offset = 0
+    /// What the Library feed currently shows. Changing it reloads from the server.
+    struct Query: Equatable {
+        var type: String? = nil          // scribbly_entries.type, nil = all
+        var sort: CorpusAPI.EntrySort = .newest
+        var search = ""
+    }
+    @Published private(set) var query = Query()
+    /// True when a search returned the maximum number of matches (there may be more).
+    @Published var searchCapped = false
+
+    /// Bumped on every reset so a slow page from an old query is dropped.
+    private var generation = 0
     private let pageSize = 100
+
+    /// The entry types the Library filters by, in chip order.
+    static let filterTypes: [(chip: String, type: String)] = [
+        ("Voice", "Voice Note"), ("YouTube", "YouTube"), ("Instagram", "Instagram"), ("Notes", "Note")
+    ]
 
     private static var recentCacheURL: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -63,22 +81,69 @@ final class LibraryStore: ObservableObject {
         if let n = await col, n > 0 { collectionCount = n; UserDefaults.standard.set(n, forKey: "collectionCount") }
     }
 
+    /// One exact count per Library type, so chips with no entries can be hidden.
+    func loadTypeCounts() async {
+        for t in Self.filterTypes {
+            if let n = try? await CorpusAPI.count(table: "scribbly_entries", filters: [URLQueryItem(name: "type", value: "eq.\(t.type)")]) {
+                typeCounts[t.type] = n
+            }
+        }
+    }
+
     func loadFirstPageIfNeeded() async {
-        guard entries.isEmpty else { return }
+        guard entries.isEmpty, !loadingEntries else { return }
+        await reloadEntries()
+    }
+
+    /// Switches the feed to a new filter / sort / search and loads its first page.
+    func setQuery(_ q: Query) async {
+        guard q != query else { return }
+        query = q
+        await reloadEntries()
+    }
+
+    /// Drops what's loaded and fetches the first page of the current query.
+    func reloadEntries() async {
+        generation += 1
+        entries = []
+        reachedEnd = false
+        searchCapped = false
+        loadingEntries = false
+        error = nil
         await loadNextPage()
     }
 
     func loadNextPage() async {
         guard !loadingEntries, !reachedEnd else { return }
+        let gen = generation
+        let q = query
+        let after = entries.last
         loadingEntries = true
-        defer { loadingEntries = false }
+        let result: Result<[Entry], Error>
         do {
-            let page = try await CorpusAPI.entries(limit: pageSize, offset: offset)
-            entries.append(contentsOf: page)
-            offset += page.count
-            if page.count < pageSize { reachedEnd = true }
+            if q.search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                result = .success(try await CorpusAPI.entries(type: q.type, sort: q.sort, after: after, limit: pageSize))
+            } else {
+                result = .success(try await CorpusAPI.searchEntries(q.search, type: q.type, sort: q.sort))
+            }
         } catch {
-            self.error = error.localizedDescription
+            result = .failure(error)
+        }
+        // A newer query took over while this was in flight; it owns the state now.
+        guard gen == generation else { return }
+        loadingEntries = false
+        switch result {
+        case .success(let page):
+            entries.append(contentsOf: page)
+            if !q.search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                reachedEnd = true                     // search returns its matches in one go
+                searchCapped = page.count >= CorpusAPI.entrySearchLimit
+            } else if page.count < pageSize {
+                reachedEnd = true
+            }
+        case .failure(let e):
+            if (e as? URLError)?.code == .cancelled { return }
+            self.error = e.localizedDescription
         }
     }
 
@@ -95,16 +160,16 @@ final class LibraryStore: ObservableObject {
             collections = cols
             groups = CorpusAPI.groups(from: cols)
             collectionCount = cols.count
-            groupCount = groups.count
         } catch {
             self.error = error.localizedDescription
         }
     }
 
+    /// Pull-to-refresh: reloads the current filter/sort/search, collections and counts.
     func refreshAll() async {
-        offset = 0; reachedEnd = false; entries = []
-        await loadNextPage()
+        await reloadEntries()
         await reloadCollections()
         await loadCounts()
+        await loadTypeCounts()
     }
 }

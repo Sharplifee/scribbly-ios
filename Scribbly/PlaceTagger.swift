@@ -9,6 +9,20 @@ final class PlaceTagger: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var pending: [(String?) -> Void] = []
     private(set) var lastPlace: String?
+    /// When `lastPlace` was resolved.
+    private(set) var lastPlaceAt: Date?
+
+    /// Settings › "Title recordings by place" (default on).
+    static var enabled: Bool {
+        (UserDefaults.standard.object(forKey: "titleByPlace") as? Bool) ?? true
+    }
+
+    /// `lastPlace` only if it was resolved in the last 15 minutes — an old fix
+    /// (you've since driven home) must never title a new recording.
+    var recentPlace: String? {
+        guard Self.enabled, let at = lastPlaceAt, Date().timeIntervalSince(at) < 15 * 60 else { return nil }
+        return lastPlace
+    }
 
     override init() {
         super.init()
@@ -18,13 +32,14 @@ final class PlaceTagger: NSObject, CLLocationManagerDelegate {
 
     /// Resolves quickly (a few seconds) or with nil; never blocks recording.
     func tag(_ completion: @escaping (String?) -> Void) {
+        guard Self.enabled else { completion(nil); return }
         pending.append(completion)
         switch manager.authorizationStatus {
         case .notDetermined: manager.requestWhenInUseAuthorization()
         case .denied, .restricted: flush(nil)
         default: manager.requestLocation()
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in self?.flush(self?.lastPlace) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in self?.flush(self?.recentPlace) }
     }
 
     func locationManagerDidChangeAuthorization(_ m: CLLocationManager) {
@@ -45,12 +60,15 @@ final class PlaceTagger: NSObject, CLLocationManagerDelegate {
             else if let street = p?.thoroughfare { parts.append(street) }
             if let city = p?.locality, !parts.contains(city) { parts.append(city) }
             let label = parts.isEmpty ? nil : parts.joined(separator: ", ")
-            self?.lastPlace = label ?? self?.lastPlace
+            if let label {
+                self?.lastPlace = label
+                self?.lastPlaceAt = Date()
+            }
             self?.flush(label)
         }
     }
 
-    func locationManager(_ m: CLLocationManager, didFailWithError e: Error) { flush(lastPlace) }
+    func locationManager(_ m: CLLocationManager, didFailWithError e: Error) { flush(recentPlace) }
 
     private func flush(_ value: String?) {
         let cbs = pending; pending = []

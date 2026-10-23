@@ -11,6 +11,8 @@ struct Entry: Codable, Identifiable, Equatable {
     let date: String?
     let collection_id: String?
     let created_at: String?
+    /// Only present on full rows (`select=*`); list rows leave it nil.
+    var notion_url: String? = nil
 
     var tagList: [String] {
         (tags ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -22,6 +24,41 @@ struct Entry: Codable, Identifiable, Equatable {
         return s
     }
     var displayType: String { type ?? "Note" }
+
+    /// The day it was saved, in the phone's time zone ("Oct 23, 2026"), from
+    /// created_at — the stored `date` text is only a fallback (older rows wrote
+    /// the UTC day there).
+    var displayDate: String {
+        if let d = EntryDates.parse(created_at) { return EntryDates.display.string(from: d) }
+        return date ?? ""
+    }
+
+    /// Where this entry came from, if it has a link: its Notion page, or the
+    /// YouTube video for yt_<videoId> entries.
+    var sourceLink: URL? {
+        if let n = notion_url, !n.isEmpty, let u = URL(string: n) { return u }
+        if id.hasPrefix("yt_") { return URL(string: "https://www.youtube.com/watch?v=\(id.dropFirst(3))") }
+        return nil
+    }
+}
+
+/// Date handling for entries: Postgres timestamptz in, local "MMM d, yyyy" out.
+enum EntryDates {
+    /// "Oct 23, 2026" in the current time zone.
+    static let display: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MMM d, yyyy"
+        return f
+    }()
+    private static let iso = ISO8601DateFormatter()
+
+    /// Parses "2026-10-14T17:33:51.25486+00:00" (any number of fractional digits).
+    static func parse(_ s: String?) -> Date? {
+        guard var s, !s.isEmpty else { return nil }
+        if let r = s.range(of: #"\.\d+"#, options: .regularExpression) { s.removeSubrange(r) }
+        return iso.date(from: s)
+    }
 }
 
 /// One ingest batch.

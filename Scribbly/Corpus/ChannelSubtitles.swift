@@ -1,6 +1,7 @@
 import Foundation
 
-/// Creator descriptors shown under each group name — same list the web app uses.
+/// Creator descriptors shown under each group name. Keys must match a real
+/// group name (Collection.groupKey) — checked against scribbly_collections.
 enum ChannelSubtitles {
     static let map: [String: String] = [
         "Jordan Peterson": "psychology mythology biblical analysis meaning",
@@ -18,20 +19,11 @@ enum ChannelSubtitles {
         "Scott Galloway": "ai wealth inequality technology capitalism",
         "Scott Donnell": "financial literacy for families kids",
         "Chris Williamson": "psychology self improvement science philosophy",
-        "Daniel Priestley": "entrepreneurship wealth building ceo advice",
-        "Nate from the Internet": "claude code ai tools automation tutorials",
+        "Nate Herk": "claude code ai tools automation tutorials",
         "Chamath Palihapitiya": "venture capital technology social capital",
-        "Focus & Productivity": "focus signal to noise productivity",
         "Tony Robbins": "psychology mindset peak performance transformation",
         "Ed Mylett": "mindset fulfillment peak performance",
         "Chris Voss": "fbi negotiation tactical empathy influence",
-        "Dr. C": "personality disorders clinical psychology",
-        "Surviving Narcissism": "narcissistic abuse recovery toxic relationships",
-        "Narcissistic Family Dynamics": "family dysfunction narcissism intergenerational trauma",
-        "Voice Memos": "personal audio recordings",
-        "Audio Upload": "uploaded audio files",
-        "Uncategorized": "miscellaneous batches",
-        "Apple Podcasts": "podcast episodes",
-        "Processing...": "collections awaiting names"
+        "Voice Memos": "personal audio recordings"
     ]
 }

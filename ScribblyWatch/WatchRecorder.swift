@@ -30,6 +30,9 @@ final class WatchRecorder: NSObject, ObservableObject, WCSessionDelegate, URLSes
     private var timer: Timer?
     private var startedAt: Date?
     private var fileURL: URL?
+    /// Outbox file names this launch has handed to the direct upload and not yet
+    /// heard back about (main thread only) — so a retry sweep never sends twice.
+    private var inFlight = Set<String>()
 
     override init() {
         super.init()
@@ -37,6 +40,38 @@ final class WatchRecorder: NSObject, ObservableObject, WCSessionDelegate, URLSes
         if WCSession.isSupported() {
             WCSession.default.delegate = self
             WCSession.default.activate()
+        }
+        retryOutbox()
+    }
+
+    /// Re-sends every outbox file that has no upload task and no
+    /// WatchConnectivity transfer running — e.g. one whose send failed, or that
+    /// was waiting when the app was killed. Runs on launch and on WCSession
+    /// activation.
+    func retryOutbox() {
+        let files = ((try? FileManager.default.contentsOfDirectory(
+            at: outbox, includingPropertiesForKeys: [.creationDateKey])) ?? [])
+            .filter { $0.pathExtension.lowercased() == "m4a" }
+        guard !files.isEmpty else { return }
+        uploads.getAllTasks { tasks in
+            let uploading = Set(tasks.compactMap { task -> String? in
+                guard let path = task.taskDescription?.components(separatedBy: "\n").first, !path.isEmpty else { return nil }
+                return URL(fileURLWithPath: path).lastPathComponent
+            })
+            DispatchQueue.main.async {
+                var transferring = Set<String>()
+                if WCSession.isSupported(), WCSession.default.activationState == .activated {
+                    transferring = Set(WCSession.default.outstandingFileTransfers.map { $0.file.fileURL.lastPathComponent })
+                }
+                let fmt = DateFormatter(); fmt.dateFormat = "MMM d, h:mm a"
+                for file in files {
+                    let name = file.lastPathComponent
+                    guard !uploading.contains(name), !transferring.contains(name), !self.inFlight.contains(name),
+                          FileManager.default.fileExists(atPath: file.path) else { continue }
+                    let created = (try? file.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()
+                    self.upload(file, title: "Watch memo — \(fmt.string(from: created))", duration: 0)
+                }
+            }
         }
     }
 
@@ -85,11 +120,29 @@ final class WatchRecorder: NSObject, ObservableObject, WCSessionDelegate, URLSes
         let dur = elapsed
         let fmt = DateFormatter(); fmt.dateFormat = "MMM d, h:mm a"
         let title = "Watch memo — \(fmt.string(from: Date()))"
-        // Move out of tmp so the background upload can always read it.
-        let kept = outbox.appendingPathComponent(url.lastPathComponent)
-        try? FileManager.default.moveItem(at: url, to: kept)
-        upload(kept, title: title, duration: dur)
         fileURL = nil; elapsed = 0
+        // Move out of tmp so the background upload can always read it.
+        let fm = FileManager.default
+        let kept = outbox.appendingPathComponent(url.lastPathComponent)
+        var toSend: URL?
+        do {
+            try fm.moveItem(at: url, to: kept)
+            toSend = kept
+        } catch {
+            // Move failed: try a copy, else send straight from tmp — but never
+            // start an upload of a file that isn't there.
+            if (try? fm.copyItem(at: url, to: kept)) != nil {
+                try? fm.removeItem(at: url)
+                toSend = kept
+            } else if fm.fileExists(atPath: url.path) {
+                toSend = url
+            }
+        }
+        guard let file = toSend else {
+            status = "The recording couldn't be saved on the watch."
+            return
+        }
+        upload(file, title: title, duration: dur)
     }
 
     func discard() {
@@ -102,6 +155,7 @@ final class WatchRecorder: NSObject, ObservableObject, WCSessionDelegate, URLSes
     }
 
     private func upload(_ file: URL, title: String, duration: TimeInterval) {
+        inFlight.insert(file.lastPathComponent)
         var req = URLRequest(url: Self.uploadURL)
         req.httpMethod = "POST"
         req.setValue("audio/mp4", forHTTPHeaderField: "Content-Type")
@@ -118,7 +172,12 @@ final class WatchRecorder: NSObject, ObservableObject, WCSessionDelegate, URLSes
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let parts = (task.taskDescription ?? "").components(separatedBy: "\n")
         guard parts.count == 3 else { return }
-        let file = URL(fileURLWithPath: parts[0])
+        // The container path can change between launches; the name can't.
+        let name = URL(fileURLWithPath: parts[0]).lastPathComponent
+        let inOutbox = outbox.appendingPathComponent(name)
+        let file = FileManager.default.fileExists(atPath: inOutbox.path) ? inOutbox : URL(fileURLWithPath: parts[0])
+        DispatchQueue.main.async { self.inFlight.remove(name) }
+        guard FileManager.default.fileExists(atPath: file.path) else { return }
         let code = (task.response as? HTTPURLResponse)?.statusCode ?? 0
         if error == nil, (200..<300).contains(code) {
             try? FileManager.default.removeItem(at: file)
@@ -139,12 +198,22 @@ final class WatchRecorder: NSObject, ObservableObject, WCSessionDelegate, URLSes
     }
 
     // MARK: WCSessionDelegate
-    func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {}
+    func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
+        guard state == .activated else { return }
+        DispatchQueue.main.async {
+            self.pendingTransfers = session.outstandingFileTransfers.count
+            self.retryOutbox()
+        }
+    }
     func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
         DispatchQueue.main.async {
             self.pendingTransfers = session.outstandingFileTransfers.count
             if let error { self.status = "Send failed (\(error.localizedDescription)) — will retry." }
-            else { self.status = "Delivered to iPhone."; try? FileManager.default.removeItem(at: fileTransfer.file.fileURL) }
+            else {
+                self.status = "Delivered to iPhone."
+                try? FileManager.default.removeItem(at: fileTransfer.file.fileURL)
+                try? FileManager.default.removeItem(at: self.outbox.appendingPathComponent(fileTransfer.file.fileURL.lastPathComponent))
+            }
         }
     }
 }

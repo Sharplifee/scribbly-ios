@@ -5,9 +5,14 @@ import WatchConnectivity
 /// upload path — so a watch memo lands in the library exactly like a phone memo.
 final class WatchBridge: NSObject, WCSessionDelegate {
     static let shared = WatchBridge()
+    private var activated = false
 
+    /// Called from ScribblyApp.init (so watch transfers arrive even when the app
+    /// is launched in the background) and again from the UI; only the first counts.
     func activate() {
         guard WCSession.isSupported() else { return }
+        guard !activated else { return }   // both callers run on the main thread
+        activated = true
         WCSession.default.delegate = self
         WCSession.default.activate()
     }
@@ -20,8 +25,9 @@ final class WatchBridge: NSObject, WCSessionDelegate {
         let title = (file.metadata?["title"] as? String) ?? "Watch memo"
         let duration = (file.metadata?["duration"] as? TimeInterval) ?? 0
         DispatchQueue.main.async {
+            // Only a place fixed in the last 15 minutes — never a stale one.
             Uploader.shared.upload(fileURL: dst, title: title, duration: duration,
-                                   location: PlaceTagger.shared.lastPlace) { _, _ in }
+                                   location: PlaceTagger.shared.recentPlace) { _, _ in }
         }
     }
 

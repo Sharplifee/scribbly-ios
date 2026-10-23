@@ -13,6 +13,9 @@ struct ScribblyApp: App {
         CrashReporter.shared.start()
         SinkyAppearance.apply()
         MainActor.assumeIsolated { RecordingLiveActivity.shared.bind() }
+        // Watch memos sent over WatchConnectivity arrive even when the app is
+        // woken in the background and no view ever appears.
+        WatchBridge.shared.activate()
     }
     var body: some Scene {
         WindowGroup {
@@ -179,12 +182,15 @@ struct RecordBar: View {
     }
 
     private var isActive: Bool { rec.state != .idle || up.isUploading }
+    /// Errors and "N waiting" must be visible even when nothing is recording or
+    /// uploading — that is exactly when a stuck recording needs attention.
+    private var hasNotice: Bool { rec.lastError != nil || up.lastError != nil || up.pendingCount > 0 }
     @ObservedObject private var chrome = BottomChrome.shared
 
     var body: some View {
-        // Idle: nothing here — the Record button IS the centre tab in the glass bar.
-        // The only idle-time element is the one-line "saved" confirmation on Home.
-        if isActive && chrome.currentTab == tab {
+        // Idle: no capsule — the Record button IS the centre tab in the glass bar.
+        // Idle-time elements: the "saved" line on Home, and any error / waiting notice.
+        if (isActive || hasNotice) && chrome.currentTab == tab {
             barBody
         } else if !isActive, tab == .home, chrome.currentTab == .home, let t = chrome.savedTitle {
             Label(t, systemImage: "checkmark.circle.fill")
@@ -203,7 +209,7 @@ struct RecordBar: View {
                     .font(.geist(size: 12)).foregroundColor(P.good)
                     .padding(.horizontal, 20).lineLimit(1)
             }
-            if up.pendingCount > 0 && !up.isUploading {
+            if up.pendingCount > 0 {
                 Label("\(up.pendingCount) recording\(up.pendingCount == 1 ? "" : "s") waiting — tap to manage",
                       systemImage: "arrow.clockwise.circle")
                     .font(.geist(size: 12)).foregroundColor(.orange)
@@ -213,6 +219,8 @@ struct RecordBar: View {
                 VStack(spacing: 4) {
                     Text(e).font(.geist(size: 12)).foregroundColor(P.danger)
                         .multilineTextAlignment(.center).padding(.horizontal, 24)
+                        // Tap to dismiss once read.
+                        .onTapGesture { rec.clearError(); up.lastError = nil }
                     if e.localizedCaseInsensitiveContains("Microphone access") {
                         Button("Open Settings") {
                             if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) }
@@ -222,25 +230,28 @@ struct RecordBar: View {
                 }
             }
 
-            // The bar itself: a slim capsule when idle, an expanded panel when live.
-            SwiftUI.Group {
-                if up.isUploading {
-                    uploadingPanel
-                } else if rec.state == .idle {
-                    idleBar
-                } else {
-                    activePanel
+            // The bar itself: an expanded panel while live. With only a notice
+            // to show, no capsule (the glass tab bar already has Record).
+            if isActive {
+                SwiftUI.Group {
+                    if up.isUploading {
+                        uploadingPanel
+                    } else if rec.state == .idle {
+                        idleBar
+                    } else {
+                        activePanel
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .sinkyGlass(Capsule(), tint: rec.state == .recording ? P.accent.opacity(0.22) : nil)
+                .overlay(alignment: .bottom) {
+                    if rec.state == .recording { GradientRule().padding(.horizontal, 28).padding(.bottom, 1) }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+                .animation(.spring(response: 0.3, dampingFraction: 0.88), value: isActive)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .sinkyGlass(Capsule(), tint: rec.state == .recording ? P.accent.opacity(0.22) : nil)
-            .overlay(alignment: .bottom) {
-                if rec.state == .recording { GradientRule().padding(.horizontal, 28).padding(.bottom, 1) }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-            .animation(.spring(response: 0.3, dampingFraction: 0.88), value: isActive)
         }
         .padding(.top, 4)
         .sinkyHaptic(rec.state == .idle)

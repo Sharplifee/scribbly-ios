@@ -10,13 +10,27 @@ struct EntryDetail: View {
     @State private var copied = false
     @Environment(\.dismiss) private var dismiss
     @State private var confirmDelete = false
+    @State private var deleting = false
+    @State private var deleteError: String?
+    /// Settings → Send to → Default destination ("Claude" / "GPT" / "Grok").
+    @AppStorage("defaultDestination") private var defaultDestination = "Claude"
 
     private func exportText() -> String {
         guard let e = entry else { return "" }
-        var out = "\(e.title)\n\(e.type ?? "") · \(e.date ?? "")\n"
+        var out = "\(e.title)\n\(e.type ?? "") · \(e.displayDate)\n"
         if let t = e.tags, !t.isEmpty { out += "Tags: \(t)\n" }
         if let s = e.summary, !s.isEmpty { out += "\nSUMMARY\n\(s)\n" }
         if let tr = e.cleanTranscript, !tr.isEmpty { out += "\nTRANSCRIPT\n\(tr)\n" }
+        return out
+    }
+
+    /// What Share sends: the entry itself — title, summary, transcript — plus
+    /// its source link when it has one (Notion page, or the YouTube video).
+    private func shareText(_ e: Entry) -> String {
+        var out = e.title + "\n"
+        if let link = e.sourceLink { out += link.absoluteString + "\n" }
+        if let s = e.summary, !s.isEmpty { out += "\n" + s + "\n" }
+        if let tr = e.cleanTranscript, !tr.isEmpty { out += "\nTranscript:\n" + tr + "\n" }
         return out
     }
 
@@ -24,7 +38,7 @@ struct EntryDetail: View {
         ScrollView {
             if let e = entry {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("\(e.displayType) · \(e.date ?? "")").monoLabel(10, color: P.accent)
+                    Text("\(e.displayType) · \(e.displayDate)").monoLabel(10, color: P.accent)
                     Text(e.title).font(.geist(size: 26, weight: .semibold)).tracking(-0.8).foregroundColor(P.ink)
                     GradientRule(width: 64)
 
@@ -51,21 +65,27 @@ struct EntryDetail: View {
                             Text("Export").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                         }
                         Spacer()
-                        ShareLink(item: URL(string: "https://getscribbly.vercel.app/?tab=library")!) {
+                        ShareLink(item: shareText(e), subject: Text(e.title), preview: SharePreview(e.title)) {
                             Text("Share").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                         }
                         Spacer()
                         Button { confirmDelete = true } label: {
-                            Text("Delete").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.danger)
+                            if deleting { ProgressView().controlSize(.small).tint(P.danger) }
+                            else { Text("Delete").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.danger) }
                         }
+                        .disabled(deleting)
                     }
                     .padding(.vertical, 2)
+                    if let err = deleteError {
+                        Text("Couldn't delete: \(err)").font(.geist(size: 12)).foregroundColor(P.danger)
+                    }
 
                     // Add to this recording — record more now; it's transcribed and appended to this transcript.
                     if (e.type ?? "").lowercased().contains("voice") || (e.type ?? "").lowercased().contains("audio") {
                         Button {
                             let rec = Recorder.shared
-                            guard rec.state == .idle, !Uploader.shared.isUploading else { return }
+                            // Uploads queue independently; recording can start while one uploads.
+                            guard rec.state == .idle else { return }
                             rec.appendTo = e.id
                             rec.place = nil
                             PlaceTagger.shared.tag { Recorder.shared.place = $0 }
@@ -120,10 +140,18 @@ struct EntryDetail: View {
         }
         .confirmationDialog("Delete this entry permanently?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
+                deleting = true
+                deleteError = nil
                 Task {
-                    try? await CorpusAPI.deleteEntry(id: entryID)
-                    NotificationCenter.default.post(name: .init("scribblyEntryDeleted"), object: nil)
-                    dismiss()
+                    do {
+                        try await CorpusAPI.deleteEntry(id: entryID)
+                        deleting = false
+                        NotificationCenter.default.post(name: .init("scribblyEntryDeleted"), object: nil)
+                        dismiss()
+                    } catch {
+                        deleting = false
+                        deleteError = error.localizedDescription
+                    }
                 }
             }
         }
@@ -145,7 +173,7 @@ struct EntryDetail: View {
     /// plain-text transcript plus as much of it inline as fits — never a
     /// summary — and the full text is also put on the clipboard.
     private func fullBody(_ e: Entry) -> String {
-        "Here's the full transcript of \"\(e.title)\" from my Scribbly library (\(e.date ?? "")). Let's discuss it.\n\n\(e.cleanTranscript ?? "")"
+        "Here's the full transcript of \"\(e.title)\" from my Scribbly library (\(e.displayDate)). Let's discuss it.\n\n\(e.cleanTranscript ?? "")"
     }
 
     private func chatURL(_ dest: Destination, _ text: String) -> URL? {
@@ -156,11 +184,6 @@ struct EntryDetail: View {
 
     private func send(_ e: Entry, to dest: Destination) {
         let full = fullBody(e)
-        if dest == .codex {
-            UIPasteboard.general.string = full
-            if let url = URL(string: dest.base) { UIApplication.shared.open(url) }
-            return
-        }
         // Everything fits → paste it all, done.
         if let url = chatURL(dest, full), url.absoluteString.count <= dest.cap {
             UIApplication.shared.open(url); return
@@ -200,14 +223,13 @@ struct EntryDetail: View {
     }
 
     private enum Destination: String, CaseIterable, Identifiable {
-        case claude = "Claude", chatgpt = "ChatGPT", grok = "Grok", codex = "Codex"
+        case claude = "Claude", chatgpt = "ChatGPT", grok = "Grok"
         var id: String { rawValue }
         var base: String {
             switch self {
             case .claude:  return "https://claude.ai/new"
             case .chatgpt: return "https://chatgpt.com/"
             case .grok:    return "https://grok.com/"
-            case .codex:   return "https://chatgpt.com/codex"
             }
         }
         /// Max length of the whole chat URL (percent-encoded) per site. Grok
@@ -218,7 +240,6 @@ struct EntryDetail: View {
             case .claude:  return 13_000
             case .chatgpt: return 8_000
             case .grok:    return 6_000
-            case .codex:   return 0
             }
         }
         var label: String {
@@ -226,21 +247,28 @@ struct EntryDetail: View {
             case .claude:  return "Claude"
             case .chatgpt: return "GPT"
             case .grok:    return "Grok"
-            case .codex:   return "Codex"
             }
         }
         var logo: String {
             switch self {
             case .claude:  return "logo-claude"
-            case .chatgpt, .codex: return "logo-gpt"
+            case .chatgpt: return "logo-gpt"
             case .grok:    return "logo-grok"
             }
         }
     }
 
+    /// Claude · GPT · Grok, with the Settings default first and highlighted.
+    private var destinations: [Destination] {
+        let all = Destination.allCases
+        guard let preferred = all.first(where: { $0.label == defaultDestination }) else { return all }
+        return [preferred] + all.filter { $0 != preferred }
+    }
+
     private func sendToClaudeButton(_ e: Entry) -> some View {
         HStack(spacing: 8) {
-            ForEach([Destination.claude, .chatgpt, .grok]) { d in
+            ForEach(destinations) { d in
+                let primary = d.label == defaultDestination
                 Button { send(e, to: d) } label: {
                     HStack(spacing: 8) {
                         Image(d.logo).resizable().scaledToFit().frame(width: 22, height: 22)
@@ -251,8 +279,10 @@ struct EntryDetail: View {
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
                     .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(P.edge))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(primary ? AnyShapeStyle(P.accent) : AnyShapeStyle(P.edge), lineWidth: primary ? 1.5 : 1))
                 }
+                .accessibilityHint(primary ? "Default destination" : "")
             }
         }
     }

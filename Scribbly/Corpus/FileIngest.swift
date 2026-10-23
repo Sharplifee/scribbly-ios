@@ -65,7 +65,7 @@ final class FileIngestModel: ObservableObject {
             let local = FileManager.default.temporaryDirectory
                 .appendingPathComponent("pick-\(UUID().uuidString).\(ext.isEmpty ? "m4a" : ext)")
             try? FileManager.default.removeItem(at: local)
-            try FileManager.default.copyItem(at: url, to: local)
+            try await Self.copyOffMain(url, to: local)
             let copied = (try? local.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             guard copied > 0 else {
                 throw NSError(domain: "Ingest", code: 2, userInfo: [NSLocalizedDescriptionKey:
@@ -84,8 +84,16 @@ final class FileIngestModel: ObservableObject {
         status = "Preparing video…"
         let local = FileManager.default.temporaryDirectory
             .appendingPathComponent("pick-\(UUID().uuidString).\(ext)")
-        try FileManager.default.copyItem(at: url, to: local)
+        try await Self.copyOffMain(url, to: local)
         return (local, mime(for: ext), base, true)
+    }
+
+    /// Multi-hundred-MB copies must not freeze the UI: this class is
+    /// @MainActor, so the copy itself runs on a background task.
+    private nonisolated static func copyOffMain(_ src: URL, to dst: URL) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try FileManager.default.copyItem(at: src, to: dst)
+        }.value
     }
 
     /// A video chosen from the Photos library: copy it out, then the same path as Files.

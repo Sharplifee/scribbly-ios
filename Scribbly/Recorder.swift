@@ -47,6 +47,9 @@ final class Recorder: NSObject, ObservableObject {
     /// Set when the user explicitly pauses, so an interruption ending does not
     /// resume a recording the user deliberately paused.
     private var userPaused = false
+    /// True between start() and the permission/session answer, so a second tap
+    /// (or the Control Center intent firing twice) can't start two recordings.
+    private var startPending = false
 
     override init() {
         super.init()
@@ -59,7 +62,9 @@ final class Recorder: NSObject, ObservableObject {
                        name: AVAudioSession.mediaServicesWereResetNotification, object: session)
         nc.addObserver(self, selector: #selector(appDidEnterBackground),
                        name: UIApplication.didEnterBackgroundNotification, object: nil)
-            recoverOrphanedRecording()
+        nc.addObserver(self, selector: #selector(appDidBecomeActive),
+                       name: UIApplication.didBecomeActiveNotification, object: nil)
+        recoverOrphanedRecording()
     }
 
     // MARK: - Session
@@ -85,11 +90,15 @@ final class Recorder: NSObject, ObservableObject {
     // MARK: - Controls
 
     func start() {
-        guard state == .idle else { return }
+        guard state == .idle, !startPending else { return }
+        startPending = true
         lastError = nil
         requestPermission { [weak self] granted in
             guard let self else { return }
+            self.startPending = false
+            guard self.state == .idle else { return }
             guard granted else {
+                self.appendTo = nil
                 self.lastError = "Microphone access is off. Enable it in Settings › Scribbly › Microphone."
                 return
             }
@@ -103,6 +112,8 @@ final class Recorder: NSObject, ObservableObject {
                 self.state = .recording
                 self.startTimer()
             } catch {
+                self.closeSegment()
+                self.appendTo = nil
                 self.lastError = "Could not start recording (\(error.localizedDescription)). Tap Record to try again."
             }
         }
@@ -117,6 +128,9 @@ final class Recorder: NSObject, ObservableObject {
         stopTimer()
     }
 
+    /// Dismiss the error line under the record bar.
+    func clearError() { lastError = nil }
+
     func resume() {
         guard state == .paused else { return }
         userPaused = false
@@ -130,9 +144,17 @@ final class Recorder: NSObject, ObservableObject {
         startTimer()
     }
 
-    /// The ONLY path that ends a recording. Returns the merged audio file.
-    func finish(completion: @escaping (URL?, TimeInterval) -> Void) {
-        guard state == .recording || state == .paused else { completion(nil, 0); return }
+    /// The ONLY path that ends a recording. Hands back what must be queued —
+    /// the merged take, or every raw segment if merging failed — WITHOUT
+    /// deleting anything: the uploader removes the raw segments only once the
+    /// audio is safely in its pending store, so a failed copy leaves them for
+    /// crash recovery instead of losing the recording.
+    func finish(completion: @escaping ([Uploader.RecordingPart], TimeInterval) -> Void) {
+        guard state == .recording || state == .paused else {
+            if state == .idle { appendTo = nil }
+            completion([], 0)
+            return
+        }
         state = .finishing
         stopTimer()
         closeSegment()
@@ -140,23 +162,23 @@ final class Recorder: NSObject, ObservableObject {
         let segs = segments
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var merged = self?.merge(segs)
-            if merged == nil, let first = segs.first {
+            var parts: [Uploader.RecordingPart] = []
+            if let merged = self?.merge(segs) {
+                parts = [Uploader.RecordingPart(url: merged, title: nil, rawSources: segs)]
+            } else {
                 // Export failed: nothing is dropped — every raw segment goes to
-                // the uploader on its own; the splitter transcodes each caf.
+                // the uploader on its own; the server transcodes each caf.
+                let existing = segs.filter { FileManager.default.fileExists(atPath: $0.path) }
                 let fmt = DateFormatter(); fmt.dateFormat = "MMM d, h:mm a"
                 let stamp = fmt.string(from: Date())
-                for (i, seg) in segs.enumerated() where i > 0 {
-                    Uploader.shared.upload(fileURL: seg,
-                                           title: "Voice Memo — \(stamp) (part \(i + 1))",
-                                           duration: nil) { _, _ in }
+                for (i, seg) in existing.enumerated() {
+                    parts.append(Uploader.RecordingPart(
+                        url: seg,
+                        title: i == 0 ? nil : "Voice Memo — \(stamp) (part \(i + 1))",
+                        rawSources: [seg]))
                 }
-                merged = first
             }
-            // The merged m4a (or the per-segment copies in the pending store) now
-            // own the audio. Delete the raw segments so the crash-recovery sweep
-            // can never mistake a FINISHED recording for an orphan and re-upload it.
-            for u in segs where u != merged { try? FileManager.default.removeItem(at: u) }
+            let ready = parts
             DispatchQueue.main.async {
                 try? self?.session.setActive(false, options: [.notifyOthersOnDeactivation])
                 self?.state = .idle
@@ -165,12 +187,14 @@ final class Recorder: NSObject, ObservableObject {
                 self?.interrupted = false
                 self?.segments = []
                 self?.accumulated = 0
-                completion(merged, total)
+                if ready.isEmpty { self?.appendTo = nil }
+                completion(ready, total)
             }
         }
     }
 
     func discard() {
+        guard state != .finishing else { return }
         stopTimer()
         closeSegment()
         for u in segments { try? FileManager.default.removeItem(at: u) }
@@ -180,6 +204,7 @@ final class Recorder: NSObject, ObservableObject {
         level = 0
         interrupted = false
         userPaused = false
+        appendTo = nil
         state = .idle
         try? session.setActive(false, options: [.notifyOthersOnDeactivation])
     }
@@ -199,21 +224,38 @@ final class Recorder: NSObject, ObservableObject {
         let created = (try? leftovers[0].resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()
         let fmt = DateFormatter(); fmt.dateFormat = "MMM d, h:mm a"
         let title = "Recovered recording — \(fmt.string(from: created))"
+        let autoApprove = (UserDefaults.standard.object(forKey: "autoApproveRecoveries") as? Bool) ?? false
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
+            var allSaved = true
             if let merged = self.merge(leftovers) {
-                Uploader.shared.hold(fileURL: merged, title: title)
-                for u in leftovers { try? fm.removeItem(at: u) }
-            } else {
-                // Can't compose: rescue every segment individually; the pending
-                // store owns copies, so the originals can go.
-                for (i, u) in leftovers.enumerated() {
-                    Uploader.shared.hold(fileURL: u, title: "\(title) (part \(i + 1))")
+                if Uploader.shared.hold(fileURL: merged, title: title, autoApprove: autoApprove) {
+                    // The pending store owns a copy — only now can the segments go.
+                    for u in leftovers { try? fm.removeItem(at: u) }
+                } else {
+                    allSaved = false
                 }
-                for u in leftovers { try? fm.removeItem(at: u) }
+                if !leftovers.contains(merged) { try? fm.removeItem(at: merged) }
+            } else {
+                // Can't compose: rescue every segment individually, deleting
+                // each original only once its copy is safely queued.
+                for (i, u) in leftovers.enumerated() {
+                    if Uploader.shared.hold(fileURL: u, title: "\(title) (part \(i + 1))", autoApprove: autoApprove) {
+                        try? fm.removeItem(at: u)
+                    } else {
+                        allSaved = false
+                    }
+                }
             }
+            let saved = allSaved
             DispatchQueue.main.async {
-                self.lastError = "A recording cut off by a crash was recovered — open Activity to approve or discard it."
+                if !saved {
+                    self.lastError = "A recording cut off by a crash could not be saved yet (storage full?). It is kept and will be retried on next launch."
+                } else if autoApprove {
+                    self.lastError = "A recording cut off by a crash was recovered and is uploading."
+                } else {
+                    self.lastError = "A recording cut off by a crash was recovered — open Activity to approve or discard it."
+                }
             }
         }
     }
@@ -270,6 +312,9 @@ final class Recorder: NSObject, ObservableObject {
     private func closeSegment() {
         if let r = recorder {
             accumulated += sanePosition(r)
+            // Detach first: our own stop() must not look like the encoder
+            // dying, or the delegate would open a stray extra segment.
+            r.delegate = nil
             r.stop()
         }
         recorder = nil
@@ -287,7 +332,7 @@ final class Recorder: NSObject, ObservableObject {
 
         let comp = AVMutableComposition()
         guard let track = comp.addMutableTrack(withMediaType: .audio,
-                                               preferredTrackID: kCMPersistentTrackID_Invalid) else { return existing[0] }
+                                               preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
         var cursor = CMTime.zero
         for url in existing {
             let asset = AVURLAsset(url: url)
@@ -299,7 +344,9 @@ final class Recorder: NSObject, ObservableObject {
         let out = FileManager.default.temporaryDirectory
             .appendingPathComponent("scribbly-\(Int(Date().timeIntervalSince1970)).m4a")
         try? FileManager.default.removeItem(at: out)
-        guard let ex = AVAssetExportSession(asset: comp, presetName: AVAssetExportPresetAppleM4A) else { return existing[0] }
+        // nil (not existing[0]) on failure: callers then queue EVERY segment
+        // rather than shipping the first one and deleting the rest.
+        guard let ex = AVAssetExportSession(asset: comp, presetName: AVAssetExportPresetAppleM4A) else { return nil }
         ex.outputURL = out
         ex.outputFileType = .m4a
         let sem = DispatchSemaphore(value: 0)
@@ -349,6 +396,11 @@ final class Recorder: NSObject, ObservableObject {
     // MARK: - Interruption handling (the whole point)
 
     @objc private func handleInterruption(_ n: Notification) {
+        // AVAudioSession posts these on its own thread; all state lives on main.
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.handleInterruption(n) }
+            return
+        }
         guard let info = n.userInfo,
               let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
@@ -380,6 +432,8 @@ final class Recorder: NSObject, ObservableObject {
     }
 
     private func resumeAfterInterruption(attempt: Int) {
+        // Finished/discarded meanwhile, or another path already restarted it.
+        guard state == .recording || state == .paused, recorder == nil else { return }
         guard attempt < 8 else {
             lastError = "Recording was interrupted and could not restart. Audio up to that point is safe — tap Finish to save it."
             return
@@ -388,6 +442,7 @@ final class Recorder: NSObject, ObservableObject {
             try configureSession()
             try beginSegment()
             state = .recording
+            interrupted = false
             startTimer()
         } catch {
             let delay = pow(2.0, Double(attempt)) * 0.25
@@ -400,6 +455,10 @@ final class Recorder: NSObject, ObservableObject {
     /// Headphones unplugged, AirPods disconnected, Bluetooth dropped. Default iOS
     /// behavior on `.oldDeviceUnavailable` is to stop — we explicitly keep going.
     @objc private func handleRouteChange(_ n: Notification) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.handleRouteChange(n) }
+            return
+        }
         guard state == .recording,
               let info = n.userInfo,
               let raw = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
@@ -418,6 +477,10 @@ final class Recorder: NSObject, ObservableObject {
 
     /// Rare, but iOS can reset the whole media stack. Everything must be rebuilt.
     @objc private func handleMediaReset(_ n: Notification) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.handleMediaReset(n) }
+            return
+        }
         guard state == .recording else { return }
         closeSegment()
         try? configureSession()
@@ -428,6 +491,9 @@ final class Recorder: NSObject, ObservableObject {
     /// Buy time on suspension so the current segment is flushed rather than truncated.
     @objc private func appDidEnterBackground() {
         guard state == .recording || state == .paused else { return }
+        // Settings › "Keep recording in background" off: leaving the app ends
+        // (and saves) the recording instead of capturing in the background.
+        let keep = (UserDefaults.standard.object(forKey: "keepRecordingInBackground") as? Bool) ?? true
         if bgTask != .invalid { UIApplication.shared.endBackgroundTask(bgTask) }
         bgTask = UIApplication.shared.beginBackgroundTask(withName: "ScribblyRecording") { [weak self] in
             guard let self else { return }
@@ -436,20 +502,39 @@ final class Recorder: NSObject, ObservableObject {
                 self.bgTask = .invalid
             }
         }
+        if !keep {
+            Task { @MainActor [weak self] in self?.finishAndUpload() }
+        }
+    }
+
+    /// An interruption that began (call, Siri) doesn't always deliver its
+    /// `.ended` notification. Coming back to the app is proof the mic is free
+    /// again, so pick the recording back up if it is still waiting.
+    @objc private func appDidBecomeActive() {
+        guard state == .recording, recorder == nil else { return }
+        resumeAfterInterruption(attempt: 0)
     }
 }
 
 extension Recorder: AVAudioRecorderDelegate {
     /// Fired if the encoder dies. Never treat this as "done" — restart a segment.
     func audioRecorderDidFinishRecording(_ r: AVAudioRecorder, successfully flag: Bool) {
-        guard state == .recording else { return }
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.audioRecorderDidFinishRecording(r, successfully: flag) }
+            return
+        }
+        guard state == .recording, r === recorder else { return }
         closeSegment()
         try? configureSession()
         try? beginSegment()
     }
 
     func audioRecorderEncodeErrorDidOccur(_ r: AVAudioRecorder, error: Error?) {
-        guard state == .recording else { return }
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.audioRecorderEncodeErrorDidOccur(r, error: error) }
+            return
+        }
+        guard state == .recording, r === recorder else { return }
         closeSegment()
         try? configureSession()
         try? beginSegment()

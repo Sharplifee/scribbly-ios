@@ -4,6 +4,7 @@ import SwiftUI
 /// record button, Geist Mono timer, copper status, gradient rule.
 struct WatchRecordView: View {
     @ObservedObject private var rec = WatchRecorder.shared
+    @State private var confirmDiscard = false
 
     private var time: String {
         let t = Int(rec.elapsed); return String(format: "%02d:%02d", t / 60, t % 60)
@@ -16,7 +17,7 @@ struct WatchRecordView: View {
                 Text(time).font(Sinky.font(34, .medium, mono: true)).monospacedDigit().foregroundColor(Sinky.ink)
                 Capsule().fill(Sinky.rule).frame(width: 70, height: 1.5)
                 HStack(spacing: 14) {
-                    Button { rec.discard() } label: {
+                    Button { confirmDiscard = true } label: {
                         Image(systemName: "xmark").font(.system(size: 17, weight: .bold)).foregroundColor(Sinky.ink)
                             .frame(width: 50, height: 50).background(Circle().fill(Color.white.opacity(0.14)))
                     }
@@ -50,5 +51,9 @@ struct WatchRecordView: View {
         .padding(.horizontal, 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
+        .confirmationDialog("Discard this recording?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("Discard", role: .destructive) { rec.discard() }
+            Button("Keep recording", role: .cancel) {}
+        }
     }
 }
