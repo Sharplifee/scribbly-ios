@@ -1342,7 +1342,14 @@ private struct RecentList: View {
     /// Anything still moving: server voice/file jobs that aren't finished,
     /// uploads waiting on this phone, and YouTube batches with videos queued.
     private var liveJobs: [JobsModel.VoiceJob] {
-        jobs.voiceJobs.filter { ["pending", "transcribing", "saving", "paused", "failed", "no_speech"].contains($0.state) }
+        // Failures stay on Home for 30 minutes so a fresh problem is seen,
+        // then live only in Activity — old silent takes don't clutter Home.
+        let cutoff = (Date().timeIntervalSince1970 - 30 * 60) * 1000
+        return jobs.voiceJobs.filter { j in
+            if ["pending", "transcribing", "saving", "paused"].contains(j.state) { return true }
+            if j.state == "failed" || j.state == "no_speech" { return j.createdAt > cutoff }
+            return false
+        }
     }
     private var liveBatches: [JobsModel.Batch] { jobs.batches.filter { $0.pending > 0 } }
 
