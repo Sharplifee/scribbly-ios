@@ -178,6 +178,9 @@ enum EntryDates {
     }()
     private static let iso = ISO8601DateFormatter()
 
+    /// "2026-10-01T06:00:00Z" — a local-time boundary as the UTC instant PostgREST compares against.
+    static func utc(_ d: Date) -> String { iso.string(from: d) }
+
     /// Parses "2026-10-14T17:33:51.25486+00:00" (any number of fractional digits).
     static func parse(_ s: String?) -> Date? {
         guard var s, !s.isEmpty else { return nil }

@@ -55,17 +55,14 @@ struct GroupsSection: View {
 
     var body: some View {
         ScrollView {
+            VStack(spacing: 0) {   // no gap above the banner
             ScrollTopAnchor()
+            PageHeader(title: "Groups", subtitle: groupsSubtitle)
             LazyVStack(spacing: 12) {
                 ListSearch(placeholder: "Search creators…", text: $q,
                            sorts: ["Most videos", "A–Z", "Newest"], sort: $sort)
                 FilterSortRow(filters: kinds, filter: $kind)
                 if q.isEmpty {
-                    if !creatorGroups.isEmpty {
-                        Text("\(creatorGroups.count) creators · \(fmt(creatorGroups.reduce(0) { n, g in n + g.totalVideos })) videos")
-                            .sectionHead()
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
-                    }
                     ForEach(hits.map { $0.0 }) { group in
                         NavigationLink(value: Route.group(group)) {
                             if group.isFiling { FilingRow(group: group) } else { GroupCard(group: group) }
@@ -88,6 +85,7 @@ struct GroupsSection: View {
                 }
             }
             .padding(.bottom, 20)
+            }
         }
         .scrollsToTopOnReselect(.groups)
         .refreshable { await store.reloadCollections() }
@@ -97,6 +95,12 @@ struct GroupsSection: View {
     }
     private func fmt(_ n: Int) -> String {
         let f = NumberFormatter(); f.numberStyle = .decimal; return f.string(from: .init(value: n)) ?? "\(n)"
+    }
+    /// "34 creators · 11,620 videos" under the Groups title.
+    private var groupsSubtitle: String {
+        if creatorGroups.isEmpty { return store.loadingCollections ? "Loading creators…" : "Creators you've saved from" }
+        let videos = creatorGroups.reduce(0) { n, g in n + g.totalVideos }
+        return "\(creatorGroups.count) creators · \(fmt(videos)) videos"
     }
 }
 
@@ -157,8 +161,16 @@ struct GroupDetail: View {
     @State private var showReassign = false
     @State private var moving = false
     @State private var moveError: String?
+    private var detailSubtitle: String {
+        let n = group.totalVideos
+        let b = group.batchCount
+        return "\(n.formatted()) videos · \(b) batch" + (b == 1 ? "" : "es")
+    }
+
     var body: some View {
         ScrollView {
+            VStack(spacing: 0) {   // no gap above the banner
+            PageHeader(title: group.isFiling ? Group.filingName : group.channel, subtitle: detailSubtitle, underNavBar: true)
             LazyVStack(spacing: 10) {
                 if let err = moveError {
                     Text("Couldn't reassign: \(err)").font(.geist(size: 13)).foregroundColor(P.danger)
@@ -169,9 +181,11 @@ struct GroupDetail: View {
                         .buttonStyle(.plain)
                 }
             }.padding(.vertical, 14)
+            }
         }
         .background(SinkyBackdrop())
         .navigationTitle(group.channel).navigationBarTitleDisplayMode(.inline)
+        .headerOwnsTitle()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 // "Filing…" is a mix of holding buckets, not one creator — nothing to reassign as a whole.
@@ -289,6 +303,10 @@ struct CollectionsSection: View {
 
     var body: some View {
         ScrollView {
+            VStack(spacing: 0) {   // no gap above the banner
+            PageHeader(title: "Collections",
+                       subtitle: store.collections.isEmpty ? "Every batch you've queued" : "\(store.collections.count) collections",
+                       back: { BottomChrome.shared.moreSub = nil })
             LazyVStack(spacing: 10) {
                 ListSearch(placeholder: "Search \(store.collections.count) collections…", text: $q,
                            sorts: ["Newest", "Oldest", "Most videos", "A–Z"], sort: $sort)
@@ -311,6 +329,7 @@ struct CollectionsSection: View {
                     if grouped.isEmpty { Text("No collections match.").font(.geist(size: 13)).foregroundColor(P.textDim).padding(30) }
                 }
             }.padding(.vertical, 8)
+            }
         }
         .task { await store.loadCollectionsIfNeeded() }
         .onChange(of: states) { now in if !now.contains(state) { state = "All" } }
@@ -357,13 +376,23 @@ struct CollectionDetail: View {
     @State private var error: String?
     private let pageSize = 100
 
+    private var detailSubtitle: String {
+        var parts: [String] = []
+        if let ch = collection.creatorName, ch != collection.displayName { parts.append(ch) }
+        parts.append("\((collection.saved_videos ?? entries.count).formatted()) saved")
+        if let b = collection.batch_number { parts.append("#\(b)") }
+        return parts.joined(separator: " · ")
+    }
+
     var body: some View {
         ScrollView {
+            VStack(spacing: 0) {   // no gap above the banner
+            PageHeader(title: collection.displayName, subtitle: detailSubtitle, underNavBar: true)
             LazyVStack(spacing: 0) {
+                if entries.isEmpty && !reachedEnd && error == nil { SkeletonRows() }
                 ForEach(entries) { e in
-                    NavigationLink(value: Route.entry(e.id, e)) { EntryRow(entry: e) }
+                    NavigationLink(value: Route.entry(e.id, e)) { LibraryRow(entry: e) }
                         .buttonStyle(.plain)
-                    Divider().overlay(P.border).padding(.leading, 18)
                 }
                 // Next page only once the user scrolls near the end.
                 if !entries.isEmpty && !reachedEnd { LoadMoreSentinel(space: "collectionScroll") }
@@ -378,6 +407,7 @@ struct CollectionDetail: View {
                     Text("Nothing saved in this collection yet.").font(.geist(size: 13)).foregroundColor(P.textDim).padding(30)
                 }
             }
+            }
         }
         .onNearEnd(space: "collectionScroll") {
             guard !loading, !reachedEnd, error == nil, !entries.isEmpty else { return }
@@ -385,7 +415,7 @@ struct CollectionDetail: View {
         }
         .background(SinkyBackdrop())
         .navigationTitle(collection.name).navigationBarTitleDisplayMode(.inline)
-        .overlay { if loading && entries.isEmpty { ProgressView().tint(P.accent) } }
+        .headerOwnsTitle()
         .task {
             await CreatorDirectory.shared.loadIfNeeded()
             if entries.isEmpty { await loadMore() }
@@ -432,6 +462,9 @@ struct QuerySection: View {
 
     var body: some View {
         ScrollView {
+            VStack(spacing: 0) {   // no gap above the banner
+            PageHeader(title: "Query", subtitle: "Titles · summaries · transcripts · tags",
+                       back: { BottomChrome.shared.moreSub = nil })
             VStack(spacing: 14) {
                 HStack {
                     TextField("Topic, phrase, keyword, concept…", text: $query)
@@ -445,7 +478,7 @@ struct QuerySection: View {
                             .background(P.brand).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                 }
-                .padding(.horizontal, 16).padding(.top, 14)
+                .padding(.horizontal, 16).padding(.top, 6)
 
                 if searching { ProgressView().tint(P.accent).padding(.top, 30) }
                 else if ran && hits.isEmpty {
@@ -465,6 +498,7 @@ struct QuerySection: View {
                 }
             }
             .padding(.bottom, 20)
+            }
         }
     }
 
@@ -513,6 +547,8 @@ struct HitDestination: View {
                 EntryDetail(entryID: e.id, preloaded: e)
             } else if loaded {
                 ScrollView {
+                    VStack(spacing: 0) {   // no gap above the banner
+                    PageHeader(title: "", subtitle: hit.origin ?? "From your corpus", underNavBar: true)
                     VStack(alignment: .leading, spacing: 12) {
                         Text(hit.title).font(.geist(size: 22, weight: .semibold)).foregroundColor(P.ink)
                         Text("\(hit.date ?? "") · \(hit.origin ?? "")").font(.geist(size: 12)).foregroundColor(P.textDim)
@@ -524,6 +560,7 @@ struct HitDestination: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(18)
+                    }
                 }
                 .background(SinkyBackdrop())
             } else {
@@ -562,6 +599,10 @@ struct IngestSection: View {
     @State private var progressStage = ""
     @State private var progressPosition = 0
     @State private var progressRows = 0
+    /// The bar's displayed value: glides in real time toward the next server
+    /// milestone between polls and snaps forward when a poll lands. Held in
+    /// @State (not @StateObject) so its 10 Hz ticks redraw only the bar.
+    @State private var eased = EasedProgress()
     /// The paste field's previous value — used to spot a Return keypress
     /// (a vertical TextField inserts "\n" instead of calling onSubmit).
     @State private var lastText = ""
@@ -579,39 +620,11 @@ struct IngestSection: View {
             // any tap outside the field puts the keyboard away
             VStack(spacing: 14) {
 
-                // ── Hero, exactly as the web home: wordmark, tagline, one line.
-                VStack(spacing: 16) {
-                    HStack(alignment: .firstTextBaseline) {
-                        HStack(alignment: .top, spacing: 1) {
-                            Text("Scribbly").font(.geist(size: 24, weight: .semibold)).tracking(-1.1).foregroundColor(P.ink)
-                            Text("®").font(.geist(size: 9)).foregroundColor(P.textSec)
-                        }
-                        Spacer()
-                        if let store, store.libraryCount > 0 {
-                            Text("\(store.libraryCount.formatted()) saved").monoLabel(10)
-                        }
-                    }
-                    .padding(.horizontal, 4)
-                    ZStack(alignment: .bottomLeading) {
-                        FinsBackground()
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("One link.\nOne library.")
-                                .font(.geist(size: 32, weight: .semibold)).tracking(-1.4).lineSpacing(-2)
-                                .multilineTextAlignment(.leading)
-                                .foregroundColor(P.ink)
-                            Text("Transcribed · summarized · searchable").monoLabel(9.5, color: Color(hex: 0xD9DCDD))
-                                .multilineTextAlignment(.leading)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(20)
-                    }
-                    .frame(height: FinsBackground.bannerHeight)
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .accessibilityElement(children: .combine)
-                }
-                .padding(.horizontal, 16).padding(.top, 8)
-                .id(ScrollTop.anchor)
-                .task { if let store { await store.loadRecent() } }
+                // ── Hero: the same pillar banner as every page, with the wordmark,
+                // the line, and what the library holds.
+                PageHeader(eyebrow: "Scribbly®", title: "One link. One library.", subtitle: homeSubtitle)
+                    .id(ScrollTop.anchor)
+                    .task { if let store { await store.loadRecent() } }
 
                 // ── ONE open tile. Paste anything — a channel grabs every video, one
                 // link or twenty queue together; Return does exactly what Fetch does.
@@ -817,6 +830,13 @@ struct IngestSection: View {
         .onReceive(BottomChrome.shared.$savedTitle) { if $0 != nil, let store { Task { await store.loadRecent() } } }
     }
 
+    private var homeSubtitle: String {
+        if let store, store.libraryCount > 0 {
+            return "\(store.libraryCount.formatted()) saved · transcribed · summarized · searchable"
+        }
+        return "Transcribed · summarized · searchable"
+    }
+
     /// What the pasted text contains, as pills: "1 channel", "12 videos", "2 podcasts", "3 articles".
     private func detect(_ t: String) -> [String] {
         let urls = extractURLs(t)
@@ -849,15 +869,7 @@ struct IngestSection: View {
             VStack(spacing: 6) {
                 // Live, determinate: average of the batch's queue rows (done = 100,
                 // pending = 0, processing = its own progress), glided between polls.
-                HStack {
-                    Text(progressHeadline)
-                        .font(.geist(size: 13, weight: .semibold)).foregroundColor(P.ink).lineLimit(1)
-                    Spacer()
-                    Text("\(Int(progressPercent.rounded()))%")
-                        .font(.geist(size: 13, weight: .semibold, design: .monospaced)).monospacedDigit()
-                        .foregroundColor(P.textSec)
-                }
-                GradientProgress(value: progressPercent, total: 100, height: 6, duration: 1.8)
+                BatchProgressBar(progress: eased, headline: progressHeadline)
                 if progressActive && !progressStage.isEmpty {
                     Text(progressStage)
                         .font(.geist(size: 12)).foregroundColor(P.textSec).lineLimit(1)
@@ -1133,6 +1145,10 @@ struct IngestSection: View {
         progressPosition = 1
         progressRows = total
         progressActive = true
+        // Before the first poll: "Starting" on the first item (ceiling 5 − 2).
+        eased.reset()
+        eased.update(server: 0, ceiling: ProgressMilestones.ceiling(after: 0) / Double(max(total, 1)),
+                     tau: ProgressMilestones.stageSeconds(at: 0))
         pollProgress(collection: collection, total: total)
     }
 
@@ -1155,7 +1171,8 @@ struct IngestSection: View {
                     if Task.isCancelled { break }
                     haveRows = true
                     let snap = BatchProgress(rows: rows, expected: total)
-                    progressPercent = snap.percent      // GradientProgress glides to it
+                    progressPercent = snap.percent
+                    eased.update(server: snap.percent, ceiling: snap.ceiling, tau: snap.tau)
                     progressStage = snap.stage
                     progressPosition = snap.position
                     progressRows = snap.total
@@ -1176,6 +1193,7 @@ struct IngestSection: View {
                 if rowsFinished && progressActive {
                     progressActive = false
                     progressPercent = 100
+                    eased.finish()
                     status = "Done — \(progressDone) added to Library"
                         + (progressFailed > 0 ? ", \(progressFailed) failed" : "")
                         + (progressSkipped > 0 ? ", \(progressSkipped) skipped" : "") + "."
@@ -1216,10 +1234,16 @@ struct IngestSection: View {
         progressRows = all
         progressPercent = all > 0 ? Double(finished) / Double(all) * 100 : 0
         progressPosition = min(all, finished + 1)
+        // Counts only (no per-row stage): glide through the current item, up to
+        // most of its share, until the next count lands.
+        let itemShare = all > 0 ? 100 / Double(all) : 0
+        let cap = pending > 0 ? min(100, progressPercent + itemShare * 0.88) : progressPercent
+        eased.update(server: progressPercent, ceiling: cap, tau: 20)
         // Skipped videos are finished too — without them a batch with skips never completed.
         if pending == 0 && finished >= total && progressActive {
             progressActive = false
             progressPercent = 100
+            eased.finish()
             status = "Done — \(done) added to Library"
                 + (failed > 0 ? ", \(failed) failed" : "")
                 + (skipped > 0 ? ", \(skipped) skipped" : "") + "."
@@ -1334,7 +1358,12 @@ private struct RecentList: View {
                 }
                 ForEach(liveJobs) { j in
                     liveRow(icon: icon(j.state), tint: tint(j.state), title: j.title ?? "Recording",
-                            sub: label(j.state) + (j.error.map { " — \($0)" } ?? ""), spinning: ["pending", "transcribing", "saving"].contains(j.state))
+                            sub: label(j.state) + (j.error.map { " — \($0)" } ?? ""), spinning: j.isRunning)
+                    if j.isRunning {
+                        // Real percentage + stage from the voice server, glided between polls.
+                        VoiceJobProgress(progress: j.progress, stage: j.stage, state: j.state)
+                            .padding(.leading, 28).padding(.bottom, 10).padding(.top, -4)
+                    }
                     Divider().background(P.border)
                 }
                 ForEach(liveBatches) { b in
@@ -1418,5 +1447,27 @@ private struct RecentList: View {
             Text(meta).font(.geist(size: 11)).foregroundColor(P.textDim).lineLimit(2).multilineTextAlignment(.leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 11)
+    }
+}
+
+/// The Home batch bar's headline row and gradient bar, observing the eased
+/// value directly so its real-time ticks redraw only this, not all of Home.
+private struct BatchProgressBar: View {
+    @ObservedObject var progress: EasedProgress
+    let headline: String
+
+    var body: some View {
+        let pct = "\(Int(progress.shown.rounded(.down)))%"
+        return VStack(spacing: 6) {
+            HStack {
+                Text(headline)
+                    .font(.geist(size: 13, weight: .semibold)).foregroundColor(P.ink).lineLimit(1)
+                Spacer()
+                Text(pct)
+                    .font(.geist(size: 13, weight: .semibold, design: .monospaced)).monospacedDigit()
+                    .foregroundColor(P.textSec)
+            }
+            GradientProgress(value: progress.shown, total: 100, height: 6, duration: 0.12)
+        }
     }
 }

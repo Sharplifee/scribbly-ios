@@ -90,6 +90,8 @@ struct ListSearch: View {
     @Binding var text: String
     var sorts: [String] = []
     var sort: Binding<String>? = nil
+    /// A trailing control on the same row (the Library's sort & filter menu).
+    var accessory: AnyView? = nil
 
     var body: some View {
         HStack(spacing: 8) {
@@ -108,6 +110,7 @@ struct ListSearch: View {
             if let sort, !sorts.isEmpty {
                 SortMenu(sorts: sorts, sort: sort)
             }
+            if let accessory { accessory }
         }
         .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 4)
     }

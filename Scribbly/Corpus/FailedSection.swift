@@ -14,6 +14,8 @@ struct FailedSection: View {
 
     var body: some View {
         ScrollView {
+            VStack(spacing: 0) {   // no gap above the banner
+            PageHeader(title: "Didn't work", subtitle: "Retry or remove anything that failed", underNavBar: true)
             LazyVStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text(model.loading && model.total == 0 ? "Loading…" : "\(model.total) didn't make it into your Library")
@@ -61,7 +63,9 @@ struct FailedSection: View {
                 }
             }
             .padding(.vertical, 12)
+            }
         }
+        .headerOwnsTitle()
         .refreshable { await model.load() }
         .task { await model.load() }
     }

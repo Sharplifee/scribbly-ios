@@ -12,6 +12,9 @@ struct JobsSection: View {
 
     var body: some View {
         ScrollView {
+            VStack(spacing: 0) {   // no gap above the banner
+            PageHeader(title: "Activity", subtitle: activitySubtitle,
+                       back: { BottomChrome.shared.moreSub = nil })
             VStack(spacing: 14) {
 
                 // ── Phone-side: not yet uploaded
@@ -71,6 +74,10 @@ struct JobsSection: View {
                                     Text(j.title ?? j.id).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink).lineLimit(2)
                                     Text(voiceSubtitle(j))
                                         .font(.geist(size: 12)).foregroundColor(P.textSec)
+                                }
+                                if j.isRunning {
+                                    VoiceJobProgress(progress: j.progress, stage: j.stage, state: j.state)
+                                        .padding(.vertical, 2)
                                 }
                                 if let e = j.error, j.state == "failed" || j.state == "no_speech" {
                                     Text(e).font(.geist(size: 11)).foregroundColor(P.danger).lineLimit(3)
@@ -140,10 +147,21 @@ struct JobsSection: View {
                     .font(.geist(size: 11)).foregroundColor(P.textDim)
             }
             .padding(.top, 8).padding(.bottom, 30)
+            }
         }
         .onAppear { model.watch("activity") }
         .onDisappear { model.unwatch("activity") }
         .refreshable { await model.refresh() }
+    }
+
+    /// "2 running · 1 waiting on this phone", or that it's all quiet.
+    private var activitySubtitle: String {
+        let running = model.voiceJobs.filter { j in j.isRunning }.count + model.batches.count
+        let waiting = up.pendingCount
+        var parts: [String] = []
+        if running > 0 { parts.append("\(running) running") }
+        if waiting > 0 { parts.append("\(waiting) waiting on this phone") }
+        return parts.isEmpty ? "All quiet · live" : parts.joined(separator: " · ")
     }
 
     private func card<Content: View>(title: String, @ViewBuilder _ content: () -> Content) -> some View {
@@ -226,6 +244,11 @@ final class JobsModel: ObservableObject {
     struct VoiceJob: Decodable, Identifiable {
         let id: String; let state: String; let title: String?; let attempts: Int
         let bytes: Int; let createdAt: Double; let entryId: String?; let error: String?
+        /// Server milestones (5 Starting … 90 Summarizing & saving, 100 Done) and
+        /// the stage text; nil on older jobs.
+        let progress: Int?
+        let stage: String?
+        var isRunning: Bool { state == "pending" || state == "transcribing" || state == "saving" }
     }
     struct Batch: Identifiable {
         let id: String; let name: String
@@ -259,7 +282,9 @@ final class JobsModel: ObservableObject {
         polling = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                // Every 2s while a voice job is running (live progress), else every 5s.
+                let fast = self?.voiceJobs.contains(where: { j in j.isRunning }) ?? false
+                try? await Task.sleep(nanoseconds: fast ? 2_000_000_000 : 5_000_000_000)
             }
         }
     }

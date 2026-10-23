@@ -72,8 +72,9 @@ extension View {
             self.toolbarColorScheme(.dark, for: .navigationBar)
                 .scrollEdgeEffectStyle(.soft, for: .top)
         } else {
+            // Automatic visibility: clear while the page's pillar banner is under
+            // it, solid black once content scrolls beneath it.
             self.toolbarBackground(P.bg, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
                 .toolbarColorScheme(.dark, for: .navigationBar)
         }
     }
@@ -196,35 +197,19 @@ extension P {
     }
 }
 
-/// Every page sits on this: true black with the SAME striped teal→copper fins
-/// banner as Home's hero (FinsBackground — identical colours, stripe width and
-/// spacing, full strength) across the top, then black for the content.
-/// Home passes `banner: false` because its hero card already is that banner.
+/// Every page sits on true black. The brand banner is no longer painted
+/// behind the page (rows used to scroll over it and it hid under cards on
+/// Groups): each page starts with a PageHeader — the pillar banner plus the
+/// title — as the first thing in its scroll content (see Pillars.swift).
+/// The parameters are kept so existing call sites compile unchanged.
 struct SinkyBackdrop: View {
-    /// Kept for existing call sites; the banner is always drawn at full strength.
     var intensity: Double = 1
     var banner: Bool = true
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .top) {
-                Color.black
-                if banner {
-                    FinsBackground()
-                        .frame(width: geo.size.width,
-                               height: FinsBackground.bannerHeight + geo.safeAreaInsets.top)
-                        // Only the last fifth melts into the black, so the edge never shows.
-                        .mask(LinearGradient(stops: [
-                            .init(color: .white, location: 0),
-                            .init(color: .white, location: 0.8),
-                            .init(color: .clear, location: 1),
-                        ], startPoint: .top, endPoint: .bottom))
-                }
-            }
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-        }
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        Color.black
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

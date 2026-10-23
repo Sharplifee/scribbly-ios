@@ -35,6 +35,9 @@ struct SettingsSection: View {
 
     var body: some View {
         ScrollView {
+            VStack(spacing: 0) {   // no gap above the banner
+            PageHeader(title: "Settings", subtitle: "Version " + version,
+                       back: { BottomChrome.shared.moreSub = nil })
             VStack(alignment: .leading, spacing: 8) {
                 header("TEXT SIZE")
                 card {
@@ -103,6 +106,7 @@ struct SettingsSection: View {
                 }
             }
             .padding(16)
+            }
         }
         .task {
             if let u = URL(string: CorpusAPI.voiceIngestURL.replacingOccurrences(of: "/upload", with: "/health")),
@@ -149,6 +153,9 @@ struct SettingsSection: View {
 struct WatchInfoSection: View {
     var body: some View {
         ScrollView {
+            VStack(spacing: 0) {   // no gap above the banner
+            PageHeader(title: "Apple Watch", subtitle: "Record on the wrist",
+                       back: { BottomChrome.shared.moreSub = nil })
             VStack(alignment: .leading, spacing: 8) {
                 Text("HOW IT WORKS").sectionHead()
                 Text("Tap Record on the watch; it records on the wrist without the phone. Finish sends the file to this iPhone — queued until it's nearby — and it lands in the library with the same place title as a phone memo.")
@@ -164,6 +171,7 @@ struct WatchInfoSection: View {
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.edge))
             }
             .padding(16)
+            }
         }
     }
 }

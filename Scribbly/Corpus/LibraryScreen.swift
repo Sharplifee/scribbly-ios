@@ -95,17 +95,21 @@ struct LibraryScreen: View {
     private func tabPage(_ s: Section) -> some View {
         NavigationStack(path: pathBinding(s)) {
             ZStack {
-                // Same fins banner on every page; Home's hero card is that banner.
-                SinkyBackdrop(banner: s != .home)
+                // True black; each page's PageHeader carries the pillar banner + title.
+                SinkyBackdrop()
                 content(for: s)
                     .chromeInset()
             }
             .toolbar(.hidden, for: .tabBar)
-            .navigationDestination(for: String.self) { id in EntryDetail(entryID: id, preloaded: nil).chromeInset() }
+            .navigationDestination(for: String.self) { id in
+                EntryDetail(entryID: id, preloaded: nil).chromeInset().toolbar(.visible, for: .navigationBar)
+            }
             .navigationDestination(for: Route.self) { r in destination(r) }
             .navigationTitle(title(for: s))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar(s == .home ? .hidden : .visible, for: .navigationBar)
+            // Root pages draw their own title in the pillar banner (PageHeader),
+            // well below the Dynamic Island; pushed pages bring the bar back.
+            .toolbar(.hidden, for: .navigationBar)
             .sinkyNavBar()
         }
         // On the NavigationStack (not its root) so the live recorder bar
@@ -144,7 +148,11 @@ struct LibraryScreen: View {
     }
 
     /// Every pushed screen, by value, so a tab can always be popped to its root.
-    @ViewBuilder private func destination(_ r: Route) -> some View {
+    private func destination(_ r: Route) -> some View {
+        destinationContent(r).toolbar(.visible, for: .navigationBar)
+    }
+
+    @ViewBuilder private func destinationContent(_ r: Route) -> some View {
         switch r {
         case .entry(let id, let pre):
             EntryDetail(entryID: id, preloaded: pre).chromeInset()
@@ -199,29 +207,304 @@ enum Route: Hashable {
     case failed
 }
 
-// MARK: - Library section (server-filtered feed, keyset-paginated)
+// MARK: - Library section (server-filtered feed, keyset-paginated, sectioned)
 
 struct LibrarySection: View {
     @ObservedObject var store: LibraryStore
     @State private var filter = ""
     @State private var typeFilter = "All"
-    @State private var sort = CorpusAPI.EntrySort.newest.rawValue
+    @State private var sort: CorpusAPI.EntrySort = .newest
+    @State private var range: DateRange = .any
+    /// A creator (Groups channel name) the feed is narrowed to.
+    @State private var creator: String? = nil
 
-    /// All · Voice · YouTube · Instagram · Notes — a type chip is hidden once
-    /// its count is known to be zero.
-    private var chips: [String] {
-        ["All"] + LibraryStore.filterTypes
+    private static let voiceChip = "Voice notes"
+
+    // MARK: Derived
+
+    /// All · Voice notes · YouTube · Instagram · Notes, with counts; a type is
+    /// hidden once its count is known to be zero.
+    private var chips: [TypeChip] {
+        let all = TypeChip(name: "All", count: store.libraryCount > 0 ? store.libraryCount : nil)
+        let types = LibraryStore.filterTypes
             .filter { t in (store.typeCounts[t.type] ?? 1) > 0 }
-            .map { t in t.chip }
+            .map { t in TypeChip(name: t.chip, count: store.typeCounts[t.type]) }
+        return [all] + types
     }
+    private var chipNames: [String] { chips.map { c in c.name } }
+
+    /// Real creators (not the Filing… bucket), most videos first.
+    private var creatorGroups: [Group] { store.groups.filter { g in !g.isFiling } }
+
+    private var creatorIDs: [String] {
+        guard let c = creator else { return [] }
+        return store.groups.first(where: { g in g.channel == c })?.collections.map { col in col.id } ?? []
+    }
+
     /// The query the controls describe; the store reloads from the server when it changes.
     private var requested: LibraryStore.Query {
-        LibraryStore.Query(
-            type: LibraryStore.filterTypes.first(where: { t in t.chip == typeFilter })?.type,
-            sort: CorpusAPI.EntrySort(rawValue: sort) ?? .newest,
-            search: filter.trimmingCharacters(in: .whitespacesAndNewlines))
+        var q = LibraryStore.Query()
+        q.type = LibraryStore.filterTypes.first(where: { t in t.chip == typeFilter })?.type
+        q.sort = sort
+        q.search = filter.trimmingCharacters(in: .whitespacesAndNewlines)
+        q.range = range
+        q.creator = creator
+        q.creatorIDs = creatorIDs
+        return q
     }
     private var searching: Bool { !store.query.search.isEmpty }
+    private var activeFilterCount: Int {
+        (sort == .newest ? 0 : 1) + (range == .any ? 0 : 1) + (creator == nil ? 0 : 1)
+    }
+
+    private var headerSubtitle: String {
+        var parts: [String] = []
+        if store.libraryCount > 0 { parts.append("\(store.libraryCount.formatted()) entries") }
+        if !creatorGroups.isEmpty { parts.append("\(creatorGroups.count) creators") }
+        return parts.isEmpty ? "Everything you've saved" : parts.joined(separator: " · ")
+    }
+
+    private var showCreators: Bool {
+        !searching && !creatorGroups.isEmpty && (typeFilter == "All" || typeFilter == "YouTube")
+    }
+
+    /// "342 entries · this week · Dan Martell", or how the list is ordered.
+    private var resultLine: String {
+        if store.query.hasFilters {
+            if let n = store.matchCount {
+                let noun: String = n == 1 ? " entry" : " entries"
+                let tail: String = sort.isDuration ? " with a length" : ""
+                return n.formatted() + noun + tail
+            }
+            return "Counting…"
+        }
+        switch sort {
+        case .newest: return "Newest first"
+        case .oldest: return "Oldest first"
+        case .title: return "A to Z"
+        case .longest: return "Longest first"
+        case .shortest: return "Shortest first"
+        }
+    }
+
+    // MARK: Body
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                ScrollTopAnchor()
+                PageHeader(title: "Library", subtitle: headerSubtitle)
+                controls
+                if showCreators {
+                    CreatorsStrip(groups: Array(creatorGroups.prefix(16)), selected: creator,
+                                  onPick: { name in creator = (creator == name ? nil : name) },
+                                  onSeeAll: { BottomChrome.shared.currentTab = .groups })
+                }
+                if typeFilter == Self.voiceChip && !searching {
+                    VoiceSummaryCard(month: store.voiceMonth)
+                }
+                if !searching { metaRow }
+                listBody
+                footer
+            }
+        }
+        .onNearEnd(space: "libraryScroll") {
+            guard !searching, !store.loadingEntries, !store.reachedEnd, store.error == nil, !store.entries.isEmpty else { return }
+            Task { @MainActor in await store.loadNextPage() }
+        }
+        .scrollsToTopOnReselect(.library)
+        .task {
+            await CreatorDirectory.shared.loadIfNeeded()
+            if let q = ProcessInfo.processInfo.environment["SCRIBBLY_SEARCH"], !q.isEmpty { filter = q }
+            await store.loadFirstPageIfNeeded()
+            await store.loadCollectionsIfNeeded()
+            if store.typeCounts.isEmpty { await store.loadTypeCounts() }
+        }
+        // Filter / sort / search all go to the server; typing is debounced.
+        .task(id: requested) {
+            let q = requested
+            if q.search != store.query.search { try? await Task.sleep(nanoseconds: 350_000_000) }
+            if Task.isCancelled { return }
+            await store.setQuery(q)
+        }
+        .task(id: typeFilter) {
+            if typeFilter == Self.voiceChip { await store.loadVoiceMonth() }
+        }
+        .onChange(of: chipNames) { now in
+            if !now.contains(typeFilter) { typeFilter = "All" }
+        }
+        .refreshable { await store.refreshAll() }
+        .onReceive(NotificationCenter.default.publisher(for: .init("scribblyEntryDeleted"))) { _ in
+            Task { await store.refreshAll() }
+        }
+    }
+
+    // MARK: Controls
+
+    /// Search field + sort/filter button on one row, active filters as tokens,
+    /// then the type chips on their own row.
+    private var controls: some View {
+        let n: String = store.libraryCount > 0 ? store.libraryCount.formatted() + " " : ""
+        let placeholder = "Search " + n + "entries…"
+        return VStack(alignment: .leading, spacing: 8) {
+            ListSearch(placeholder: placeholder, text: $filter, accessory: AnyView(filterMenu))
+            if activeFilterCount > 0 { tokenRow }
+            TypeChipRow(chips: chips, selection: $typeFilter)
+        }
+        .padding(.top, 2)
+    }
+
+    private var filterMenu: some View {
+        Menu {
+            Section("Sort") {
+                ForEach(CorpusAPI.EntrySort.allCases, id: \.self) { s in
+                    Button { sort = s } label: { checkLabel(s.rawValue, on: sort == s) }
+                }
+            }
+            Section("Date") {
+                ForEach(DateRange.allCases) { r in
+                    Button { range = r } label: { checkLabel(r.rawValue, on: range == r) }
+                }
+            }
+            Section("Creator") {
+                Menu {
+                    Button { creator = nil } label: { checkLabel("All creators", on: creator == nil) }
+                    ForEach(creatorGroups) { g in
+                        Button { creator = g.channel } label: {
+                            checkLabel(g.channel + " · " + g.totalVideos.formatted(), on: creator == g.channel)
+                        }
+                    }
+                } label: {
+                    Label(creator ?? "All creators", systemImage: "person.2")
+                }
+            }
+            if activeFilterCount > 0 {
+                Button(role: .destructive) { clearFilters() } label: {
+                    Label("Clear filters", systemImage: "xmark.circle")
+                }
+            }
+        } label: {
+            FilterButtonLabel(active: activeFilterCount)
+        }
+    }
+
+    @ViewBuilder private func checkLabel(_ text: String, on: Bool) -> some View {
+        if on { Label(text, systemImage: "checkmark") } else { Text(text) }
+    }
+
+    private var tokenRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                if sort != .newest {
+                    FilterToken(label: sort.rawValue) { sort = .newest }
+                }
+                if range != .any {
+                    FilterToken(label: range.rawValue) { range = .any }
+                }
+                if let c = creator {
+                    FilterToken(label: c) { creator = nil }
+                }
+                if activeFilterCount > 1 {
+                    Button { clearFilters() } label: {
+                        Text("Clear all").font(.geist(size: 12, weight: .semibold)).foregroundColor(P.textSec)
+                            .padding(.horizontal, 8).frame(height: 26)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private func clearFilters() {
+        sort = .newest
+        range = .any
+        creator = nil
+    }
+
+    /// "342 entries · Newest first" on the left, Export on the right.
+    private var metaRow: some View {
+        HStack(spacing: 10) {
+            Text(resultLine).sectionHead()
+            Spacer()
+            exportControl
+        }
+        .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 6)
+    }
+
+    // MARK: List
+
+    @ViewBuilder private var listBody: some View {
+        if searching {
+            searchResults
+        } else if store.entries.isEmpty && !store.reachedEnd && store.error == nil {
+            SkeletonRows()
+        } else {
+            ForEach(store.sections) { sec in
+                Section(header: LibrarySectionHeader(title: sec.title, count: countText(sec))) {
+                    ForEach(sec.entries) { entry in
+                        NavigationLink(value: Route.entry(entry.id, entry)) {
+                            LibraryRow(entry: entry, showLength: sort.isDuration)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Exact server count when it has arrived; otherwise what's loaded.
+    private func countText(_ sec: EntrySection) -> String {
+        if let n = store.sectionCounts[sec.id] { return n.formatted() }
+        let loaded = sec.entries.count.formatted()
+        let isLast = store.sections.last?.id == sec.id
+        return (isLast && !store.reachedEnd) ? loaded + "+" : loaded
+    }
+
+    @ViewBuilder private var footer: some View {
+        if !searching && !store.entries.isEmpty && !store.reachedEnd {
+            // Next page only when the user has scrolled near the end (never a chain reaction).
+            LoadMoreSentinel(space: "libraryScroll")
+        }
+        if store.loadingEntries && !store.entries.isEmpty {
+            HStack(spacing: 8) {
+                ProgressView().tint(P.accent)
+                Text("Loading more…").font(.geist(size: 12)).foregroundColor(P.textDim)
+            }
+            .frame(maxWidth: .infinity).padding(24)
+        }
+        if let err = store.error, !store.loadingEntries {
+            LibraryNotice(symbol: "wifi.exclamationmark",
+                          title: store.entries.isEmpty ? "Couldn't load the library" : "Couldn't load more",
+                          message: err, actionTitle: "Try again") {
+                Task {
+                    if store.entries.isEmpty { await store.reloadEntries() }
+                    else { store.error = nil; await store.loadNextPage() }
+                }
+            }
+        } else if store.entries.isEmpty && store.reachedEnd && !searching {
+            if activeFilterCount > 0 {
+                LibraryNotice(symbol: "tray", title: emptyTitle,
+                              message: "Nothing matches these filters.",
+                              actionTitle: "Clear filters") { clearFilters() }
+            } else {
+                LibraryNotice(symbol: "tray", title: emptyTitle,
+                              message: store.query.hasFilters ? "Nothing of this type yet."
+                                                              : "Paste a link on Home or record a voice note to start.")
+            }
+        } else if !store.entries.isEmpty && store.reachedEnd && !searching {
+            Text("That's everything").monoLabel(9.5, color: P.textDim)
+                .frame(maxWidth: .infinity).padding(.vertical, 24)
+        }
+    }
+
+    private var emptyTitle: String {
+        if range != .any { return "Nothing from " + range.rawValue.lowercased() }
+        if let c = creator { return "Nothing from " + c }
+        return typeFilter == "All" ? "Nothing here yet" : "No \(typeFilter.lowercased()) yet"
+    }
+
+    // MARK: Search results (grouped by where each entry lives)
 
     /// Search results grouped by where each lives: group › collection, or by
     /// type for entries that aren't in a collection.
@@ -256,142 +539,82 @@ struct LibrarySection: View {
         }
     }
 
-    var body: some View {
-        ScrollView {
-            ScrollTopAnchor()
-            LazyVStack(spacing: 0) {
-                // Search field + sort menu share the top row; type chips get their own row.
-                ListSearch(placeholder: "Search all \(store.libraryCount > 0 ? store.libraryCount.formatted() + " " : "")entries…", text: $filter,
-                           sorts: CorpusAPI.EntrySort.allCases.map(\.rawValue), sort: $sort)
-                FilterSortRow(filters: chips, filter: $typeFilter)
-                exportAllRow
-                if !searching {
-                    ForEach(store.entries) { entry in
-                        NavigationLink(value: Route.entry(entry.id, entry)) { EntryRow(entry: entry) }
-                            .buttonStyle(.plain)
-                        Rectangle().fill(P.divider).frame(height: 1).padding(.leading, 18)
-                    }
-                    // Next page only when the user has scrolled near the end (never a chain reaction).
-                    if !store.entries.isEmpty && !store.reachedEnd { LoadMoreSentinel(space: "libraryScroll") }
-                } else {
-                    ForEach(groupedHits, id: \.key) { g in
-                        GroupHeader(title: g.header, detail: g.detail)
-                        Nested {
-                            ForEach(g.items) { entry in
-                                NavigationLink(value: Route.entry(entry.id, entry)) { EntryRow(entry: entry) }
-                                    .buttonStyle(.plain)
-                                Rectangle().fill(P.divider).frame(height: 1).padding(.leading, 18)
-                            }
-                        }
-                    }
-                    if store.searchCapped {
-                        Text("Showing the first \(CorpusAPI.entrySearchLimit) matches — add words to narrow it, or use Query.")
-                            .font(.geist(size: 12)).foregroundColor(P.textDim).multilineTextAlignment(.center).padding(20)
-                    }
-                    if store.entries.isEmpty && store.reachedEnd && store.error == nil {
-                        Text("No entries match \"\(store.query.search)\"" + (typeFilter == "All" ? "." : " in \(typeFilter)."))
-                            .font(.geist(size: 13)).foregroundColor(P.textDim).multilineTextAlignment(.center).padding(30)
-                    }
-                }
-                if store.loadingEntries && !store.entries.isEmpty { ProgressView().tint(P.accent).padding(24) }
-                if let err = store.error, !store.loadingEntries {
-                    VStack(spacing: 8) {
-                        Text(store.entries.isEmpty ? "Couldn't load the library" : "Couldn't load more")
-                            .font(.geist(size: 15, weight: .semibold)).foregroundColor(P.textSec)
-                        Text(err).font(.geist(size: 12)).foregroundColor(P.textDim).multilineTextAlignment(.center)
-                        Button("Try again") {
-                            Task { if store.entries.isEmpty { await store.reloadEntries() } else { store.error = nil; await store.loadNextPage() } }
-                        }
-                        .font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
-                    }
-                    .frame(maxWidth: .infinity).padding(40)
-                } else if store.entries.isEmpty && store.reachedEnd && !searching {
-                    Text(typeFilter == "All" ? "Nothing here yet." : "No \(typeFilter) entries yet.")
-                        .font(.geist(size: 13)).foregroundColor(P.textDim).padding(40)
+    @ViewBuilder private var searchResults: some View {
+        if store.loadingEntries && store.entries.isEmpty {
+            SkeletonRows(count: 4)
+        }
+        ForEach(groupedHits, id: \.key) { g in
+            GroupHeader(title: g.header, detail: g.detail)
+            Nested {
+                ForEach(g.items) { entry in
+                    NavigationLink(value: Route.entry(entry.id, entry)) { LibraryRow(entry: entry) }
+                        .buttonStyle(.plain)
                 }
             }
         }
-        .onNearEnd(space: "libraryScroll") {
-            guard !searching, !store.loadingEntries, !store.reachedEnd, store.error == nil, !store.entries.isEmpty else { return }
-            Task { @MainActor in await store.loadNextPage() }
+        if store.searchCapped {
+            Text("Showing the first \(CorpusAPI.entrySearchLimit) matches — add words to narrow it, or use Query.")
+                .font(.geist(size: 12)).foregroundColor(P.textDim).multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity).padding(20)
         }
-        .scrollsToTopOnReselect(.library)
-        .overlay { if store.loadingEntries && store.entries.isEmpty { ProgressView().tint(P.accent) } }
-        .task {
-            await CreatorDirectory.shared.loadIfNeeded()
-            if let q = ProcessInfo.processInfo.environment["SCRIBBLY_SEARCH"], !q.isEmpty { filter = q }
-            await store.loadFirstPageIfNeeded()
-            await store.loadCollectionsIfNeeded()
-            if store.typeCounts.isEmpty { await store.loadTypeCounts() }
-        }
-        // Filter / sort / search all go to the server; typing is debounced.
-        .task(id: requested) {
-            let q = requested
-            if q.search != store.query.search { try? await Task.sleep(nanoseconds: 350_000_000) }
-            if Task.isCancelled { return }
-            await store.setQuery(q)
-        }
-        .onChange(of: chips) { now in
-            if !now.contains(typeFilter) { typeFilter = "All" }
-        }
-        .refreshable { await store.refreshAll() }
-        .onReceive(NotificationCenter.default.publisher(for: .init("scribblyEntryDeleted"))) { _ in
-            Task { await store.refreshAll() }
+        if store.entries.isEmpty && store.reachedEnd && store.error == nil {
+            LibraryNotice(symbol: "magnifyingglass",
+                          title: "No matches",
+                          message: "Nothing matches \"\(store.query.search)\"" + (typeFilter == "All" ? "." : " in \(typeFilter)."))
         }
     }
+
+    // MARK: Export
 
     @State private var exportURL: URL?
     @State private var exporting = false
     @State private var exportError: String?
 
-    private var exportAllRow: some View {
-        HStack(spacing: 10) {
-            if let err = exportError {
-                Text(err).font(.geist(size: 11)).foregroundColor(P.danger).lineLimit(2)
+    @ViewBuilder private var exportControl: some View {
+        if let u = exportURL {
+            ShareLink(item: u) {
+                Label("Share export", systemImage: "square.and.arrow.up")
+                    .font(.geist(size: 12, weight: .semibold)).foregroundColor(P.good)
             }
-            Spacer()
-            if let u = exportURL {
-                ShareLink(item: u) {
-                    Label("Share export", systemImage: "square.and.arrow.up")
-                        .font(.geist(size: 12, weight: .semibold)).foregroundColor(P.good)
+        } else {
+            Button { runExport() } label: {
+                if exporting { ProgressView().controlSize(.mini).tint(P.accent) }
+                else {
+                    Label(exportError == nil ? "Export" : "Retry export", systemImage: "square.and.arrow.up")
+                        .font(.geist(size: 12, weight: .semibold))
+                        .foregroundColor(exportError == nil ? P.textSec : P.danger)
                 }
-            } else {
-                Button {
-                    exporting = true
-                    exportError = nil
-                    Task {
-                        // Titles, tags and summaries for the whole library; transcripts
-                        // stay per-entry (Export… on an entry) to keep the file sane.
-                        do {
-                            let all = try await CorpusAPI.allEntriesLight()
-                            var text = "SCRIBBLY LIBRARY EXPORT — \(all.count) entries\n\n"
-                            for e in all {
-                                text += "— \(e.title)\n  \(e.type ?? "") · \(e.displayDate)\n"
-                                if let t = e.tags, !t.isEmpty { text += "  Tags: \(t)\n" }
-                                if let s = e.summary, !s.isEmpty { text += "  \(s.replacingOccurrences(of: "\n", with: "\n  "))\n" }
-                                text += "\n"
-                            }
-                            let url = FileManager.default.temporaryDirectory
-                                .appendingPathComponent("Scribbly Library \(EntryDates.display.string(from: Date())).txt")
-                            try text.write(to: url, atomically: true, encoding: .utf8)
-                            exportURL = url
-                        } catch {
-                            exportError = "Export failed: \(error.localizedDescription)"
-                        }
-                        exporting = false
-                    }
-                } label: {
-                    if exporting { ProgressView().controlSize(.mini).tint(P.accent) }
-                    else {
-                        Label(exportError == nil ? "Export all" : "Retry export", systemImage: "square.and.arrow.up")
-                            .font(.geist(size: 12, weight: .semibold)).foregroundColor(P.textSec)
-                    }
-                }.disabled(exporting)
             }
+            .disabled(exporting)
+            .accessibilityHint(exportError ?? "Exports titles, tags and summaries of the whole library as a text file.")
         }
-        .padding(.horizontal, 18).padding(.bottom, 2)
     }
 
+    private func runExport() {
+        exporting = true
+        exportError = nil
+        Task {
+            // Titles, tags and summaries for the whole library; transcripts
+            // stay per-entry (Export… on an entry) to keep the file sane.
+            do {
+                let all = try await CorpusAPI.allEntriesLight()
+                var text = "SCRIBBLY LIBRARY EXPORT — \(all.count) entries\n\n"
+                for e in all {
+                    text += "— \(e.title)\n  \(e.type ?? "") · \(e.displayDate)\n"
+                    if let t = e.tags, !t.isEmpty { text += "  Tags: \(t)\n" }
+                    if let s = e.summary, !s.isEmpty { text += "  \(s.replacingOccurrences(of: "\n", with: "\n  "))\n" }
+                    text += "\n"
+                }
+                let url = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("Scribbly Library \(EntryDates.display.string(from: Date())).txt")
+                try text.write(to: url, atomically: true, encoding: .utf8)
+                exportURL = url
+            } catch {
+                if !CorpusAPI.isCancellation(error) { exportError = "Export failed: \(error.localizedDescription)" }
+            }
+            exporting = false
+        }
+    }
 }
 
 struct EntryRow: View {
@@ -433,25 +656,15 @@ struct TagChip: View {
 }
 
 
-/// The More page: cards, or one of its sub-pages (Collections / Query / Activity) with a ‹ More header.
+/// The More page: cards, or one of its sub-pages (Collections / Query / Activity / Settings / Apple Watch).
 struct MoreHost: View {
     let store: LibraryStore
     @ObservedObject private var chrome = BottomChrome.shared
 
     var body: some View {
+        // Each sub-page starts with its own PageHeader, whose "‹ More" capsule comes back here.
         if let sub = chrome.moreSub {
-            VStack(spacing: 0) {
-                HStack {
-                    Button { chrome.moreSub = nil } label: {
-                        Label("More", systemImage: "chevron.left").font(.geist(size: 15, weight: .medium)).foregroundColor(P.ink)
-                            .padding(.horizontal, 12).frame(height: 34)
-                            .sinkyGlass(Capsule(), interactive: true)
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal, 16).padding(.vertical, 6)
-                subPage(sub)
-            }
+            subPage(sub)
         } else {
             MoreSection(store: store)
         }

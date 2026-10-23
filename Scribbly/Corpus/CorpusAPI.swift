@@ -167,7 +167,12 @@ enum CorpusAPI {
 
     /// Library sort orders, all done by the server.
     enum EntrySort: String, CaseIterable {
-        case newest = "Newest", oldest = "Oldest", title = "A–Z"
+        case newest = "Newest", oldest = "Oldest", title = "A–Z", longest = "Longest", shortest = "Shortest"
+        /// Longest / Shortest order by duration_seconds (an integer column) and
+        /// only list entries that have a real length (> 0).
+        var isDuration: Bool { self == .longest || self == .shortest }
+        /// Newest / Oldest — the feed is grouped into time sections.
+        var isByDate: Bool { self == .newest || self == .oldest }
     }
 
     static let listSelect = "id,title,type,tags,summary,date,created_at,collection_id,duration_seconds"
@@ -178,6 +183,8 @@ enum CorpusAPI {
         case .newest: return "created_at.desc,id.desc"
         case .oldest: return "created_at.asc,id.asc"
         case .title:  return "title.asc,id.asc"
+        case .longest:  return "duration_seconds.desc.nullslast,id.desc"
+        case .shortest: return "duration_seconds.asc.nullslast,id.asc"
         }
     }
 
@@ -194,9 +201,11 @@ enum CorpusAPI {
     /// One page of entries, filtered and sorted on the server. Pages with a
     /// keyset cursor (the last row of the previous page), never an offset, so
     /// rows inserted while scrolling can't shift the window and duplicate rows.
+    /// `filters` are extra PostgREST filters (date range, creator's collections,
+    /// duration > 0) — see LibraryStore.filters(for:).
     static func entries(type: String? = nil, collectionID: String? = nil, sort: EntrySort = .newest,
                         after last: Entry? = nil, limit: Int = 100,
-                        select: String = listSelect) async throws -> [Entry] {
+                        select: String = listSelect, filters: [URLQueryItem] = []) async throws -> [Entry] {
         var items: [URLQueryItem] = [
             .init(name: "select", value: select),
             .init(name: "limit", value: String(limit))
@@ -204,6 +213,7 @@ enum CorpusAPI {
         items.append(URLQueryItem(name: "order", value: orderClause(sort)))
         if let type { items.append(.init(name: "type", value: "eq.\(type)")) }
         if let collectionID { items.append(.init(name: "collection_id", value: "eq.\(collectionID)")) }
+        items.append(contentsOf: filters)
         if let last {
             let id = quoted(last.id)
             switch sort {
@@ -217,6 +227,13 @@ enum CorpusAPI {
             case .title:
                 let t = quoted(last.title)
                 items.append(.init(name: "or", value: "(title.gt.\(t),and(title.eq.\(t),id.gt.\(id)))"))
+            case .longest, .shortest:
+                guard let d = last.duration_seconds, d.isFinite else {
+                    throw CorpusAPIError.message("Can't continue paging: an entry has no length.")
+                }
+                let op = sort == .longest ? "lt" : "gt"
+                let v = String(Int(d.rounded()))      // integer column
+                items.append(.init(name: "or", value: "(duration_seconds.\(op).\(v),and(duration_seconds.eq.\(v),id.\(op).\(id)))"))
             }
         }
         return try await getJSON(restURL("scribbly_entries", items), as: [Entry].self)
@@ -364,7 +381,8 @@ enum CorpusAPI {
     /// entries are fetched with the type filter and sort applied by the server.
     /// Falls back to a substring match on the entries when the index finds nothing.
     static let entrySearchLimit = 200
-    static func searchEntries(_ query: String, type: String?, sort: EntrySort) async throws -> [Entry] {
+    static func searchEntries(_ query: String, type: String?, sort: EntrySort,
+                              filters: [URLQueryItem] = []) async throws -> [Entry] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
         let order = orderClause(sort)
@@ -384,6 +402,7 @@ enum CorpusAPI {
                 .init(name: "limit", value: String(entrySearchLimit))
             ]
             if let type { items.append(.init(name: "type", value: "eq.\(type)")) }
+            items.append(contentsOf: filters)
             let found = try await getJSON(restURL("scribbly_entries", items), as: [Entry].self)
             if !found.isEmpty { return found }
         }
@@ -394,7 +413,26 @@ enum CorpusAPI {
             .init(name: "limit", value: String(entrySearchLimit))
         ]
         if let type { items.append(.init(name: "type", value: "eq.\(type)")) }
+        items.append(contentsOf: filters)
         return try await getJSON(restURL("scribbly_entries", items), as: [Entry].self)
+    }
+
+    /// Voice notes since `start`: how many, and their total recorded length
+    /// (PostgREST aggregates are disabled on this project, so it's summed here).
+    static func voiceStats(since start: Date) async throws -> (count: Int, seconds: Double) {
+        struct Row: Decodable { let duration_seconds: Double? }
+        let url = restURL("scribbly_entries", [
+            .init(name: "select", value: "duration_seconds"),
+            .init(name: "type", value: "eq.Voice Note"),
+            .init(name: "created_at", value: "gte.\(EntryDates.utc(start))"),
+            .init(name: "limit", value: "1000")
+        ])
+        let rows = try await getJSON(url, as: [Row].self, timeout: 20)
+        let secs = rows.reduce(0.0) { (sum: Double, r: Row) -> Double in
+            guard let d = r.duration_seconds, d.isFinite, d > 0 else { return sum }
+            return sum + d
+        }
+        return (rows.count, secs)
     }
 
     // MARK: - Counts
@@ -458,10 +496,16 @@ enum CorpusAPI {
 struct BatchProgress {
     var total = 0, done = 0, failed = 0, skipped = 0, active = 0
     var percent: Double = 0
+    /// Where the bar may glide to before the next poll: every running row at
+    /// its next server milestone − 2 (never past it), averaged like `percent`.
+    var ceiling: Double = 0
+    /// Typical time (s) the current row's stage takes — how fast to glide.
+    var tau: Double = 8
     var stage = ""
 
     init(rows: [CorpusAPI.QueueRow], expected: Int) {
         var sum = 0.0
+        var capSum = 0.0
         var current: CorpusAPI.QueueRow? = nil
         for r in rows {
             switch r.status {
@@ -469,18 +513,22 @@ struct BatchProgress {
                 active += 1
             case "processing":
                 active += 1
-                sum += Double(min(max(r.progress ?? 5, 0), 100))
+                let p = Double(min(max(r.progress ?? 5, 0), 100))
+                sum += p
+                capSum += ProgressMilestones.ceiling(after: p)
                 if current == nil { current = r }
-            case "done":    done += 1; sum += 100
-            case "failed":  failed += 1; sum += 100
-            case "skipped": skipped += 1; sum += 100
-            default:        sum += 100
+            case "done":    done += 1; sum += 100; capSum += 100
+            case "failed":  failed += 1; sum += 100; capSum += 100
+            case "skipped": skipped += 1; sum += 100; capSum += 100
+            default:        sum += 100; capSum += 100
             }
         }
         total = max(rows.count, expected)
         // Rows not created yet (still being queued) count as pending.
         percent = total > 0 ? sum / Double(total) : 0
+        ceiling = total > 0 ? max(percent, capSum / Double(total)) : 0
         if let c = current {
+            tau = ProgressMilestones.stageSeconds(at: Double(c.progress ?? 5))
             if let s = c.stage, !s.isEmpty { stage = s }
             else if let t = c.title, !t.isEmpty { stage = "Now: " + t }
         }

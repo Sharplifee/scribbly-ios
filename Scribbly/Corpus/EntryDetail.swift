@@ -47,8 +47,17 @@ struct EntryDetail: View {
         return out
     }
 
+    /// "Voice note · Oct 23" over the banner; the entry's own title follows below it.
+    private var bannerSubtitle: String {
+        guard let e = entry else { return "Entry" }
+        let kind = e.isVoice ? "Voice note" : e.displayType
+        return kind + " · " + e.displayDate
+    }
+
     var body: some View {
         ScrollView {
+            VStack(spacing: 0) {   // no gap above the banner
+            PageHeader(title: "", subtitle: bannerSubtitle, underNavBar: true)
             if let e = entry {
                 VStack(alignment: .leading, spacing: 16) {
                     header(e)
@@ -128,7 +137,8 @@ struct EntryDetail: View {
                         Text(t).font(.geist(size: 14)).foregroundColor(P.textSec.opacity(0.85))
                     }
                 }
-                .padding(18)
+                .padding(.horizontal, 18).padding(.bottom, 18).padding(.top, 4)
+            }
             }
         }
         .background(SinkyBackdrop())

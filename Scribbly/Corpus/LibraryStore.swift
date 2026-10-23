@@ -29,10 +29,33 @@ final class LibraryStore: ObservableObject {
         var type: String? = nil          // scribbly_entries.type, nil = all
         var sort: CorpusAPI.EntrySort = .newest
         var search = ""
+        var range: DateRange = .any
+        /// A creator (Groups channel) and the ids of its collections.
+        var creator: String? = nil
+        var creatorIDs: [String] = []
+
+        /// Anything narrower than "everything, newest first".
+        var hasFilters: Bool { type != nil || range != .any || creator != nil || sort.isDuration }
+        var isSearching: Bool { !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
     @Published private(set) var query = Query()
     /// True when a search returned the maximum number of matches (there may be more).
     @Published var searchCapped = false
+
+    /// The loaded rows, grouped for display: time sections (Today, Yesterday,
+    /// This week, This month, then by month) for Newest/Oldest, letters for
+    /// A–Z, one untitled section for Longest/Shortest. Appended page by page.
+    @Published private(set) var sections: [EntrySection] = []
+    /// Exact server counts per time section (by section id), filled in as each appears.
+    @Published var sectionCounts: [String: Int] = [:]
+    /// Exact number of entries matching the current filters (nil = no filters / not counted yet).
+    @Published var matchCount: Int?
+    /// Voice notes this month (count + total recorded seconds) for the Voice summary card.
+    @Published var voiceMonth: VoiceMonth?
+    struct VoiceMonth { let count: Int; let seconds: Double; let allTime: Int }
+
+    /// "Now" for the current section boundaries; reset with each new list.
+    private var buckets = TimeBuckets()
 
     /// Bumped on every reset so a slow page from an old query is dropped.
     private var generation = 0
@@ -40,8 +63,27 @@ final class LibraryStore: ObservableObject {
 
     /// The entry types the Library filters by, in chip order.
     static let filterTypes: [(chip: String, type: String)] = [
-        ("Voice", "Voice Note"), ("YouTube", "YouTube"), ("Instagram", "Instagram"), ("Notes", "Note")
+        ("Voice notes", "Voice Note"), ("YouTube", "YouTube"), ("Instagram", "Instagram"), ("Notes", "Note")
     ]
+
+    /// The server filters a query adds beyond type/search/sort: its date range
+    /// (local midnight → UTC instant), its creator's collections, and
+    /// "has a length" for Longest/Shortest. Type is included too.
+    static func filters(for q: Query, now: Date = Date()) -> [URLQueryItem] {
+        var f: [URLQueryItem] = []
+        if let t = q.type { f.append(URLQueryItem(name: "type", value: "eq.\(t)")) }
+        if let start = q.range.start(now: now) {
+            f.append(URLQueryItem(name: "created_at", value: "gte.\(EntryDates.utc(start))"))
+        }
+        if q.creator != nil {
+            // A creator with no collections matches nothing (never "everything").
+            let ids = q.creatorIDs.isEmpty ? ["-"] : q.creatorIDs
+            let list = ids.map { id in CorpusAPI.quoted(id) }.joined(separator: ",")
+            f.append(URLQueryItem(name: "collection_id", value: "in.(\(list))"))
+        }
+        if q.sort.isDuration { f.append(URLQueryItem(name: "duration_seconds", value: "gt.0")) }
+        return f
+    }
 
     private static var recentCacheURL: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -108,11 +150,96 @@ final class LibraryStore: ObservableObject {
     func reloadEntries() async {
         generation += 1
         entries = []
+        sections = []
+        sectionCounts = [:]
+        buckets = TimeBuckets()
         reachedEnd = false
         searchCapped = false
         loadingEntries = false
         error = nil
+        countMatches()
         await loadNextPage()
+    }
+
+    /// The exact size of a filtered list ("342 entries"), counted on the server.
+    private func countMatches() {
+        let q = query
+        let gen = generation
+        matchCount = nil
+        guard q.hasFilters, !q.isSearching else { return }
+        let f = Self.filters(for: q, now: buckets.now)
+        Task { @MainActor [weak self] in
+            guard let n = try? await CorpusAPI.count(table: "scribbly_entries", filters: f) else { return }
+            guard let self, self.generation == gen else { return }
+            self.matchCount = n
+        }
+    }
+
+    /// Voice notes this month: how many and how long, plus the all-time count.
+    func loadVoiceMonth() async {
+        guard let start = DateRange.month.start() else { return }
+        if typeCounts["Voice Note"] == nil { await loadTypeCounts() }
+        guard let stats = try? await CorpusAPI.voiceStats(since: start) else { return }
+        voiceMonth = VoiceMonth(count: stats.count, seconds: stats.seconds,
+                                allTime: typeCounts["Voice Note"] ?? 0)
+    }
+
+    // MARK: Sections
+
+    private func sectionInfo(for e: Entry, sort: CorpusAPI.EntrySort) -> TimeBuckets.Bucket {
+        switch sort {
+        case .newest, .oldest:
+            guard let d = EntryDates.parse(e.created_at) else {
+                return TimeBuckets.Bucket(key: "undated", title: "Undated", start: nil, end: nil)
+            }
+            return buckets.bucket(for: d)
+        case .title:
+            let first = e.title.trimmingCharacters(in: .whitespacesAndNewlines).first
+            let letter = first.map { c in String(c).uppercased() } ?? "#"
+            let key = (letter.count == 1 && letter >= "A" && letter <= "Z") ? letter : "#"
+            return TimeBuckets.Bucket(key: "l:" + key, title: key, start: nil, end: nil)
+        case .longest, .shortest:
+            return TimeBuckets.Bucket(key: "all", title: "", start: nil, end: nil)
+        }
+    }
+
+    /// Files a page of rows into sections (new sections are appended in the
+    /// order they first appear) and counts any new time sections on the server.
+    private func appendSections(_ page: [Entry], query q: Query, gen: Int) {
+        guard !q.isSearching, !page.isEmpty else { return }
+        var secs = sections
+        var fresh: [EntrySection] = []
+        for e in page {
+            let b = sectionInfo(for: e, sort: q.sort)
+            if let last = secs.indices.last, secs[last].id == b.key {
+                secs[last].entries.append(e)
+            } else if let i = secs.firstIndex(where: { s in s.id == b.key }) {
+                secs[i].entries.append(e)
+            } else {
+                let s = EntrySection(id: b.key, title: b.title, start: b.start, end: b.end, entries: [e])
+                secs.append(s)
+                fresh.append(s)
+            }
+        }
+        sections = secs
+        countSections(fresh, query: q, gen: gen)
+    }
+
+    private func countSections(_ new: [EntrySection], query q: Query, gen: Int) {
+        guard q.sort.isByDate else { return }
+        let base = Self.filters(for: q, now: buckets.now)
+        for s in new {
+            guard let start = s.start else { continue }
+            var f = base
+            f.append(URLQueryItem(name: "created_at", value: "gte.\(EntryDates.utc(start))"))
+            if let end = s.end { f.append(URLQueryItem(name: "created_at", value: "lt.\(EntryDates.utc(end))")) }
+            let key = s.id
+            Task { @MainActor [weak self] in
+                guard let n = try? await CorpusAPI.count(table: "scribbly_entries", filters: f) else { return }
+                guard let self, self.generation == gen else { return }
+                self.sectionCounts[key] = n
+            }
+        }
     }
 
     /// Pull-to-refresh for the feed: keeps the rows on screen and swaps in the
@@ -126,13 +253,16 @@ final class LibraryStore: ObservableObject {
         loadingEntries = true
         do {
             let page: [Entry]
+            let f = Self.filters(for: q, now: buckets.now)
             if searchText.isEmpty {
-                page = try await CorpusAPI.entries(type: q.type, sort: q.sort, after: nil, limit: pageSize)
+                page = try await CorpusAPI.entries(sort: q.sort, after: nil, limit: pageSize, filters: f)
             } else {
-                page = try await CorpusAPI.searchEntries(q.search, type: q.type, sort: q.sort)
+                page = try await CorpusAPI.searchEntries(q.search, type: nil, sort: q.sort, filters: f)
             }
             guard gen == generation else { return }
             entries = page
+            sections = []
+            appendSections(page, query: q, gen: gen)
             error = nil
             if searchText.isEmpty {
                 reachedEnd = page.count < pageSize
@@ -157,11 +287,12 @@ final class LibraryStore: ObservableObject {
         let after = entries.last
         loadingEntries = true
         let result: Result<[Entry], Error>
+        let f = Self.filters(for: q, now: buckets.now)
         do {
             if q.search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                result = .success(try await CorpusAPI.entries(type: q.type, sort: q.sort, after: after, limit: pageSize))
+                result = .success(try await CorpusAPI.entries(sort: q.sort, after: after, limit: pageSize, filters: f))
             } else {
-                result = .success(try await CorpusAPI.searchEntries(q.search, type: q.type, sort: q.sort))
+                result = .success(try await CorpusAPI.searchEntries(q.search, type: nil, sort: q.sort, filters: f))
             }
         } catch {
             result = .failure(error)
@@ -173,6 +304,7 @@ final class LibraryStore: ObservableObject {
         case .success(let page):
             error = nil
             entries.append(contentsOf: page)
+            appendSections(page, query: q, gen: gen)
             if !q.search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 reachedEnd = true                     // search returns its matches in one go
                 searchCapped = page.count >= CorpusAPI.entrySearchLimit
@@ -219,6 +351,88 @@ final class LibraryStore: ObservableObject {
             await self.loadTypeCounts()
         }
         await work.value
+    }
+}
+
+/// One block of the Library feed ("Today", "September 2026", "A", …).
+struct EntrySection: Identifiable {
+    let id: String
+    let title: String
+    /// Time sections: the [start, end) window, for an exact server count.
+    var start: Date?
+    var end: Date?
+    var entries: [Entry]
+}
+
+/// Library date filters, as local calendar windows ending now.
+enum DateRange: String, CaseIterable, Identifiable {
+    case any = "Any time", today = "Today", week = "This week", month = "This month", year = "This year"
+    var id: String { rawValue }
+
+    /// Local midnight at the start of the window (nil = no limit).
+    func start(now: Date = Date(), calendar: Calendar = .current) -> Date? {
+        switch self {
+        case .any:   return nil
+        case .today: return calendar.startOfDay(for: now)
+        case .week:  return calendar.dateInterval(of: .weekOfYear, for: now)?.start
+        case .month: return calendar.dateInterval(of: .month, for: now)?.start
+        case .year:  return calendar.dateInterval(of: .year, for: now)?.start
+        }
+    }
+}
+
+/// Today · Yesterday · This week · This month · then one section per month.
+/// The windows never overlap, so each section's server count is exact.
+struct TimeBuckets {
+    struct Bucket {
+        let key: String
+        let title: String
+        let start: Date?
+        let end: Date?
+    }
+
+    let now: Date
+    private let calendar: Calendar
+    private let today: Date
+    private let yesterday: Date
+    private let week: Date
+    private let month: Date
+    /// Anything older than this is grouped by calendar month.
+    private let cutoff: Date
+
+    private static let monthTitle: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MMMM yyyy"
+        return f
+    }()
+
+    init(now: Date = Date(), calendar cal: Calendar = .current) {
+        self.now = now
+        calendar = cal
+        let t = cal.startOfDay(for: now)
+        today = t
+        yesterday = cal.date(byAdding: .day, value: -1, to: t) ?? t
+        week = cal.dateInterval(of: .weekOfYear, for: now)?.start ?? t
+        month = cal.dateInterval(of: .month, for: now)?.start ?? t
+        cutoff = min(yesterday, min(week, month))
+    }
+
+    func bucket(for d: Date) -> Bucket {
+        if d >= today { return Bucket(key: "today", title: "Today", start: today, end: nil) }
+        if d >= yesterday { return Bucket(key: "yesterday", title: "Yesterday", start: yesterday, end: today) }
+        if week < yesterday && d >= week {
+            return Bucket(key: "week", title: "This week", start: week, end: yesterday)
+        }
+        let recent = min(week, yesterday)
+        if month < recent && d >= month {
+            return Bucket(key: "month", title: "This month", start: month, end: recent)
+        }
+        let interval = calendar.dateInterval(of: .month, for: d)
+        let start = interval?.start ?? d
+        let end = min(interval?.end ?? cutoff, cutoff)
+        let title = Self.monthTitle.string(from: start)
+        return Bucket(key: "m:" + title, title: title, start: start, end: end)
     }
 }
 
