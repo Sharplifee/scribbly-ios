@@ -5,6 +5,8 @@ import SwiftUI
 enum Sinky {
     static let ink     = Color(red: 0.953, green: 0.949, blue: 0.933)   // #F3F2EE
     static let copper  = Color(red: 0.910, green: 0.529, blue: 0.353)   // #E8875A
+    /// Lit copper for keylines / borders on black, where #E8875A reads dim.
+    static let copperBright = Color(red: 1.0, green: 0.616, blue: 0.396) // #FF9D65
     static let tan     = Color(red: 0.788, green: 0.635, blue: 0.478)   // #C9A27A
     static let teal    = Color(red: 0.310, green: 0.639, blue: 0.682)   // #4FA3AE
     static let surface = Color(red: 0.055, green: 0.059, blue: 0.063)   // #0E0F10

@@ -86,6 +86,7 @@ struct LibraryScreen: View {
                 }
             }
             await CreatorDirectory.shared.loadIfNeeded()
+            await PeopleDirectory.shared.loadIfNeeded()
             await store.loadCounts()
         }
     }
@@ -128,12 +129,15 @@ struct LibraryScreen: View {
         }
     }
 
-    /// The recorder bar stacks ABOVE the tab bar, so every tab stays reachable while recording.
+    /// One bar: the glass tab bar itself becomes the recorder while recording or
+    /// uploading (GlassTabBar). Above it only short notices (saved / waiting /
+    /// errors) ever appear — never a second stacked bar.
     private func bottomChrome(_ s: Section) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 0) {
             RecordBar(armToken: chrome.armToken, tab: s)
-            if !chrome.keyboardUp && (recorderOwnsBar || !chrome.hideRecordBar) {
+            if recorderOwnsBar || (!chrome.keyboardUp && !chrome.hideRecordBar) {
                 GlassTabBar(selection: $chrome.currentTab, onRecord: startRecording)
+                    .transition(.opacity)
             }
         }
         // On iPad / wide windows the recorder + tab bar stay thumb-sized, centred.
@@ -160,6 +164,8 @@ struct LibraryScreen: View {
             CollectionDetail(collection: c).chromeInset()
         case .group(let g):
             GroupDetail(group: g, store: store).chromeInset()
+        case .person(let p):
+            PersonDetail(person: p).chromeInset()
         case .hit(let h):
             HitDestination(hit: h).chromeInset()
         case .failed:
@@ -177,7 +183,8 @@ struct LibraryScreen: View {
         rec.start()
     }
 
-    /// True whenever the recorder capsule should replace the tab bar.
+    /// True whenever the bar is the recorder (recording / paused / finishing /
+    /// uploading) — it then stays up even over the keyboard or an Ask box.
     private var recorderOwnsBar: Bool {
         recorder.state != .idle || uploader.isUploading
     }
@@ -188,7 +195,7 @@ struct LibraryScreen: View {
         case .record:      IngestSection()   // never shown; the tab is an action
         case .more:        MoreHost(store: store)
         case .jobs:        JobsSection()
-        case .groups:      GroupsSection(store: store)
+        case .groups:      GroupsSection()
         case .collections: CollectionsSection(store: store)
         case .library:     LibrarySection(store: store)
         case .query:       QuerySection()
@@ -203,6 +210,7 @@ enum Route: Hashable {
     case entry(String, Entry?)
     case collection(Collection)
     case group(Group)
+    case person(Person)
     case hit(SearchHit)
     case failed
 }

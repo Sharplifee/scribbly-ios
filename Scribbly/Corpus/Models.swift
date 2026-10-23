@@ -112,7 +112,7 @@ struct Entry: Codable, Identifiable, Hashable {
 /// so "The Jordan B. Peterson" and "Jordan Peterson" are one creator.
 enum CreatorName {
     /// Holding collections whose channel is not a creator ("filing" buckets).
-    static let filing: Set<String> = ["unsorted", "mixed creators", "links", "imported"]
+    static let filing: Set<String> = ["unsorted", "mixed creators", "links", "imported", "unknown", "unassigned"]
     /// Channels that are never shown as a creator on an entry.
     static let notCreators: Set<String> = filing.union([
         "voice memos", "recordings", "processing...", "failed", "uncategorized", "duplicate — already ingested", "filing…"

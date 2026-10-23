@@ -182,105 +182,55 @@ final class BottomChrome: ObservableObject {
     private var clearTask: Task<Void, Never>?
 }
 
+/// The short notices that sit just above the glass bar: the green "saved"
+/// line (Home only), "N recordings waiting", and recorder / upload errors.
+/// The live recorder itself is the glass tab bar (GlassTabBar) — there is no
+/// second bar stacked above it. Also owns the arm() auto-start and the
+/// pending-recordings sheet.
 struct RecordBar: View {
     var armToken: Int = 0
     /// Which tab this instance lives on — only the visible one reacts to arm().
     var tab: LibraryScreen.Section = .home
     @ObservedObject private var rec = Recorder.shared
-    @State private var showPendingSheet = false
     @ObservedObject private var up = Uploader.shared
-    @State private var showDiscardConfirm = false
-    private var savedTitle: String? {
-        get { chrome.savedTitle } nonmutating set { chrome.savedTitle = newValue }
-    }
-
-    private var timeString: String {
-        let t = Int(rec.elapsed)
-        return String(format: "%02d:%02d", t / 60, t % 60)
-    }
-
-    /// Live while recording, uploading, or while the server works on the
-    /// recording that was just handed off (its real progress/stage shows here).
-    private var isActive: Bool { rec.state != .idle || up.isUploading || up.serverJob != nil }
-    /// Errors and "N waiting" must be visible even when nothing is recording or
-    /// uploading — that is exactly when a stuck recording needs attention.
-    private var hasNotice: Bool { rec.lastError != nil || up.lastError != nil || up.pendingCount > 0 }
     @ObservedObject private var chrome = BottomChrome.shared
+    @State private var showPendingSheet = false
+
+    private var here: Bool { chrome.currentTab == tab }
+    private var savedLine: String? {
+        guard here, tab == .home, rec.state == .idle, !up.isUploading else { return nil }
+        return chrome.savedTitle
+    }
+    private var errorText: String? { here ? (rec.lastError ?? up.lastError) : nil }
+    private var pending: Int { here ? up.pendingCount : 0 }
+    private var hasNotice: Bool { savedLine != nil || errorText != nil || pending > 0 }
 
     var body: some View {
-        // Idle: no capsule — the Record button IS the centre tab in the glass bar.
-        // Idle-time elements: the "saved" line on Home, and any error / waiting notice.
-        if (isActive || hasNotice) && chrome.currentTab == tab {
-            barBody
-        } else if !isActive, tab == .home, chrome.currentTab == .home, let t = chrome.savedTitle {
-            Label(t, systemImage: "checkmark.circle.fill")
-                .font(.geist(size: 12)).foregroundColor(P.good)
-                .padding(.horizontal, 20).padding(.bottom, 6).lineLimit(1)
-        } else {
-            EmptyView()
-        }
-    }
-
-    private var barBody: some View {
         VStack(spacing: 6) {
-            // The "saved" line shows on Home only, and never follows you around.
-            if let t = savedTitle, !up.isUploading, chrome.currentTab == .home {
+            Color.clear.frame(height: 0)   // keeps onChange alive when there's nothing to show
+            if let t = savedLine {
                 Label(t, systemImage: "checkmark.circle.fill")
                     .font(.geist(size: 12)).foregroundColor(P.good)
                     .padding(.horizontal, 20).lineLimit(1)
             }
-            if up.pendingCount > 0 {
-                Label("\(up.pendingCount) recording\(up.pendingCount == 1 ? "" : "s") waiting — tap to manage",
+            if pending > 0 {
+                Label("\(pending) recording\(pending == 1 ? "" : "s") waiting — tap to manage",
                       systemImage: "arrow.clockwise.circle")
                     .font(.geist(size: 12)).foregroundColor(.orange)
                     .onTapGesture { showPendingSheet = true }
             }
-            if let e = rec.lastError ?? up.lastError {
-                VStack(spacing: 4) {
-                    Text(e).font(.geist(size: 12)).foregroundColor(P.danger)
-                        .multilineTextAlignment(.center).padding(.horizontal, 24)
-                        // Tap to dismiss once read.
-                        .onTapGesture { rec.clearError(); up.lastError = nil }
-                    if e.localizedCaseInsensitiveContains("Microphone access") {
-                        Button("Open Settings") {
-                            if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) }
-                        }
-                        .font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
-                    }
-                }
-            }
-
-            // The bar itself: an expanded panel while live. With only a notice
-            // to show, no capsule (the glass tab bar already has Record).
-            if isActive {
-                SwiftUI.Group {
-                    if up.isUploading {
-                        uploadingPanel
-                    } else if rec.state != .idle {
-                        activePanel
-                    } else if up.serverJob != nil {
-                        serverPanel
-                    } else {
-                        idleBar
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .sinkyGlass(Capsule(), tint: rec.state == .recording ? P.accent.opacity(0.22) : nil)
-                .overlay(alignment: .bottom) {
-                    if rec.state == .recording { GradientRule().padding(.horizontal, 28).padding(.bottom, 1) }
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
-                .animation(.spring(response: 0.3, dampingFraction: 0.88), value: isActive)
+            if let e = errorText {
+                errorNotice(e)
             }
         }
-        .padding(.top, 4)
-        .sinkyHaptic(rec.state == .idle)
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, hasNotice ? 6 : 0)
+        .animation(.easeOut(duration: 0.2), value: hasNotice)
         .onChange(of: armToken) { _ in
             guard chrome.currentTab == tab else { return }
             if rec.state == .idle && !up.isUploading {
-                savedTitle = nil; rec.place = nil
+                chrome.savedTitle = nil
+                rec.place = nil
                 PlaceTagger.shared.tag { Recorder.shared.place = $0 }
                 rec.start()
             }
@@ -288,135 +238,28 @@ struct RecordBar: View {
         .sheet(isPresented: $showPendingSheet) {
             PendingRecoverySheet(uploader: up).presentationDetents([.medium, .large])
         }
-        .alert("Discard this recording?", isPresented: $showDiscardConfirm) {
-            Button("Keep recording", role: .cancel) {}
-            Button("Discard", role: .destructive) { rec.discard() }
-        } message: { Text("The audio will be deleted and cannot be recovered.") }
     }
 
-    // Slim idle capsule: tap the mic to start.
-    private var idleBar: some View {
-        Button {
-            savedTitle = nil
-            rec.place = nil
-            PlaceTagger.shared.tag { Recorder.shared.place = $0 }
-            rec.start()
-        } label: {
-            HStack(spacing: 10) {
-                ZStack {
-                    Circle().fill(P.ink).frame(width: 36, height: 36)
-                    Circle().fill(P.accent).frame(width: 12, height: 12)
+    private func errorNotice(_ e: String) -> some View {
+        VStack(spacing: 4) {
+            Text(e).font(.geist(size: 12)).foregroundColor(P.danger)
+                .multilineTextAlignment(.center).padding(.horizontal, 24)
+                // Tap to dismiss once read.
+                .onTapGesture { rec.clearError(); up.lastError = nil }
+            if e.localizedCaseInsensitiveContains("Microphone access") {
+                Button("Open Settings") {
+                    if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) }
                 }
-                Text("Record").font(.geist(size: 15, weight: .semibold)).foregroundColor(P.ink)
+                .font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
             }
-            .frame(maxWidth: .infinity)
-        }
-    }
-
-    // Expanded live panel: timer, waveform, transport.
-    private var activePanel: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(timeString)
-                    .font(.geist(size: 16, weight: .medium, design: .monospaced)).monospacedDigit()
-                    .foregroundColor(P.ink)
-                Text(statusText).monoLabel(8.5, color: statusColor)
-            }
-            .frame(width: 58, alignment: .leading)
-            WaveBars(level: rec.level, active: rec.state == .recording).frame(height: 18)
-            controls
-        }
-    }
-
-    // Upload panel: a true byte-percentage bar with the number.
-    private var uploadingPanel: some View {
-        UploadProgressBar()
-    }
-
-    // After hand-off: the server job's own progress (when it reports one), else its stage.
-    private var serverPanel: some View {
-        let job = up.serverJob
-        let pct: Int? = job?.progress.map { Int($0.rounded()) }
-        let stage = job?.stage ?? "Processing on the server…"
-        return VStack(spacing: 4) {
-            if let p = job?.progress {
-                GradientProgress(value: p, total: 100, duration: 1.8)
-            }
-            HStack(spacing: 8) {
-                if pct == nil { ProgressView().controlSize(.small).tint(P.accent) }
-                Text(stage).font(.geist(size: 12, weight: .medium)).foregroundColor(P.ink).lineLimit(1)
-                Spacer(minLength: 4)
-                if let pct {
-                    Text("\(pct)%").font(.geist(size: 12, weight: .medium, design: .monospaced))
-                        .monospacedDigit().foregroundColor(P.textSec)
-                }
-            }
-        }
-        .contentShape(Rectangle())
-        // Tap to tuck it away; the job keeps going on the server (see Activity).
-        .onTapGesture { up.stopTrackingServerJob() }
-    }
-
-    private var statusText: String {
-        if rec.interrupted { return "Interrupted — resuming automatically" }
-        switch rec.state {
-        case .recording: return rec.appendTo == nil ? "Recording" : "Adding to this entry"
-        case .paused:    return "Paused"
-        case .finishing: return "Finishing…"
-        case .idle:      return ""
-        }
-    }
-
-    private var statusColor: Color {
-        if rec.interrupted { return .orange }
-        return rec.state == .recording ? P.accent : P.textDim
-    }
-
-    @ViewBuilder private var controls: some View {
-        switch rec.state {
-        case .idle:
-            EmptyView()
-
-        case .recording, .paused:
-            HStack(spacing: 8) {
-                Button { showDiscardConfirm = true } label: {
-                    circleButton(icon: "xmark", tint: P.danger, size: 30)
-                }
-                Button {
-                    rec.state == .recording ? rec.pause() : rec.resume()
-                } label: {
-                    circleButton(icon: rec.state == .recording ? "pause.fill" : "play.fill",
-                                 tint: .white, size: 34)
-                }
-                // Finish — the ONLY thing that ends a recording
-                Button {
-                    rec.finishAndUpload()
-                } label: {
-                    circleButton(icon: "checkmark", tint: P.good, size: 30)
-                }
-            }
-
-        case .finishing:
-            ProgressView().tint(P.accent)
-        }
-    }
-
-    private func circleButton(icon: String, tint: Color, size: CGFloat = 60) -> some View {
-        ZStack {
-            Circle().fill(P.surface)
-                .overlay(Circle().stroke(P.border, lineWidth: 1))
-                .frame(width: size, height: size)
-            Image(systemName: icon)
-                .font(.geist(size: size * 0.34, weight: .semibold))
-                .foregroundColor(tint)
         }
     }
 }
 
-/// Live input meter. Fits whatever width it's given: the bar count is derived
-/// from the available space (8pt per bar), so it can never push the recorder
-/// wider than the screen. (A fixed 28-bar row was ~220pt and, with the timer
-/// and transport, made the whole page wider than the phone — the "zoom".)
+/// Live input meter. Fits whatever width and height it's given: the bar count
+/// comes from the width (8pt per bar) and every bar is clamped to the height,
+/// so it can never push the recorder wider than the screen or spill out of
+/// the glass bar.
 struct WaveBars: View {
     let level: Float
     let active: Bool
@@ -424,22 +267,27 @@ struct WaveBars: View {
     var body: some View {
         GeometryReader { geo in
             let count = max(6, min(28, Int(geo.size.width / 8)))
+            let maxH = max(4, geo.size.height)
             HStack(alignment: .center, spacing: 4) {
                 ForEach(0..<count, id: \.self) { i in
-                    let d = abs(Double(i) - Double(count) / 2) / (Double(count) / 2)
-                    let jitter = 0.55 + Double((i &* 37) % 100) / 110.0
-                    let h = active
-                        ? max(4, Double(level) * 58 * (1 - d * 0.65) * jitter)
-                        : 4
                     Capsule()
                         .fill(active ? AnyShapeStyle(P.accent) : AnyShapeStyle(P.border))
-                        .frame(width: 4, height: h)
+                        .frame(width: 4, height: Self.barHeight(i, of: count, level: level, active: active, maxH: maxH))
                         .animation(.linear(duration: 0.08), value: level)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
         .frame(minWidth: 0, maxWidth: .infinity)
+    }
+
+    static func barHeight(_ i: Int, of count: Int, level: Float, active: Bool, maxH: CGFloat) -> CGFloat {
+        guard active else { return 4 }
+        let half = Double(count) / 2
+        let d = abs(Double(i) - half) / half
+        let jitter = 0.55 + Double((i &* 37) % 100) / 110.0
+        let h = Double(level) * Double(maxH) * 1.6 * (1 - d * 0.65) * jitter
+        return CGFloat(min(Double(maxH), max(4, h)))
     }
 }
 

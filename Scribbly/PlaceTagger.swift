@@ -1,5 +1,6 @@
 import Foundation
 import CoreLocation
+import MapKit
 
 /// Grabs one location fix when a recording starts and turns it into a short
 /// human place label ("Thanksgiving Point, Lehi" / "Main St, Lehi"). Used to
@@ -27,7 +28,7 @@ final class PlaceTagger: NSObject, CLLocationManagerDelegate {
     override init() {
         super.init()
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
     }
 
     /// Resolves quickly (a few seconds) or with nil; never blocks recording.
@@ -58,13 +59,45 @@ final class PlaceTagger: NSObject, CLLocationManagerDelegate {
             var parts: [String] = []
             if let name = p?.name, !name.isEmpty { parts.append(name) }
             else if let street = p?.thoroughfare { parts.append(street) }
-            if let city = p?.locality, !parts.contains(city) { parts.append(city) }
-            let label = parts.isEmpty ? nil : parts.joined(separator: ", ")
-            if let label {
-                self?.lastPlace = label
-                self?.lastPlaceAt = Date()
+            let city = p?.locality
+            if let city, !parts.contains(city) { parts.append(city) }
+            let fallback = parts.isEmpty ? nil : parts.joined(separator: ", ")
+            // Prefer the actual business you're at ("The Happy Sumo, Provo")
+            // over the shopping centre or street the geocoder names.
+            self?.nearestBusiness(to: loc) { poi in
+                var label = fallback
+                if let poi {
+                    label = city.map { "\(poi), \($0)" } ?? poi
+                }
+                if let label {
+                    self?.lastPlace = label
+                    self?.lastPlaceAt = Date()
+                }
+                self?.flush(label)
             }
-            self?.flush(label)
+        }
+    }
+
+    /// The closest point of interest within ~45 m (restaurants, cafés, shops,
+    /// gyms, offices, venues…), or nil. Gives up after 4 s.
+    private func nearestBusiness(to loc: CLLocation, _ done: @escaping (String?) -> Void) {
+        let req = MKLocalPointsOfInterestRequest(center: loc.coordinate, radius: 60)
+        req.pointOfInterestFilter = MKPointOfInterestFilter(excluding: [.parking, .publicTransport, .evCharger, .atm, .gasStation, .restroom])
+        var finished = false
+        let finish: (String?) -> Void = { v in
+            DispatchQueue.main.async { if !finished { finished = true; done(v) } }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { finish(nil) }
+        MKLocalSearch(request: req).start { resp, _ in
+            let items = resp?.mapItems ?? []
+            let best = items
+                .compactMap { item -> (String, CLLocationDistance)? in
+                    guard let name = item.name, !name.isEmpty, let l = item.placemark.location else { return nil }
+                    return (name, l.distance(from: loc))
+                }
+                .filter { $0.1 <= max(45, loc.horizontalAccuracy) }
+                .min { $0.1 < $1.1 }
+            finish(best?.0)
         }
     }
 

@@ -6,77 +6,92 @@ import ActivityKit
 #endif
 
 /// Dynamic Island + Lock Screen (+ CarPlay, which mirrors it) for a Scribbly
-/// recording, in the Sinky look: true black, Geist Mono timer, copper status,
-/// a copper → tan → teal sound wave, ink controls and a gradient rule.
-/// Layout per Connor: elapsed time on the LEFT, live wave, Pause/Resume + Done on the RIGHT.
+/// recording, in the Sinky look: true black, Geist Mono timer, a live
+/// copper → tan → teal sound wave driven by the real input level, ink
+/// controls, and a bright copper keyline / border.
+///
+/// No recording dot anywhere — the moving wave is the "recording" signal.
+///   • Compact: wave on the leading side, elapsed time trailing.
+///   • Expanded: wave leading, elapsed time trailing (same places as compact,
+///     so it grows in place), status + Pause/Resume + ✓ Finish along the bottom.
+///   • Minimal: a three-bar wave.
+///   • Lock Screen: time, wave, Pause/Resume + ✓, gradient rule, copper border.
+/// The timer is Text(timerInterval:), so it ticks without any app updates; the
+/// app only pushes the waveform (≤ 1 update a second).
 @available(iOS 16.2, *)
 struct RecordingLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: RecordingActivityAttributes.self) { ctx in
-            // Lock Screen / banner / CarPlay
-            VStack(spacing: 10) {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Self.timer(ctx.state).font(Sinky.font(26, .medium, mono: true)).foregroundColor(Sinky.ink)
-                        Self.status(ctx.state).font(Sinky.font(10, .medium, mono: true)).tracking(0.8)
-                    }
-                    Wave(levels: ctx.state.levels, paused: ctx.state.paused, bars: 18, height: 30)
-                        .frame(maxWidth: .infinity)
-                    Self.controls(ctx.state, size: 38)
-                }
-                Capsule().fill(Sinky.rule).frame(height: 1.5).opacity(ctx.state.paused ? 0.35 : 1)
-            }
-            .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
-            .activityBackgroundTint(Color.black.opacity(0.92))
-            .activitySystemActionForegroundColor(Sinky.ink)
-            .widgetURL(URL(string: "scribbly://open"))
+            LockScreenRecording(state: ctx.state)
+                .activityBackgroundTint(Color.black.opacity(0.92))
+                .activitySystemActionForegroundColor(Sinky.ink)
+                .widgetURL(URL(string: "scribbly://open"))
         } dynamicIsland: { ctx in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Self.timer(ctx.state).font(Sinky.font(22, .medium, mono: true)).foregroundColor(Sinky.ink)
-                        Self.status(ctx.state).font(Sinky.font(9, .medium, mono: true)).tracking(0.8)
-                    }
-                    .padding(.leading, 6)
+                    Wave(levels: ctx.state.levels, paused: ctx.state.paused, bars: 14, height: 30)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.leading, 8).padding(.top, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Self.controls(ctx.state, size: 34).padding(.trailing, 4)
+                    Self.timer(ctx.state)
+                        .font(Sinky.font(24, .medium, mono: true)).foregroundColor(Sinky.ink)
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 104, alignment: .trailing)
+                        .padding(.trailing, 8).padding(.top, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Wave(levels: ctx.state.levels, paused: ctx.state.paused, bars: 26, height: 26)
-                        .padding(.horizontal, 8)
+                    HStack(spacing: 10) {
+                        Self.status(ctx.state).font(Sinky.font(10, .medium, mono: true)).tracking(0.8)
+                        Spacer(minLength: 8)
+                        Self.controls(ctx.state, size: 40)
+                    }
+                    .padding(.horizontal, 8).padding(.top, 6)
                 }
             } compactLeading: {
-                HStack(spacing: 5) {
-                    Circle().fill(ctx.state.paused ? Sinky.tan : Sinky.copper).frame(width: 7, height: 7)
-                    Self.timer(ctx.state).font(Sinky.font(13, .medium, mono: true)).foregroundColor(Sinky.ink)
-                }
-                .frame(maxWidth: 62, alignment: .leading)
+                Wave(levels: ctx.state.levels, paused: ctx.state.paused, bars: 6, height: 14)
+                    .frame(width: 28)
+                    .padding(.leading, 2)
             } compactTrailing: {
-                Wave(levels: ctx.state.levels, paused: ctx.state.paused, bars: 5, height: 14)
-                    .frame(width: 26)
+                Self.timer(ctx.state)
+                    .font(Sinky.font(13, .medium, mono: true)).foregroundColor(Sinky.ink)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 48, alignment: .trailing)
             } minimal: {
-                Circle().fill(ctx.state.paused ? Sinky.tan : Sinky.copper).frame(width: 10, height: 10)
+                Wave(levels: ctx.state.levels, paused: ctx.state.paused, bars: 3, height: 12)
+                    .frame(width: 14)
             }
-            .keylineTint(Sinky.copper)
+            .keylineTint(Sinky.copperBright)
             .widgetURL(URL(string: "scribbly://open"))
         }
     }
 
+    /// Ticks by itself while recording; frozen at the paused moment.
     @ViewBuilder static func timer(_ s: RecordingActivityAttributes.ContentState) -> some View {
         if s.paused {
-            Text(String(format: "%d:%02d", s.pausedElapsed / 60, s.pausedElapsed % 60))
+            Text(clock(s.pausedElapsed))
         } else {
             Text(timerInterval: s.timerStart...Date.distantFuture, countsDown: false).monospacedDigit()
         }
     }
 
-    static func status(_ s: RecordingActivityAttributes.ContentState) -> some View {
-        Text(s.paused ? "PAUSED" : (s.appending ? "ADDING TO ENTRY" : "RECORDING"))
-            .foregroundColor(s.paused ? Sinky.tan : Sinky.copper)
+    /// "4:07" / "1:02:09" — the same shape as the running timer.
+    static func clock(_ seconds: Int) -> String {
+        let t = max(0, seconds)
+        if t >= 3600 { return String(format: "%d:%02d:%02d", t / 3600, (t % 3600) / 60, t % 60) }
+        return String(format: "%d:%02d", t / 60, t % 60)
     }
 
-    /// Pause/Resume (glass) + Done (ink, like the app's primary button).
+    static func status(_ s: RecordingActivityAttributes.ContentState) -> some View {
+        Text(s.paused ? "PAUSED" : (s.appending ? "ADDING TO ENTRY" : "RECORDING"))
+            .foregroundColor(s.paused ? Sinky.tan : Sinky.copperBright)
+            .lineLimit(1)
+    }
+
+    /// Pause/Resume (glass) + ✓ Finish (ink, like the app's primary button).
+    /// Interactive Live Activity buttons need iOS 17; on 16.x a tap opens the app.
     @ViewBuilder static func controls(_ s: RecordingActivityAttributes.ContentState, size: CGFloat) -> some View {
         if #available(iOS 17.0, *) {
             HStack(spacing: 8) {
@@ -85,14 +100,51 @@ struct RecordingLiveActivityWidget: Widget {
                         .font(.system(size: size * 0.38, weight: .bold)).foregroundColor(Sinky.ink)
                         .frame(width: size, height: size)
                         .background(Circle().fill(Color.white.opacity(0.14)))
-                        .overlay(Circle().stroke(Color.white.opacity(0.12)))
-                }.buttonStyle(.plain)
+                        .overlay(Circle().stroke(Color.white.opacity(0.14)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(s.paused ? "Resume recording" : "Pause recording")
                 Button(intent: RecordingFinishIntent()) {
                     Image(systemName: "checkmark")
                         .font(.system(size: size * 0.4, weight: .heavy)).foregroundColor(.black)
-                        .frame(width: size, height: size).background(Circle().fill(Sinky.ink))
-                }.buttonStyle(.plain)
+                        .frame(width: size, height: size)
+                        .background(Circle().fill(Sinky.ink))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Finish and save recording")
             }
+        }
+    }
+}
+
+/// Lock Screen / banner / CarPlay: elapsed time, live wave, controls, the
+/// gradient rule, inside a bright copper border.
+@available(iOS 16.2, *)
+private struct LockScreenRecording: View {
+    let state: RecordingActivityAttributes.ContentState
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    RecordingLiveActivityWidget.timer(state)
+                        .font(Sinky.font(26, .medium, mono: true)).foregroundColor(Sinky.ink)
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                        .multilineTextAlignment(.leading)
+                        .frame(width: 104, alignment: .leading)
+                    RecordingLiveActivityWidget.status(state)
+                        .font(Sinky.font(10, .medium, mono: true)).tracking(0.8)
+                }
+                Wave(levels: state.levels, paused: state.paused, bars: 20, height: 32)
+                    .frame(maxWidth: .infinity)
+                RecordingLiveActivityWidget.controls(state, size: 40)
+            }
+            Capsule().fill(Sinky.rule).frame(height: 1.5).opacity(state.paused ? 0.35 : 1)
+        }
+        .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
+        .overlay {
+            ContainerRelativeShape()
+                .strokeBorder(Sinky.copperBright.opacity(state.paused ? 0.55 : 0.9), lineWidth: 1.5)
         }
     }
 }
@@ -106,17 +158,24 @@ private struct Wave: View {
     let bars: Int
     let height: CGFloat
 
-    var body: some View {
+    /// `bars` samples taken evenly from the newest end of `levels`.
+    private var samples: [Double] {
         let src = levels.isEmpty ? Array(repeating: 0.08, count: bars) : levels
-        let samples: [Double] = (0..<bars).map { i in
-            let idx = Int(Double(i) / Double(max(bars - 1, 1)) * Double(src.count - 1))
+        let n = max(bars, 1)
+        return (0..<n).map { i in
+            let pos = n > 1 ? Double(i) / Double(n - 1) : 1
+            let idx = Int((pos * Double(src.count - 1)).rounded())
             return src[max(0, min(src.count - 1, idx))]
         }
-        HStack(alignment: .center, spacing: 2) {
-            ForEach(0..<bars, id: \.self) { i in
+    }
+
+    var body: some View {
+        let s = samples
+        return HStack(alignment: .center, spacing: 2) {
+            ForEach(0..<s.count, id: \.self) { i in
                 Capsule()
-                    .fill(paused ? Color.white.opacity(0.25) : Sinky.rampColor(i, of: bars))
-                    .frame(width: 3, height: max(3, height * CGFloat(paused ? 0.12 : samples[i])))
+                    .fill(paused ? Color.white.opacity(0.25) : Sinky.rampColor(i, of: s.count))
+                    .frame(width: 3, height: max(3, height * CGFloat(paused ? 0.12 : min(1, s[i]))))
             }
         }
         .frame(height: height)

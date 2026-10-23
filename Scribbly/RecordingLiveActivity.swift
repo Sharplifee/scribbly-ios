@@ -13,7 +13,16 @@ final class RecordingLiveActivity {
     private var started = false
 
     private var levelLoop: Task<Void, Never>?
-    private var recentLevels: [Double] = Array(repeating: 0.05, count: 12)
+    /// Waveform history for the Island / Lock Screen: one peak per quarter
+    /// second, newest last — 16 samples ≈ the last 4 seconds of audio.
+    static let levelSamples = 16
+    private var recentLevels: [Double] = Array(repeating: 0.05, count: RecordingLiveActivity.levelSamples)
+    private var windowPeak: Double = 0
+    private var windowStart = Date()
+    /// Seconds between Live Activity pushes while recording. ActivityKit
+    /// throttles anything faster, and the timer ticks on its own
+    /// (Text(timerInterval:)), so the only reason to push is the waveform.
+    private static let pushInterval: UInt64 = 1_000_000_000
 
     func bind() {
         guard !started else { return }
@@ -38,12 +47,21 @@ final class RecordingLiveActivity {
         // Activity about once a second (the system throttles faster updates).
         rec.$level.receive(on: RunLoop.main).sink { [weak self] l in
             guard let self, Recorder.shared.state == .recording else { return }
-            self.recentLevels.append(Double(min(1, max(0.05, l))))
-            if self.recentLevels.count > 12 { self.recentLevels.removeFirst(self.recentLevels.count - 12) }
+            // The meter ticks at 20 Hz; keep the loudest moment of each 0.25 s
+            // window so the wave reads like speech, not a flat average.
+            self.windowPeak = max(self.windowPeak, Double(min(1, max(0.05, l))))
+            let now = Date()
+            if now.timeIntervalSince(self.windowStart) >= 0.25 {
+                self.recentLevels.append(self.windowPeak)
+                let n = RecordingLiveActivity.levelSamples
+                if self.recentLevels.count > n { self.recentLevels.removeFirst(self.recentLevels.count - n) }
+                self.windowPeak = 0
+                self.windowStart = now
+            }
         }.store(in: &bag)
         levelLoop = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? await Task.sleep(nanoseconds: RecordingLiveActivity.pushInterval)
                 guard let self, Recorder.shared.state == .recording else { continue }
                 self.sync(state: .recording, appending: Recorder.shared.appendTo != nil)
             }
@@ -64,7 +82,7 @@ final class RecordingLiveActivity {
                 paused: state == .paused,
                 pausedElapsed: Int(elapsed),
                 appending: appending,
-                levels: state == .paused ? Array(repeating: 0.05, count: 12) : recentLevels)
+                levels: state == .paused ? Array(repeating: 0.05, count: Self.levelSamples) : recentLevels)
             let content = ActivityContent(state: cs, staleDate: nil)
             if let a = Activity<RecordingActivityAttributes>.activities.first {
                 Task { await a.update(content) }
