@@ -15,14 +15,20 @@ struct GroupsSection: View {
         default:      return gs.sorted { $0.totalVideos > $1.totalVideos }
         }
     }
-    private func passesKind(_ g: Group) -> Bool {
+    /// Collection types in the data: "playlist" and "youtube" (creators), "audio" (files).
+    private static func passes(_ g: Group, kind: String) -> Bool {
         let t = g.collections.first?.type?.lowercased() ?? ""
         switch kind {
         case "Podcasts": return t.contains("podcast")
         case "Files":    return t.contains("audio") || t.contains("file")
-        case "Creators": return t.contains("youtube") || t.isEmpty
+        case "Creators": return t.contains("youtube") || t.contains("playlist") || t.isEmpty
         default: return true
         }
+    }
+    private func passesKind(_ g: Group) -> Bool { Self.passes(g, kind: kind) }
+    /// Only chips that match at least one group.
+    private var kinds: [String] {
+        ["All"] + ["Creators", "Podcasts", "Files"].filter { k in store.groups.contains { g in Self.passes(g, kind: k) } }
     }
     /// Search: (group, matching collections) — a group matches by name or by any collection's name.
     private var hits: [(Group, [Collection])] {
@@ -39,7 +45,7 @@ struct GroupsSection: View {
         ScrollView {
             LazyVStack(spacing: 12) {
                 ListSearch(placeholder: "Search creators…", text: $q)
-                FilterSortRow(filters: ["All", "Creators", "Podcasts", "Files"], filter: $kind,
+                FilterSortRow(filters: kinds, filter: $kind,
                               sorts: ["Most videos", "A–Z", "Newest"], sort: $sort)
                 if q.isEmpty {
                     if !store.groups.isEmpty {
@@ -69,6 +75,7 @@ struct GroupsSection: View {
             .padding(.bottom, 20)
         }
         .task { await store.loadCollectionsIfNeeded() }
+        .onChange(of: kinds) { now in if !now.contains(kind) { kind = "All" } }
         .overlay { if store.loadingCollections && store.groups.isEmpty { ProgressView().tint(P.accent) } }
     }
     private func fmt(_ n: Int) -> String {
@@ -107,9 +114,15 @@ struct GroupDetail: View {
     @ObservedObject var store: LibraryStore
     @Environment(\.dismiss) private var dismiss
     @State private var showReassign = false
+    @State private var moving = false
+    @State private var moveError: String?
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
+                if let err = moveError {
+                    Text("Couldn't reassign: \(err)").font(.geist(size: 13)).foregroundColor(P.danger)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
+                }
                 ForEach(group.collections.sorted { ($0.batch_number ?? 0) > ($1.batch_number ?? 0) }) { col in
                     NavigationLink { CollectionDetail(collection: col) } label: { CollectionCard(collection: col) }
                         .buttonStyle(.plain)
@@ -120,16 +133,27 @@ struct GroupDetail: View {
         .navigationTitle(group.channel).navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Reassign") { showReassign = true }
-                    .font(.geist(size: 14, weight: .semibold)).foregroundColor(P.accent)
+                if moving { ProgressView().tint(P.accent) }
+                else {
+                    Button("Reassign") { showReassign = true }
+                        .font(.geist(size: 14, weight: .semibold)).foregroundColor(P.accent)
+                }
             }
         }
         .sheet(isPresented: $showReassign) {
             ReassignSheet(group: group, groups: store.groups) { newChannel in
+                moving = true
+                moveError = nil
                 Task {
-                    try? await CorpusAPI.reassignCollections(ids: group.collections.map(\.id), to: newChannel)
-                    await store.refreshAll()
-                    dismiss()
+                    do {
+                        try await CorpusAPI.reassignCollections(ids: group.collections.map(\.id), to: newChannel)
+                        await store.reloadCollections()
+                        moving = false
+                        dismiss()
+                    } catch {
+                        moving = false
+                        moveError = error.localizedDescription   // stay here so the failure is visible
+                    }
                 }
             }
             .presentationDetents([.medium, .large])
@@ -188,13 +212,21 @@ struct CollectionsSection: View {
     @State private var state = "All"
     @State private var sort = "Newest"
 
-    private func passes(_ c: Collection) -> Bool {
+    /// Collections with no recorded total (total_videos 0/nil — imports, voice
+    /// memos, link batches) have nothing outstanding, so they count as Complete.
+    private static func passes(_ c: Collection, state: String) -> Bool {
+        let saved = c.saved_videos ?? 0, total = c.total_videos ?? 0
         switch state {
         case "Has skips": return (c.skipped_videos ?? 0) > 0
-        case "Complete":  return (c.saved_videos ?? 0) >= (c.total_videos ?? 0) && (c.total_videos ?? 0) > 0
-        case "Active":    return (c.saved_videos ?? 0) < (c.total_videos ?? 0)
+        case "Complete":  return saved >= total
+        case "Active":    return saved < total
         default: return true
         }
+    }
+    private func passes(_ c: Collection) -> Bool { Self.passes(c, state: state) }
+    /// Only chips that match at least one collection.
+    private var states: [String] {
+        ["All"] + ["Active", "Complete", "Has skips"].filter { st in store.collections.contains { c in Self.passes(c, state: st) } }
     }
     private var shown: [Collection] {
         var xs = store.collections.filter(passes)
@@ -216,7 +248,7 @@ struct CollectionsSection: View {
         ScrollView {
             LazyVStack(spacing: 10) {
                 ListSearch(placeholder: "Search \(store.collections.count) collections…", text: $q)
-                FilterSortRow(filters: ["All", "Active", "Complete", "Has skips"], filter: $state,
+                FilterSortRow(filters: states, filter: $state,
                               sorts: ["Newest", "Oldest", "Most videos", "A–Z"], sort: $sort)
                 if q.isEmpty {
                     ForEach(shown) { col in
@@ -238,6 +270,7 @@ struct CollectionsSection: View {
             }.padding(.vertical, 8)
         }
         .task { await store.loadCollectionsIfNeeded() }
+        .onChange(of: states) { now in if !now.contains(state) { state = "All" } }
         .overlay { if store.loadingCollections && store.collections.isEmpty { ProgressView().tint(P.accent) } }
     }
 }
@@ -272,26 +305,57 @@ struct CollectionCard: View {
     }
 }
 
+/// One collection's entries, newest first, loaded 100 at a time as you scroll.
 struct CollectionDetail: View {
     let collection: Collection
     @State private var entries: [Entry] = []
-    @State private var loading = true
+    @State private var loading = false
+    @State private var reachedEnd = false
+    @State private var error: String?
+    private let pageSize = 100
+
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(entries) { e in
                     NavigationLink { EntryDetail(entryID: e.id, preloaded: e) } label: { EntryRow(entry: e) }
                         .buttonStyle(.plain)
+                        .onAppear { if e.id == entries.last?.id { Task { await loadMore() } } }
                     Divider().overlay(P.border).padding(.leading, 18)
+                }
+                if loading && !entries.isEmpty { ProgressView().tint(P.accent).padding(20) }
+                if let error {
+                    VStack(spacing: 8) {
+                        Text(error).font(.geist(size: 12)).foregroundColor(P.danger).multilineTextAlignment(.center)
+                        Button("Try again") { self.error = nil; Task { await loadMore() } }
+                            .font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
+                    }.padding(24)
+                } else if reachedEnd && entries.isEmpty {
+                    Text("Nothing saved in this collection yet.").font(.geist(size: 13)).foregroundColor(P.textDim).padding(30)
                 }
             }
         }
         .background(SinkyBackdrop())
         .navigationTitle(collection.name).navigationBarTitleDisplayMode(.inline)
-        .overlay { if loading { ProgressView().tint(P.accent) } }
-        .task {
-            defer { loading = false }
-            entries = (try? await CorpusAPI.entries(inCollection: collection.id)) ?? []
+        .overlay { if loading && entries.isEmpty { ProgressView().tint(P.accent) } }
+        .task { if entries.isEmpty { await loadMore() } }
+        .refreshable {
+            entries = []; reachedEnd = false; error = nil
+            await loadMore()
+        }
+    }
+
+    private func loadMore() async {
+        guard !loading, !reachedEnd else { return }
+        loading = true
+        defer { loading = false }
+        do {
+            let page = try await CorpusAPI.entries(collectionID: collection.id, sort: .newest, after: entries.last,
+                                                   limit: pageSize, select: "id,title,type,tags,date,created_at,collection_id")
+            entries.append(contentsOf: page)
+            if page.count < pageSize { reachedEnd = true }
+        } catch {
+            if (error as? URLError)?.code != .cancelled { self.error = error.localizedDescription }
         }
     }
 }
