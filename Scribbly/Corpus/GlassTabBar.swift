@@ -46,7 +46,12 @@ struct GlassTabBar: View {
     private func tab(for s: LibraryScreen.Section) -> some View {
         let on = selection == s
         return Button {
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { selection = s }
+            if on {
+                // Already here: pop to this tab's root and scroll it to the top.
+                BottomChrome.shared.reselect(s)
+            } else {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { selection = s }
+            }
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: s.icon).font(.system(size: 19, weight: on ? .semibold : .regular))
@@ -80,22 +85,21 @@ struct MoreSection: View {
                 tap(icon: "square.stack.fill", title: "Collections", sub: "Every batch you've queued, with progress.", go: .collections)
                 tap(icon: "sparkle.magnifyingglass", title: "Query", sub: "Ask a question across everything in the library.", go: .query)
                 tap(icon: "waveform.path.ecg", title: "Activity", sub: "Everything processing right now — pause, resume, retry, or cancel.", badge: up.pendingCount, go: .jobs)
-                row(icon: "exclamationmark.triangle.fill", title: "Didn't work", sub: "Every video, link or recording that failed — see why, retry, or remove.") {
-                    FailedSection().background(SinkyBackdrop()).navigationTitle("Didn't work").navigationBarTitleDisplayMode(.inline)
+                NavigationLink(value: Route.failed) {
+                    rowLabel(icon: "exclamationmark.triangle.fill", title: "Didn't work", sub: "Every video, link or recording that failed — see why, retry, or remove.", badge: 0)
                 }
+                .buttonStyle(.plain)
                 tap(icon: "applewatch", title: "Apple Watch", sub: "Record on the wrist; it lands here with the same place title.", go: .watch)
                 tap(icon: "gearshape.fill", title: "Settings", sub: "Permissions, recording, storage, server status.", go: .settings)
             }
             .padding(16)
+            .id(ScrollTop.anchor)
         }
+        .scrollsToTopOnReselect(.more)
     }
 
     private func tap(icon: String, title: String, sub: String, badge: Int = 0, go: LibraryScreen.Section) -> some View {
         Button { BottomChrome.shared.moreSub = go } label: { rowLabel(icon: icon, title: title, sub: sub, badge: badge) }
-            .buttonStyle(.plain)
-    }
-    private func row<D: View>(icon: String, title: String, sub: String, badge: Int = 0, @ViewBuilder dest: @escaping () -> D) -> some View {
-        NavigationLink { dest() } label: { rowLabel(icon: icon, title: title, sub: sub, badge: badge) }
             .buttonStyle(.plain)
     }
     private func rowLabel(icon: String, title: String, sub: String, badge: Int) -> some View {

@@ -134,6 +134,8 @@ struct SinkyPrimaryButtonStyle: ButtonStyle {
 
 /// The striped teal→copper "fins" panel from the Sinky hero.
 struct FinsBackground: View {
+    /// Home's hero card height; every page's top banner uses the same.
+    static let bannerHeight: CGFloat = 196
     var body: some View {
         ZStack {
             LinearGradient(stops: [
@@ -194,32 +196,108 @@ extension P {
     }
 }
 
-/// Every page sits on this: true black with a soft teal/copper glow and faint
-/// fins at the top, fading out before the content — the Sinky hero, quietly.
+/// Every page sits on this: true black with the SAME striped teal→copper fins
+/// banner as Home's hero (FinsBackground — identical colours, stripe width and
+/// spacing, full strength) across the top, then black for the content.
+/// Home passes `banner: false` because its hero card already is that banner.
 struct SinkyBackdrop: View {
+    /// Kept for existing call sites; the banner is always drawn at full strength.
     var intensity: Double = 1
+    var banner: Bool = true
     var body: some View {
         GeometryReader { geo in
-            let w = geo.size.width
             ZStack(alignment: .top) {
                 Color.black
-                ZStack {
-                    Circle().fill(P.teal).frame(width: w * 0.9).offset(x: -w * 0.28, y: -w * 0.42)
-                    Circle().fill(P.accent).frame(width: w * 0.8).offset(x: w * 0.34, y: -w * 0.46)
+                if banner {
+                    FinsBackground()
+                        .frame(width: geo.size.width,
+                               height: FinsBackground.bannerHeight + geo.safeAreaInsets.top)
+                        // Only the last fifth melts into the black, so the edge never shows.
+                        .mask(LinearGradient(stops: [
+                            .init(color: .white, location: 0),
+                            .init(color: .white, location: 0.8),
+                            .init(color: .clear, location: 1),
+                        ], startPoint: .top, endPoint: .bottom))
                 }
-                .blur(radius: 70)
-                .opacity(0.30 * intensity)
-                .frame(width: w, height: w * 0.9, alignment: .top)
-                .clipped()
-                FinsStripes()
-                    .frame(height: w * 0.55)
-                    .mask(LinearGradient(colors: [.white.opacity(0.5), .clear], startPoint: .top, endPoint: .bottom))
-                    .opacity(0.45 * intensity)
             }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Bottom chrome clearance (tab bar + recorder/upload bar)
+
+/// Height of the floating bottom chrome, reported by LibraryScreen.
+struct ChromeHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// Reserves room at the bottom of a scrolling page equal to the floating bars
+/// (glass tab bar + recording/upload capsule when it shows), so the last row can
+/// always be scrolled fully above them and tapped.
+struct ChromeInset: ViewModifier {
+    @ObservedObject private var chrome = BottomChrome.shared
+    func body(content: Content) -> some View {
+        let h = (chrome.barHeights[chrome.currentTab] ?? 96) + 8
+        return content.safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: h).allowsHitTesting(false)
+        }
+    }
+}
+
+/// Tapping the already-selected tab scrolls its root page back to the top.
+enum ScrollTop { static let anchor = "scribbly.scrollTop" }
+struct ScrollTopOnReselect: ViewModifier {
+    let tab: LibraryScreen.Section
+    @ObservedObject private var chrome = BottomChrome.shared
+    func body(content: Content) -> some View {
+        ScrollViewReader { proxy in
+            content.onChange(of: chrome.reselectTick) { _ in
+                guard chrome.reselectTab == tab else { return }
+                withAnimation(.easeOut(duration: 0.35)) { proxy.scrollTo(ScrollTop.anchor, anchor: .top) }
+            }
+        }
+    }
+}
+
+/// Zero-height marker at the very top of a scroll view's content.
+struct ScrollTopAnchor: View {
+    var body: some View { Color.clear.frame(height: 0).id(ScrollTop.anchor) }
+}
+
+/// Distance (in the scroll view's own coordinate space) from the top of the
+/// visible area to the end-of-list sentinel. Infinity when it isn't laid out.
+struct NearEndKey: PreferenceKey {
+    static let defaultValue: CGFloat = .infinity
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = min(value, nextValue()) }
+}
+
+/// Put this after the last row of a paged list. It reports where it is; the
+/// list loads more only when the user has actually scrolled within reach of it,
+/// so a freshly appended page (which pushes it far down) never chains another.
+struct LoadMoreSentinel: View {
+    let space: String
+    var body: some View {
+        Color.clear.frame(height: 1)
+            .background(GeometryReader { g in
+                Color.clear.preference(key: NearEndKey.self, value: g.frame(in: .named(space)).minY)
+            })
+    }
+}
+
+extension View {
+    func chromeInset() -> some View { modifier(ChromeInset()) }
+    func scrollsToTopOnReselect(_ tab: LibraryScreen.Section) -> some View { modifier(ScrollTopOnReselect(tab: tab)) }
+    /// Use on the ScrollView that contains a `LoadMoreSentinel(space:)`.
+    func onNearEnd(space: String, within distance: CGFloat = 1600, perform: @escaping () -> Void) -> some View {
+        self.coordinateSpace(name: space)
+            .onPreferenceChange(NearEndKey.self) { y in
+                if y < distance { perform() }
+            }
     }
 }
 
@@ -249,13 +327,15 @@ struct GradientProgress: View {
     var value: Double
     var total: Double = 1
     var height: CGFloat = 4
+    /// How long the bar glides to a new value (live pollers use ~their interval).
+    var duration: Double = 0.3
     var body: some View {
         GeometryReader { geo in
             let f = total > 0 ? min(max(value / total, 0), 1) : 0
             ZStack(alignment: .leading) {
                 Capsule().fill(P.divider)
                 Capsule().fill(P.brand).frame(width: max(height, geo.size.width * f))
-                    .animation(.easeOut(duration: 0.3), value: f)
+                    .animation(.easeInOut(duration: duration), value: f)
             }
         }
         .frame(height: height)

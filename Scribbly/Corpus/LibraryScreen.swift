@@ -34,41 +34,20 @@ struct LibraryScreen: View {
         }
     }
     @State private var lastRealTab: Section = .home
-    @State private var libPath = NavigationPath()
+    /// One navigation path per tab. Every push is value-based (Route), so
+    /// clearing a tab's path really pops it to its root.
+    @State private var paths: [Section: NavigationPath] = [:]
+
+    private func pathBinding(_ s: Section) -> Binding<NavigationPath> {
+        Binding(get: { paths[s] ?? NavigationPath() }, set: { paths[s] = $0 })
+    }
 
     var body: some View {
         TabView(selection: $chrome.currentTab) {
             ForEach(Section.pages) { s in
-                NavigationStack(path: s == .library ? $libPath : .constant(NavigationPath())) {
-                    ZStack {
-                        SinkyBackdrop(intensity: s == .home ? 0.5 : 1)
-                        content(for: s)
-                    }
-                    .toolbar(.hidden, for: .tabBar)
-                    .navigationDestination(for: String.self) { id in EntryDetail(entryID: id, preloaded: nil) }
-                    .navigationTitle(s == .home ? "" : (s == .more ? (chrome.moreSub?.rawValue ?? "More") : s.rawValue))
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar(s == .home ? .hidden : .visible, for: .navigationBar)
-                    .sinkyNavBar()
-                }
-                // On the NavigationStack (not its root) so the live recorder bar
-                // stays at the bottom of EVERY screen, including pushed entries.
-                // While recording/uploading it replaces the tab bar.
-                .sinkyBottomBar {
-                    // The recorder bar stacks ABOVE the tab bar, so every tab stays
-                    // reachable while recording (it used to replace the tab bar).
-                    VStack(spacing: 6) {
-                        RecordBar(armToken: chrome.armToken, tab: s)
-                        if !chrome.keyboardUp && (recorderOwnsBar || !chrome.hideRecordBar) {
-                            GlassTabBar(selection: $chrome.currentTab, onRecord: startRecording)
-                        }
-                    }
-                    // On iPad / wide windows the recorder + tab bar stay thumb-sized, centred.
-                    .frame(maxWidth: 620)
-                    .frame(maxWidth: .infinity)
-                }
-                .tabItem { Label(s.rawValue, systemImage: s.icon) }
-                .tag(s)
+                tabPage(s)
+                    .tabItem { Label(s.rawValue, systemImage: s.icon) }
+                    .tag(s)
             }
         }
         .tint(P.accent)
@@ -81,12 +60,23 @@ struct LibraryScreen: View {
             default: lastRealTab = newTab
             }
         }
+        // Tapping the tab you're already on: back to its root (and the page
+        // scrolls to the top — see ScrollTopOnReselect).
+        .onChange(of: chrome.reselectTick) { _ in
+            let t = chrome.reselectTab
+            paths[t] = NavigationPath()
+            if t == .more { chrome.moreSub = nil }
+        }
         .task {
             // Screenshot/QA hook: SCRIBBLY_TAB=home|library|groups|more opens that page on launch.
             let env = ProcessInfo.processInfo.environment
             if let t = env["SCRIBBLY_TAB"], let sec = Section(rawValue: t.capitalized) { chrome.currentTab = sec }
             if let m = env["SCRIBBLY_MORE"], let sec = Section(rawValue: m.capitalized) { chrome.moreSub = sec; chrome.currentTab = .more }
-            if let id = env["SCRIBBLY_ENTRY"], !id.isEmpty { chrome.currentTab = .library; try? await Task.sleep(nanoseconds: 800_000_000); libPath.append(id) }
+            if let id = env["SCRIBBLY_ENTRY"], !id.isEmpty {
+                chrome.currentTab = .library
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                paths[.library, default: NavigationPath()].append(id)
+            }
             if env["SCRIBBLY_REC"] == "1" {
                 try? await Task.sleep(nanoseconds: 1_500_000_000); startRecording()
                 // QA: SCRIBBLY_REC_SECS=n finishes (✓) after n seconds, exercising finish → upload → Live Activity end.
@@ -95,7 +85,78 @@ struct LibraryScreen: View {
                     Recorder.shared.finishAndUpload()
                 }
             }
+            await CreatorDirectory.shared.loadIfNeeded()
             await store.loadCounts()
+        }
+    }
+
+    /// One tab: its navigation stack, the shared backdrop, and the floating
+    /// bottom chrome (recorder capsule above the glass tab bar).
+    private func tabPage(_ s: Section) -> some View {
+        NavigationStack(path: pathBinding(s)) {
+            ZStack {
+                // Same fins banner on every page; Home's hero card is that banner.
+                SinkyBackdrop(banner: s != .home)
+                content(for: s)
+                    .chromeInset()
+            }
+            .toolbar(.hidden, for: .tabBar)
+            .navigationDestination(for: String.self) { id in EntryDetail(entryID: id, preloaded: nil).chromeInset() }
+            .navigationDestination(for: Route.self) { r in destination(r) }
+            .navigationTitle(title(for: s))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(s == .home ? .hidden : .visible, for: .navigationBar)
+            .sinkyNavBar()
+        }
+        // On the NavigationStack (not its root) so the live recorder bar
+        // stays at the bottom of EVERY screen, including pushed entries.
+        // It floats (overlay) and reports its height; every scroll page
+        // insets its content by exactly that (ChromeInset), so the last
+        // row can always scroll fully above the bars.
+        .overlay(alignment: .bottom) { bottomChrome(s) }
+    }
+
+    private func title(for s: Section) -> String {
+        switch s {
+        case .home: return ""
+        case .more: return chrome.moreSub?.rawValue ?? "More"
+        default:    return s.rawValue
+        }
+    }
+
+    /// The recorder bar stacks ABOVE the tab bar, so every tab stays reachable while recording.
+    private func bottomChrome(_ s: Section) -> some View {
+        VStack(spacing: 6) {
+            RecordBar(armToken: chrome.armToken, tab: s)
+            if !chrome.keyboardUp && (recorderOwnsBar || !chrome.hideRecordBar) {
+                GlassTabBar(selection: $chrome.currentTab, onRecord: startRecording)
+            }
+        }
+        // On iPad / wide windows the recorder + tab bar stay thumb-sized, centred.
+        .frame(maxWidth: 620)
+        .background(GeometryReader { g in
+            Color.clear.preference(key: ChromeHeightKey.self, value: g.size.height)
+        })
+        .onPreferenceChange(ChromeHeightKey.self) { h in
+            Task { @MainActor in BottomChrome.shared.setBarHeight(h, for: s) }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Every pushed screen, by value, so a tab can always be popped to its root.
+    @ViewBuilder private func destination(_ r: Route) -> some View {
+        switch r {
+        case .entry(let id, let pre):
+            EntryDetail(entryID: id, preloaded: pre).chromeInset()
+        case .collection(let c):
+            CollectionDetail(collection: c).chromeInset()
+        case .group(let g):
+            GroupDetail(group: g, store: store).chromeInset()
+        case .hit(let h):
+            HitDestination(hit: h).chromeInset()
+        case .failed:
+            FailedSection().background(SinkyBackdrop()).navigationTitle("Didn't work")
+                .navigationBarTitleDisplayMode(.inline).chromeInset()
         }
     }
 
@@ -127,6 +188,15 @@ struct LibraryScreen: View {
         case .watch:       WatchInfoSection()
         }
     }
+}
+
+/// Everything that can be pushed onto a tab's stack.
+enum Route: Hashable {
+    case entry(String, Entry?)
+    case collection(Collection)
+    case group(Group)
+    case hit(SearchHit)
+    case failed
 }
 
 // MARK: - Library section (server-filtered feed, keyset-paginated)
@@ -163,7 +233,7 @@ struct LibrarySection: View {
             let key: String, header: String, sub: String
             if let col {
                 key = "col:" + col.id
-                header = col.groupKey
+                header = col.creatorName ?? (CreatorName.isFiling(col.groupKey) ? Group.filingName : col.groupKey)
                 sub = "› " + col.displayName
             } else {
                 key = "type:" + e.displayType
@@ -188,24 +258,27 @@ struct LibrarySection: View {
 
     var body: some View {
         ScrollView {
+            ScrollTopAnchor()
             LazyVStack(spacing: 0) {
-                ListSearch(placeholder: "Search all \(store.libraryCount > 0 ? store.libraryCount.formatted() + " " : "")entries…", text: $filter)
-                FilterSortRow(filters: chips, filter: $typeFilter,
-                              sorts: CorpusAPI.EntrySort.allCases.map(\.rawValue), sort: $sort)
+                // Search field + sort menu share the top row; type chips get their own row.
+                ListSearch(placeholder: "Search all \(store.libraryCount > 0 ? store.libraryCount.formatted() + " " : "")entries…", text: $filter,
+                           sorts: CorpusAPI.EntrySort.allCases.map(\.rawValue), sort: $sort)
+                FilterSortRow(filters: chips, filter: $typeFilter)
                 exportAllRow
                 if !searching {
                     ForEach(store.entries) { entry in
-                        NavigationLink { EntryDetail(entryID: entry.id, preloaded: entry) } label: { EntryRow(entry: entry) }
+                        NavigationLink(value: Route.entry(entry.id, entry)) { EntryRow(entry: entry) }
                             .buttonStyle(.plain)
-                            .onAppear { if entry.id == store.entries.last?.id { Task { await store.loadNextPage() } } }
                         Rectangle().fill(P.divider).frame(height: 1).padding(.leading, 18)
                     }
+                    // Next page only when the user has scrolled near the end (never a chain reaction).
+                    if !store.entries.isEmpty && !store.reachedEnd { LoadMoreSentinel(space: "libraryScroll") }
                 } else {
                     ForEach(groupedHits, id: \.key) { g in
                         GroupHeader(title: g.header, detail: g.detail)
                         Nested {
                             ForEach(g.items) { entry in
-                                NavigationLink { EntryDetail(entryID: entry.id, preloaded: entry) } label: { EntryRow(entry: entry) }
+                                NavigationLink(value: Route.entry(entry.id, entry)) { EntryRow(entry: entry) }
                                     .buttonStyle(.plain)
                                 Rectangle().fill(P.divider).frame(height: 1).padding(.leading, 18)
                             }
@@ -220,7 +293,7 @@ struct LibrarySection: View {
                             .font(.geist(size: 13)).foregroundColor(P.textDim).multilineTextAlignment(.center).padding(30)
                     }
                 }
-                if store.loadingEntries { ProgressView().tint(P.accent).padding(24) }
+                if store.loadingEntries && !store.entries.isEmpty { ProgressView().tint(P.accent).padding(24) }
                 if let err = store.error, !store.loadingEntries {
                     VStack(spacing: 8) {
                         Text(store.entries.isEmpty ? "Couldn't load the library" : "Couldn't load more")
@@ -238,7 +311,14 @@ struct LibrarySection: View {
                 }
             }
         }
+        .onNearEnd(space: "libraryScroll") {
+            guard !searching, !store.loadingEntries, !store.reachedEnd, store.error == nil, !store.entries.isEmpty else { return }
+            Task { @MainActor in await store.loadNextPage() }
+        }
+        .scrollsToTopOnReselect(.library)
+        .overlay { if store.loadingEntries && store.entries.isEmpty { ProgressView().tint(P.accent) } }
         .task {
+            await CreatorDirectory.shared.loadIfNeeded()
             if let q = ProcessInfo.processInfo.environment["SCRIBBLY_SEARCH"], !q.isEmpty { filter = q }
             await store.loadFirstPageIfNeeded()
             await store.loadCollectionsIfNeeded()
@@ -316,11 +396,15 @@ struct LibrarySection: View {
 
 struct EntryRow: View {
     let entry: Entry
+    @ObservedObject private var creators = CreatorDirectory.shared
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(entry.title).font(.geist(size: 16, weight: .medium)).tracking(-0.2)
+        let creator = creators.creator(for: entry)
+        let title = entry.displayTitle(creator: creator)
+        let meta = entry.metaLine(creator: creator)
+        return VStack(alignment: .leading, spacing: 7) {
+            Text(title).font(.geist(size: 16, weight: .medium)).tracking(-0.2)
                 .foregroundColor(P.ink).lineLimit(2)
-            Text("\(entry.displayType) · \(entry.displayDate)").monoLabel(9.5, color: P.textDim)
+            Text(meta).font(.geist(size: 12)).foregroundColor(P.textDim).lineLimit(2)
             if !entry.tagList.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) { ForEach(entry.tagList.prefix(6), id: \.self) { TagChip($0) } }

@@ -14,6 +14,19 @@ struct EntryDetail: View {
     @State private var deleteError: String?
     /// Settings → Send to → Default destination ("Claude" / "GPT" / "Grok").
     @AppStorage("defaultDestination") private var defaultDestination = "Claude"
+    @ObservedObject private var creators = CreatorDirectory.shared
+    /// The original link when the entry row has none (master_corpus.source_url).
+    @State private var mirrorSource: URL?
+
+    private func originalLink(_ e: Entry) -> URL? { e.sourceLink ?? mirrorSource }
+    private func originalLabel(_ u: URL) -> String {
+        let h = (u.host ?? "").lowercased()
+        if h.contains("youtube") || h.contains("youtu.be") { return "Open on YouTube" }
+        if h.contains("instagram") { return "Open on Instagram" }
+        if h.contains("tiktok") { return "Open on TikTok" }
+        if h.contains("spotify") || h.contains("podcasts.apple") { return "Open the episode" }
+        return "Open original"
+    }
 
     private func exportText() -> String {
         guard let e = entry else { return "" }
@@ -38,10 +51,7 @@ struct EntryDetail: View {
         ScrollView {
             if let e = entry {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("\(e.displayType) · \(e.displayDate)").monoLabel(10, color: P.accent)
-                    Text(e.title).font(.geist(size: 26, weight: .semibold)).tracking(-0.8).foregroundColor(P.ink)
-                    GradientRule(width: 64)
-
+                    header(e)
                     if !e.tagList.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 6) { ForEach(e.tagList, id: \.self) { TagChip($0) } }
@@ -156,14 +166,59 @@ struct EntryDetail: View {
             }
         }
         .overlay { if loading && entry == nil { ProgressView().tint(P.accent) } }
-        .onAppear { BottomChrome.shared.hideRecordBar = true; BottomChrome.shared.savedTitle = nil }
-        .onDisappear { BottomChrome.shared.hideRecordBar = false }
+        // The tab bar stays visible here (pages inset for it), so tapping the
+        // current tab can always pop back to its root.
+        .onAppear { BottomChrome.shared.savedTitle = nil }
         .task {
             entry = preloaded
+            await CreatorDirectory.shared.loadIfNeeded()
             // Always refetch to get the transcript, which list rows omit.
             if let full = try? await CorpusAPI.entry(id: entryID) { entry = full }
             loading = false
+            if let e = entry, e.sourceLink == nil { mirrorSource = await Self.mirrorSourceURL(e.id) }
         }
+    }
+
+    /// Creator, title ("Creator — Title" when the title doesn't name them),
+    /// the meta line (voice: time · duration · place), and Open original.
+    @ViewBuilder private func header(_ e: Entry) -> some View {
+        let creator = creators.creator(for: e)
+        if let c = creator {
+            Text(c).monoLabel(10.5, color: P.accent)
+        }
+        Text(e.displayTitle(creator: creator)).font(.geist(size: 26, weight: .semibold)).tracking(-0.8).foregroundColor(P.ink)
+        // The creator is already the accent line above, so the meta line skips it.
+        Text(e.metaLine(creator: nil)).font(.geist(size: 13)).foregroundColor(P.textSec)
+        GradientRule(width: 64)
+
+        if let link = originalLink(e) {
+            Link(destination: link) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.up.right.square.fill").font(.system(size: 16, weight: .semibold))
+                    Text(originalLabel(link)).font(.geist(size: 15, weight: .semibold))
+                    Spacer(minLength: 0)
+                    Text(link.host ?? "").font(.geist(size: 11)).foregroundColor(P.textDim).lineLimit(1)
+                }
+                .foregroundColor(P.ink)
+                .padding(.horizontal, 14).frame(height: 46)
+                .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(P.accent.opacity(0.7), lineWidth: 1.2))
+            }
+            .accessibilityLabel(originalLabel(link))
+        }
+    }
+
+    /// The entry's original URL from its master_corpus mirror row, if any.
+    private static func mirrorSourceURL(_ id: String) async -> URL? {
+        struct Row: Decodable { let source_url: String? }
+        let url = CorpusAPI.restURL("master_corpus", [
+            URLQueryItem(name: "select", value: "source_url"),
+            URLQueryItem(name: "id", value: "eq.scribbly_\(id)")
+        ])
+        guard let rows = try? await CorpusAPI.getJSON(url, as: [Row].self, timeout: 15),
+              let s = rows.first?.source_url?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty,
+              let u = URL(string: s), let scheme = u.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return nil }
+        return u
     }
 
     /// Send to Claude / GPT / Grok: opens a NEW chat in that app/site with the

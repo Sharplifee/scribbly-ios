@@ -55,7 +55,7 @@ struct JobsSection: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 if let eid = j.entryId, j.state == "done" {
                                     // Saved: tap opens the entry it became.
-                                    NavigationLink { EntryDetail(entryID: eid, preloaded: nil) } label: {
+                                    NavigationLink(value: Route.entry(eid, nil)) {
                                         HStack(alignment: .top) {
                                             VStack(alignment: .leading, spacing: 4) {
                                                 Text(j.title ?? j.id).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink).lineLimit(2).multilineTextAlignment(.leading)
@@ -104,7 +104,7 @@ struct JobsSection: View {
                     ForEach(model.batches) { b in
                         VStack(alignment: .leading, spacing: 6) {
                             // Tap the batch name to open what it has saved so far.
-                            NavigationLink { CollectionDetail(collection: Collection(id: b.id, name: b.name, channel: nil, type: nil, source_url: nil, total_videos: b.total, saved_videos: b.done, skipped_videos: nil, failed_videos: nil, batch_number: nil, created_at: nil)) } label: {
+                            NavigationLink(value: Route.collection(Collection(id: b.id, name: b.name, channel: nil, type: nil, source_url: nil, total_videos: b.total, saved_videos: b.done, skipped_videos: nil, failed_videos: nil, batch_number: nil, created_at: nil))) {
                                 HStack {
                                     Image(systemName: "play.rectangle.fill").foregroundColor(P.accent)
                                     Text(b.name).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink).lineLimit(1)

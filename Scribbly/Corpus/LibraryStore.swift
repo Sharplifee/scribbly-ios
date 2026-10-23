@@ -22,6 +22,7 @@ final class LibraryStore: ObservableObject {
     @Published var loadingCollections = false
     @Published var reachedEnd = false
     @Published var error: String?
+    @Published var collectionsError: String?
 
     /// What the Library feed currently shows. Changing it reloads from the server.
     struct Query: Equatable {
@@ -102,7 +103,8 @@ final class LibraryStore: ObservableObject {
         await reloadEntries()
     }
 
-    /// Drops what's loaded and fetches the first page of the current query.
+    /// Drops what's loaded and fetches the first page of the current query
+    /// (used when the filter / sort / search changes — a different list).
     func reloadEntries() async {
         generation += 1
         entries = []
@@ -111,6 +113,41 @@ final class LibraryStore: ObservableObject {
         loadingEntries = false
         error = nil
         await loadNextPage()
+    }
+
+    /// Pull-to-refresh for the feed: keeps the rows on screen and swaps in the
+    /// fresh first page when it arrives. A failure (or a cancelled request)
+    /// never blanks the list; an error is shown only when there's nothing to show.
+    func refreshEntries() async {
+        generation += 1
+        let gen = generation
+        let q = query
+        let searchText = q.search.trimmingCharacters(in: .whitespacesAndNewlines)
+        loadingEntries = true
+        do {
+            let page: [Entry]
+            if searchText.isEmpty {
+                page = try await CorpusAPI.entries(type: q.type, sort: q.sort, after: nil, limit: pageSize)
+            } else {
+                page = try await CorpusAPI.searchEntries(q.search, type: q.type, sort: q.sort)
+            }
+            guard gen == generation else { return }
+            entries = page
+            error = nil
+            if searchText.isEmpty {
+                reachedEnd = page.count < pageSize
+                searchCapped = false
+            } else {
+                reachedEnd = true
+                searchCapped = page.count >= CorpusAPI.entrySearchLimit
+            }
+        } catch {
+            guard gen == generation else { return }
+            if !CorpusAPI.isCancellation(error) && entries.isEmpty {
+                self.error = error.localizedDescription
+            }
+        }
+        loadingEntries = false
     }
 
     func loadNextPage() async {
@@ -143,7 +180,8 @@ final class LibraryStore: ObservableObject {
                 reachedEnd = true
             }
         case .failure(let e):
-            if (e as? URLError)?.code == .cancelled { return }
+            // Cancelled requests (pull-to-refresh, leaving the page) are not errors.
+            if CorpusAPI.isCancellation(e) { return }
             self.error = e.localizedDescription
         }
     }
@@ -161,16 +199,52 @@ final class LibraryStore: ObservableObject {
             collections = cols
             groups = CorpusAPI.groups(from: cols)
             collectionCount = cols.count
+            CreatorDirectory.shared.update(cols)
+            collectionsError = nil
         } catch {
-            self.error = error.localizedDescription
+            // Never surfaces on the Library feed; a cancelled refresh isn't an error at all.
+            if !CorpusAPI.isCancellation(error) { collectionsError = error.localizedDescription }
         }
     }
 
-    /// Pull-to-refresh: reloads the current filter/sort/search, collections and counts.
+    /// Pull-to-refresh: refreshes the current filter/sort/search in place, then
+    /// collections and counts. Runs in its own task so the refresh control
+    /// going away can't cancel it half-way (that used to blank the list and
+    /// show "cancelled").
     func refreshAll() async {
-        await reloadEntries()
-        await reloadCollections()
-        await loadCounts()
-        await loadTypeCounts()
+        let work = Task { @MainActor in
+            await self.refreshEntries()
+            await self.reloadCollections()
+            await self.loadCounts()
+            await self.loadTypeCounts()
+        }
+        await work.value
+    }
+}
+
+/// Collection id → collection, loaded once and shared, so every row can name
+/// its creator without another request.
+@MainActor
+final class CreatorDirectory: ObservableObject {
+    static let shared = CreatorDirectory()
+    @Published private(set) var byID: [String: Collection] = [:]
+    private var loading = false
+
+    func update(_ cols: [Collection]) {
+        byID = Dictionary(cols.map { c in (c.id, c) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    func loadIfNeeded() async {
+        guard byID.isEmpty, !loading else { return }
+        loading = true
+        defer { loading = false }
+        if let cols = try? await CorpusAPI.collections() { update(cols) }
+    }
+
+    /// The creator to show for an entry: its collection's channel, for
+    /// non-voice, non-note entries in a real creator's collection.
+    func creator(for e: Entry) -> String? {
+        guard !e.isVoice, e.displayType != "Note", let cid = e.collection_id else { return nil }
+        return byID[cid]?.creatorName
     }
 }

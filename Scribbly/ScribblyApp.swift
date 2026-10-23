@@ -148,6 +148,24 @@ final class BottomChrome: ObservableObject {
     /// True while the paste field owns the keyboard — the glass bar steps out of the way.
     @Published var keyboardUp = false
     @Published var armToken = 0
+    /// Measured height of each tab's floating bottom chrome (tab bar + recorder /
+    /// upload capsule). Scroll pages inset their content by this (ChromeInset).
+    @Published var barHeights: [LibraryScreen.Section: CGFloat] = [:]
+    /// Bumped when the already-selected tab is tapped again: that tab pops to its
+    /// root and scrolls to the top. `reselectTab` says which tab.
+    @Published var reselectTick = 0
+    private(set) var reselectTab: LibraryScreen.Section = .home
+
+    func reselect(_ tab: LibraryScreen.Section) {
+        reselectTab = tab
+        reselectTick += 1
+    }
+
+    func setBarHeight(_ h: CGFloat, for tab: LibraryScreen.Section) {
+        guard h > 0, abs((barHeights[tab] ?? -1) - h) > 0.5 else { return }
+        barHeights[tab] = h
+    }
+
     /// The green "saved" confirmation. It shows on Home only, for 10 seconds,
     /// and is cleared the moment you leave Home or open an entry.
     @Published var savedTitle: String? {
@@ -181,7 +199,9 @@ struct RecordBar: View {
         return String(format: "%02d:%02d", t / 60, t % 60)
     }
 
-    private var isActive: Bool { rec.state != .idle || up.isUploading }
+    /// Live while recording, uploading, or while the server works on the
+    /// recording that was just handed off (its real progress/stage shows here).
+    private var isActive: Bool { rec.state != .idle || up.isUploading || up.serverJob != nil }
     /// Errors and "N waiting" must be visible even when nothing is recording or
     /// uploading — that is exactly when a stuck recording needs attention.
     private var hasNotice: Bool { rec.lastError != nil || up.lastError != nil || up.pendingCount > 0 }
@@ -236,10 +256,12 @@ struct RecordBar: View {
                 SwiftUI.Group {
                     if up.isUploading {
                         uploadingPanel
-                    } else if rec.state == .idle {
-                        idleBar
-                    } else {
+                    } else if rec.state != .idle {
                         activePanel
+                    } else if up.serverJob != nil {
+                        serverPanel
+                    } else {
+                        idleBar
                     }
                 }
                 .padding(.horizontal, 16)
@@ -306,13 +328,33 @@ struct RecordBar: View {
         }
     }
 
-    // Upload/handoff panel.
+    // Upload panel: a true byte-percentage bar with the number.
     private var uploadingPanel: some View {
-        VStack(spacing: 4) {
-            GradientProgress(value: up.progress)
-            Text(up.stage.isEmpty ? (up.progress < 1 ? "Uploading…" : "Transcribing…") : up.stage)
-                .font(.geist(size: 12, weight: .medium)).lineLimit(1)
+        UploadProgressBar()
+    }
+
+    // After hand-off: the server job's own progress (when it reports one), else its stage.
+    private var serverPanel: some View {
+        let job = up.serverJob
+        let pct: Int? = job?.progress.map { Int($0.rounded()) }
+        let stage = job?.stage ?? "Processing on the server…"
+        return VStack(spacing: 4) {
+            if let p = job?.progress {
+                GradientProgress(value: p, total: 100, duration: 1.8)
+            }
+            HStack(spacing: 8) {
+                if pct == nil { ProgressView().controlSize(.small).tint(P.accent) }
+                Text(stage).font(.geist(size: 12, weight: .medium)).foregroundColor(P.ink).lineLimit(1)
+                Spacer(minLength: 4)
+                if let pct {
+                    Text("\(pct)%").font(.geist(size: 12, weight: .medium, design: .monospaced))
+                        .monospacedDigit().foregroundColor(P.textSec)
+                }
+            }
         }
+        .contentShape(Rectangle())
+        // Tap to tuck it away; the job keeps going on the server (see Activity).
+        .onTapGesture { up.stopTrackingServerJob() }
     }
 
     private var statusText: String {
@@ -401,6 +443,27 @@ struct WaveBars: View {
     }
 }
 
+
+/// Determinate upload bar: real bytes on the wire, with the percentage shown.
+/// Once the bytes have landed it says so (the server-side progress takes over
+/// in the recorder capsule).
+struct UploadProgressBar: View {
+    @ObservedObject private var up = Uploader.shared
+    var body: some View {
+        let frac = min(max(up.uploadFraction, 0), 1)
+        let pct = Int((frac * 100).rounded())
+        let label = up.stage.isEmpty ? (frac < 1 ? "Uploading…" : "Handed off — finishing on server") : up.stage
+        return VStack(spacing: 4) {
+            GradientProgress(value: frac)
+            HStack(spacing: 8) {
+                Text(label).font(.geist(size: 12, weight: .medium)).foregroundColor(P.ink).lineLimit(1)
+                Spacer(minLength: 4)
+                Text("\(pct)%").font(.geist(size: 12, weight: .medium, design: .monospaced))
+                    .monospacedDigit().foregroundColor(P.textSec)
+            }
+        }
+    }
+}
 
 /// Every stuck upload is actionable: retry it, export the raw bytes, or
 /// discard it knowingly. Nothing is ever lost silently.

@@ -28,6 +28,20 @@ final class Uploader: NSObject, ObservableObject {
     @Published var stage: String = ""
     @Published var lastError: String?
     @Published var pendingCount: Int = 0
+    /// Fraction of the current file's bytes that have reached the server (0…1).
+    @Published var uploadFraction: Double = 0
+
+    /// The server job a just-uploaded recording became, while it is being
+    /// transcribed/saved. `progress` is 0…100 when the server reports one.
+    struct ServerJob: Equatable {
+        let id: String
+        var title: String
+        var state: String
+        var progress: Double?
+        var stage: String
+    }
+    @Published var serverJob: ServerJob?
+    private var serverTrackTask: Task<Void, Never>?
 
     /// Kept so the AppDelegate's background-session hook still compiles.
     var backgroundCompletionHandler: (() -> Void)?
@@ -394,23 +408,24 @@ final class Uploader: NSObject, ObservableObject {
                     // Upload the recording ONCE; the box transcribes, summarizes and
                     // saves it — any length, and it finishes even if the app is closed
                     // the instant the bytes land. No client-side splitting or parts.
-                    DispatchQueue.main.async { self.stage = "Uploading…" }
+                    DispatchQueue.main.async { self.stage = "Uploading…"; self.uploadFraction = 0 }
                     let result = try await AudioUpload.ingestWhole(
                         fileURL: audio, title: job.title, mime: job.mime, location: job.location,
                         appendTo: job.appendTo,
                         onProgress: { frac in
                             DispatchQueue.main.async {
-                                // Bytes are 90% of the visible bar; the server's
-                                // transcription is the final sliver.
+                                // The bar shows real bytes on the wire (with the %);
+                                // `progress` keeps its old 5…90% meaning for callers.
+                                self.uploadFraction = frac
                                 self.progress = 0.05 + 0.85 * frac
-                                self.stage = frac < 1 ? "Uploading… \(Int(frac * 100))%"
-                                                      : "Handed off — finishing on server"
+                                self.stage = frac < 1 ? "Uploading…" : "Handed off — finishing on server"
                             }
                         })
 
                     finishJob(job, audio: audio)
                     results[job.id] = (true, result.title)
                     lastTitle = result.title
+                    if let jid = result.jobID { trackServerJob(jid, title: result.title) }
                     DispatchQueue.main.async {
                         self.progress = 1
                         self.lastError = nil
@@ -441,6 +456,93 @@ final class Uploader: NSObject, ObservableObject {
                     continue
                 }
             }
+        }
+    }
+
+    // MARK: - Server job progress (after hand-off)
+
+    /// Follows the server job a recording became: polls the voice server's
+    /// GET /jobs every 2s and publishes its numeric `progress` when the server
+    /// sends one, else a stage line from its state. Clears itself when the job
+    /// finishes, disappears, or after 30 minutes.
+    func trackServerJob(_ id: String, title: String) {
+        DispatchQueue.main.async {
+            self.serverTrackTask?.cancel()
+            self.serverJob = ServerJob(id: id, title: title, state: "pending", progress: nil,
+                                       stage: "Queued on the cloud computer…")
+            self.serverTrackTask = Task { [weak self] in await self?.pollServerJob(id) }
+        }
+    }
+
+    func stopTrackingServerJob() {
+        DispatchQueue.main.async {
+            self.serverTrackTask?.cancel()
+            self.serverTrackTask = nil
+            self.serverJob = nil
+        }
+    }
+
+    private static func stageText(_ state: String) -> String {
+        switch state {
+        case "pending":      return "Queued on the cloud computer…"
+        case "transcribing": return "Transcribing…"
+        case "saving":       return "Summarizing & saving…"
+        case "paused":       return "Paused"
+        case "done":         return "Saved to your library"
+        case "failed":       return "Failed — see Activity"
+        case "no_speech":    return "No speech found"
+        default:             return state.isEmpty ? "Processing…" : state.capitalized
+        }
+    }
+
+    /// 0…100 from whatever numeric `progress` the server sends (a 0…1 fraction is scaled up).
+    private static func percent(_ any: Any?) -> Double? {
+        guard let n = any as? NSNumber else { return nil }
+        var v = n.doubleValue
+        if v > 0, v < 1, v != v.rounded() { v *= 100 }
+        return min(max(v, 0), 100)
+    }
+
+    private func pollServerJob(_ id: String) async {
+        let jobsURL = CorpusAPI.voiceIngestURL.replacingOccurrences(of: "/upload", with: "/jobs")
+        let deadline = Date().addingTimeInterval(30 * 60)
+        var misses = 0
+        while !Task.isCancelled, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            if Task.isCancelled { return }
+            guard let url = URL(string: jobsURL) else { break }
+            var req = URLRequest(url: url)
+            req.timeoutInterval = 15
+            guard let (data, _) = try? await URLSession.shared.data(for: req),
+                  let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  let list = obj["jobs"] as? [[String: Any]] else { continue }
+            guard let j = list.first(where: { ($0["id"] as? String) == id }) else {
+                misses += 1
+                if misses >= 5 { break }
+                continue
+            }
+            misses = 0
+            let state = (j["state"] as? String) ?? ""
+            var pct = Self.percent(j["progress"])
+            let serverStage = (j["stage"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            let finished = ["done", "failed", "no_speech", "cancelled"].contains(state)
+            if state == "done" { pct = 100 }
+            let stage = serverStage ?? Self.stageText(state)
+            let title = (j["title"] as? String) ?? ""
+            let shownPct = pct
+            DispatchQueue.main.async {
+                guard self.serverJob?.id == id else { return }
+                self.serverJob = ServerJob(id: id, title: title.isEmpty ? (self.serverJob?.title ?? "") : title,
+                                           state: state, progress: shownPct, stage: stage)
+            }
+            if finished {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                break
+            }
+        }
+        if Task.isCancelled { return }
+        DispatchQueue.main.async {
+            if self.serverJob?.id == id { self.serverJob = nil; self.serverTrackTask = nil }
         }
     }
 

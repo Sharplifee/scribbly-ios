@@ -1,7 +1,7 @@
 import Foundation
 
 /// One ingested item — video, recording, audio file, or podcast episode.
-struct Entry: Codable, Identifiable, Equatable {
+struct Entry: Codable, Identifiable, Hashable {
     let id: String
     let title: String
     let type: String?
@@ -13,6 +13,8 @@ struct Entry: Codable, Identifiable, Equatable {
     let created_at: String?
     /// Only present on full rows (`select=*`); list rows leave it nil.
     var notion_url: String? = nil
+    /// Length of a recording / audio file in seconds (nil when unknown).
+    var duration_seconds: Double? = nil
 
     var tagList: [String] {
         (tags ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -33,12 +35,121 @@ struct Entry: Codable, Identifiable, Equatable {
         return date ?? ""
     }
 
-    /// Where this entry came from, if it has a link: its Notion page, or the
-    /// YouTube video for yt_<videoId> entries.
+    /// Where this entry came from, if it has a link: the YouTube video for
+    /// yt_<videoId> ids (also scribbly_yt_ / batches_yt_ mirror ids), else the
+    /// stored link (notion_url holds the original URL for YouTube/Instagram rows).
     var sourceLink: URL? {
-        if let n = notion_url, !n.isEmpty, let u = URL(string: n) { return u }
-        if id.hasPrefix("yt_") { return URL(string: "https://www.youtube.com/watch?v=\(id.dropFirst(3))") }
+        var core = id
+        for p in ["scribbly_", "batches_", "notes_"] where core.hasPrefix(p) { core = String(core.dropFirst(p.count)) }
+        if core.hasPrefix("yt_") {
+            let vid = String(core.dropFirst(3))
+            if vid.count == 11, let u = URL(string: "https://www.youtube.com/watch?v=" + vid) { return u }
+        }
+        if let n = notion_url?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty,
+           let u = URL(string: n), let s = u.scheme?.lowercased(), s == "http" || s == "https" { return u }
         return nil
+    }
+
+    // MARK: Display helpers (rows + detail header)
+
+    var isVoice: Bool {
+        let t = (type ?? "").lowercased()
+        return t.contains("voice") || t.contains("audio") || id.hasPrefix("voice_")
+    }
+
+    /// The place a recording was made: the part after the last " · " in its
+    /// title ("Topic · University Place, Orem" → "University Place, Orem").
+    var placeFromTitle: String? {
+        let parts = title.components(separatedBy: " · ")
+        guard parts.count >= 2, let last = parts.last?.trimmingCharacters(in: .whitespaces), !last.isEmpty else { return nil }
+        return last
+    }
+
+    /// "Oct 23, 5:12 AM" in the phone's time zone (year added when not this year).
+    var recordedAtText: String? {
+        guard let d = EntryDates.parse(created_at) else { return nil }
+        let sameYear = Calendar.current.isDate(d, equalTo: Date(), toGranularity: .year)
+        return (sameYear ? EntryDates.dayTime : EntryDates.dayTimeYear).string(from: d)
+    }
+
+    /// "4m 12s", "37s", "1h 4m".
+    var durationText: String? {
+        guard let s = duration_seconds, s.isFinite, s > 0 else { return nil }
+        let total = Int(s.rounded())
+        let h = total / 3600, m = (total % 3600) / 60, sec = total % 60
+        if h > 0 { return "\(h)h \(m)m" }
+        if m > 0 { return "\(m)m \(sec)s" }
+        return "\(sec)s"
+    }
+
+    /// Title line: "Creator — Title" unless the title already names the creator.
+    func displayTitle(creator: String?) -> String {
+        guard let c = creator?.trimmingCharacters(in: .whitespaces), !c.isEmpty else { return title }
+        if CreatorName.title(title, mentions: c) { return title }
+        return c + " — " + title
+    }
+
+    /// The discreet line under the title.
+    /// Voice: "Voice note · Oct 23, 5:12 AM · 4m 12s · University Place, Orem".
+    /// Others: "YouTube · Jordan Peterson · Oct 23, 2026".
+    func metaLine(creator: String?) -> String {
+        var parts: [String] = []
+        if isVoice {
+            parts.append("Voice note")
+            parts.append(recordedAtText ?? displayDate)
+            if let d = durationText { parts.append(d) }
+            if let p = placeFromTitle { parts.append(p) }
+        } else {
+            parts.append(displayType)
+            if let c = creator, !c.isEmpty { parts.append(c) }
+            parts.append(displayDate)
+        }
+        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+}
+
+/// Creator (channel) names: which ones are real creators, and a normalized key
+/// so "The Jordan B. Peterson" and "Jordan Peterson" are one creator.
+enum CreatorName {
+    /// Holding collections whose channel is not a creator ("filing" buckets).
+    static let filing: Set<String> = ["unsorted", "mixed creators", "links", "imported"]
+    /// Channels that are never shown as a creator on an entry.
+    static let notCreators: Set<String> = filing.union([
+        "voice memos", "processing...", "failed", "uncategorized", "duplicate — already ingested", "filing…"
+    ])
+
+    static func isFiling(_ s: String?) -> Bool {
+        filing.contains((s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    }
+
+    static func isCreator(_ s: String?) -> Bool {
+        let t = (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return !t.isEmpty && !notCreators.contains(t) && !t.hasPrefix("incomplete —")
+    }
+
+    /// trim · lowercase · no accents/punctuation · no leading "the " · middle
+    /// initials dropped ("jordan b peterson" → "jordan peterson").
+    static func normalizedKey(_ s: String) -> String {
+        var t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .lowercased()
+        if t.hasPrefix("the ") { t = String(t.dropFirst(4)) }
+        t = t.replacingOccurrences(of: "[^a-z0-9 ]", with: " ", options: .regularExpression)
+        var words = t.split(separator: " ").map(String.init)
+        if words.count >= 3 { words = words.filter { $0.count > 1 } }
+        let key = words.joined(separator: " ")
+        return key.isEmpty ? s.lowercased() : key
+    }
+
+    /// Whether a title already names the creator (case-insensitive; "The " ignored).
+    static func title(_ title: String, mentions creator: String) -> Bool {
+        if title.range(of: creator, options: [.caseInsensitive, .diacriticInsensitive]) != nil { return true }
+        if creator.lowercased().hasPrefix("the ") {
+            let bare = String(creator.dropFirst(4))
+            if !bare.isEmpty, title.range(of: bare, options: [.caseInsensitive, .diacriticInsensitive]) != nil { return true }
+        }
+        let t = " " + normalizedKey(title) + " ", c = " " + normalizedKey(creator) + " "
+        return t.contains(c)
     }
 }
 
@@ -49,6 +160,20 @@ enum EntryDates {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "MMM d, yyyy"
+        return f
+    }()
+    /// "Oct 23, 5:12 AM" — when a recording was made, phone's time zone.
+    static let dayTime: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MMM d, h:mm a"
+        return f
+    }()
+    /// "Oct 23, 2025, 5:12 AM" for recordings from another year.
+    static let dayTimeYear: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MMM d, yyyy, h:mm a"
         return f
     }()
     private static let iso = ISO8601DateFormatter()
@@ -62,7 +187,7 @@ enum EntryDates {
 }
 
 /// One ingest batch.
-struct Collection: Decodable, Identifiable, Equatable {
+struct Collection: Decodable, Identifiable, Hashable {
     let id: String
     let name: String
     let channel: String?
@@ -88,6 +213,13 @@ struct Collection: Decodable, Identifiable, Equatable {
     }
     var badge: String { batch_number.map { "#\($0)" } ?? "—" }
 
+    /// The creator this batch is from, or nil for holding buckets
+    /// (Unsorted / Mixed Creators / Links / Imported / Voice Memos).
+    var creatorName: String? {
+        guard let ch = channel?.trimmingCharacters(in: .whitespacesAndNewlines), CreatorName.isCreator(ch) else { return nil }
+        return ch
+    }
+
     /// Batch-of-links collections are named "<Creator> — Links <date>" by the ingest; show the creator.
     var displayName: String {
         if let r = name.range(of: " — Links ") { return String(name[..<r.lowerBound]) }
@@ -96,12 +228,15 @@ struct Collection: Decodable, Identifiable, Equatable {
 }
 
 /// A runtime cluster of collections that share a channel.
-struct Group: Identifiable, Equatable {
+struct Group: Identifiable, Hashable {
+    /// The one row that collects every holding bucket (Unsorted, Mixed Creators, Links, Imported).
+    static let filingName = "Filing…"
     var channel: String
     var collections: [Collection]
     var totalVideos: Int
     var id: String { channel }
     var batchCount: Int { collections.count }
+    var isFiling: Bool { channel == Group.filingName }
     var badgeRange: String {
         let nums = collections.compactMap(\.batch_number).sorted()
         guard let lo = nums.first, let hi = nums.last else { return "" }
@@ -110,7 +245,7 @@ struct Group: Identifiable, Equatable {
 }
 
 /// A search result from master_corpus.
-struct SearchHit: Decodable, Identifiable {
+struct SearchHit: Decodable, Identifiable, Hashable {
     let id: String
     let title: String
     let type: String?

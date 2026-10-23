@@ -8,13 +8,25 @@ struct GroupsSection: View {
     @State private var kind = "All"
     @State private var sort = "Most videos"
 
+    /// Creators in the chosen order; the "Filing…" row (holding buckets) is always last.
     private func sortedGroups(_ gs: [Group]) -> [Group] {
+        let creators = gs.filter { g in !g.isFiling }
+        let filing = gs.filter { g in g.isFiling }
+        let sorted: [Group]
         switch sort {
-        case "A–Z":   return gs.sorted { $0.channel.localizedCaseInsensitiveCompare($1.channel) == .orderedAscending }
-        case "Newest": return gs.sorted { ($0.collections.map { $0.created_at ?? "" }.max() ?? "") > ($1.collections.map { $0.created_at ?? "" }.max() ?? "") }
-        default:      return gs.sorted { $0.totalVideos > $1.totalVideos }
+        case "A–Z":
+            sorted = creators.sorted { a, b in a.channel.localizedCaseInsensitiveCompare(b.channel) == .orderedAscending }
+        case "Newest":
+            sorted = creators.sorted { a, b in Self.newest(a) > Self.newest(b) }
+        default:
+            sorted = creators.sorted { a, b in a.totalVideos > b.totalVideos }
         }
+        return sorted + filing
     }
+    private static func newest(_ g: Group) -> String {
+        g.collections.map { c in c.created_at ?? "" }.max() ?? ""
+    }
+    private var creatorGroups: [Group] { store.groups.filter { g in !g.isFiling } }
     /// Collection types in the data: "playlist" and "youtube" (creators), "audio" (files).
     private static func passes(_ g: Group, kind: String) -> Bool {
         let t = g.collections.first?.type?.lowercased() ?? ""
@@ -43,26 +55,29 @@ struct GroupsSection: View {
 
     var body: some View {
         ScrollView {
+            ScrollTopAnchor()
             LazyVStack(spacing: 12) {
-                ListSearch(placeholder: "Search creators…", text: $q)
-                FilterSortRow(filters: kinds, filter: $kind,
-                              sorts: ["Most videos", "A–Z", "Newest"], sort: $sort)
+                ListSearch(placeholder: "Search creators…", text: $q,
+                           sorts: ["Most videos", "A–Z", "Newest"], sort: $sort)
+                FilterSortRow(filters: kinds, filter: $kind)
                 if q.isEmpty {
-                    if !store.groups.isEmpty {
-                        Text("\(store.groups.count) groups · \(fmt(store.groups.reduce(0){$0+$1.totalVideos})) videos")
+                    if !creatorGroups.isEmpty {
+                        Text("\(creatorGroups.count) creators · \(fmt(creatorGroups.reduce(0) { n, g in n + g.totalVideos })) videos")
                             .sectionHead()
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
                     }
                     ForEach(hits.map { $0.0 }) { group in
-                        NavigationLink { GroupDetail(group: group, store: store) } label: { GroupCard(group: group) }
-                            .buttonStyle(.plain)
+                        NavigationLink(value: Route.group(group)) {
+                            if group.isFiling { FilingRow(group: group) } else { GroupCard(group: group) }
+                        }
+                        .buttonStyle(.plain)
                     }
                 } else {
                     ForEach(hits, id: \.0.id) { g, cols in
                         GroupHeader(title: g.channel, detail: "\(cols.count) collection" + (cols.count == 1 ? "" : "s") + " match")
                         Nested {
                             ForEach(cols) { col in
-                                NavigationLink { CollectionDetail(collection: col) } label: { CollectionCard(collection: col) }
+                                NavigationLink(value: Route.collection(col)) { CollectionCard(collection: col) }
                                     .buttonStyle(.plain)
                             }
                         }
@@ -74,6 +89,8 @@ struct GroupsSection: View {
             }
             .padding(.bottom, 20)
         }
+        .scrollsToTopOnReselect(.groups)
+        .refreshable { await store.reloadCollections() }
         .task { await store.loadCollectionsIfNeeded() }
         .onChange(of: kinds) { now in if !now.contains(kind) { kind = "All" } }
         .overlay { if store.loadingCollections && store.groups.isEmpty { ProgressView().tint(P.accent) } }
@@ -109,6 +126,30 @@ struct GroupCard: View {
     }
 }
 
+/// The single bottom row for holding buckets (Unsorted, Mixed Creators, Links,
+/// Imported) — never shown as if they were creators.
+struct FilingRow: View {
+    let group: Group
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "tray.full").font(.system(size: 15, weight: .medium)).foregroundColor(P.textDim)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(Group.filingName).font(.geist(size: 15, weight: .semibold)).foregroundColor(P.textSec)
+                Text("\(group.batchCount) holding collection\(group.batchCount == 1 ? "" : "s") · \(group.totalVideos) not yet filed under a creator")
+                    .font(.geist(size: 12)).foregroundColor(P.textDim)
+            }
+            Spacer()
+            Text("\(group.totalVideos)").font(.geist(size: 15, weight: .semibold)).foregroundColor(P.textSec)
+            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(P.textDim)
+        }
+        .padding(14)
+        .background(P.surface.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(P.border))
+        .padding(.horizontal, 16)
+        .contentShape(Rectangle())
+    }
+}
+
 struct GroupDetail: View {
     let group: Group
     @ObservedObject var store: LibraryStore
@@ -124,7 +165,7 @@ struct GroupDetail: View {
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
                 }
                 ForEach(group.collections.sorted { ($0.batch_number ?? 0) > ($1.batch_number ?? 0) }) { col in
-                    NavigationLink { CollectionDetail(collection: col) } label: { CollectionCard(collection: col) }
+                    NavigationLink(value: Route.collection(col)) { CollectionCard(collection: col) }
                         .buttonStyle(.plain)
                 }
             }.padding(.vertical, 14)
@@ -133,7 +174,9 @@ struct GroupDetail: View {
         .navigationTitle(group.channel).navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                if moving { ProgressView().tint(P.accent) }
+                // "Filing…" is a mix of holding buckets, not one creator — nothing to reassign as a whole.
+                if group.isFiling { EmptyView() }
+                else if moving { ProgressView().tint(P.accent) }
                 else {
                     Button("Reassign") { showReassign = true }
                         .font(.geist(size: 14, weight: .semibold)).foregroundColor(P.accent)
@@ -172,7 +215,7 @@ struct ReassignSheet: View {
         NavigationStack {
             List {
                 Section("Move \"\(group.channel)\" into…") {
-                    ForEach(groups.filter { $0.channel != group.channel }) { g in
+                    ForEach(groups.filter { $0.channel != group.channel && !$0.isFiling }) { g in
                         Button {
                             onPick(g.channel); dismiss()
                         } label: {
@@ -247,12 +290,12 @@ struct CollectionsSection: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
-                ListSearch(placeholder: "Search \(store.collections.count) collections…", text: $q)
-                FilterSortRow(filters: states, filter: $state,
-                              sorts: ["Newest", "Oldest", "Most videos", "A–Z"], sort: $sort)
+                ListSearch(placeholder: "Search \(store.collections.count) collections…", text: $q,
+                           sorts: ["Newest", "Oldest", "Most videos", "A–Z"], sort: $sort)
+                FilterSortRow(filters: states, filter: $state)
                 if q.isEmpty {
                     ForEach(shown) { col in
-                        NavigationLink { CollectionDetail(collection: col) } label: { CollectionCard(collection: col) }
+                        NavigationLink(value: Route.collection(col)) { CollectionCard(collection: col) }
                             .buttonStyle(.plain)
                     }
                 } else {
@@ -260,7 +303,7 @@ struct CollectionsSection: View {
                         GroupHeader(title: group, detail: "\(cols.count) collection" + (cols.count == 1 ? "" : "s"))
                         Nested {
                             ForEach(cols) { col in
-                                NavigationLink { CollectionDetail(collection: col) } label: { CollectionCard(collection: col) }
+                                NavigationLink(value: Route.collection(col)) { CollectionCard(collection: col) }
                                     .buttonStyle(.plain)
                             }
                         }
@@ -318,11 +361,12 @@ struct CollectionDetail: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(entries) { e in
-                    NavigationLink { EntryDetail(entryID: e.id, preloaded: e) } label: { EntryRow(entry: e) }
+                    NavigationLink(value: Route.entry(e.id, e)) { EntryRow(entry: e) }
                         .buttonStyle(.plain)
-                        .onAppear { if e.id == entries.last?.id { Task { await loadMore() } } }
                     Divider().overlay(P.border).padding(.leading, 18)
                 }
+                // Next page only once the user scrolls near the end.
+                if !entries.isEmpty && !reachedEnd { LoadMoreSentinel(space: "collectionScroll") }
                 if loading && !entries.isEmpty { ProgressView().tint(P.accent).padding(20) }
                 if let error {
                     VStack(spacing: 8) {
@@ -335,15 +379,33 @@ struct CollectionDetail: View {
                 }
             }
         }
+        .onNearEnd(space: "collectionScroll") {
+            guard !loading, !reachedEnd, error == nil, !entries.isEmpty else { return }
+            Task { @MainActor in await loadMore() }
+        }
         .background(SinkyBackdrop())
         .navigationTitle(collection.name).navigationBarTitleDisplayMode(.inline)
         .overlay { if loading && entries.isEmpty { ProgressView().tint(P.accent) } }
-        .task { if entries.isEmpty { await loadMore() } }
-        .refreshable {
-            entries = []; reachedEnd = false; error = nil
-            await loadMore()
+        .task {
+            await CreatorDirectory.shared.loadIfNeeded()
+            if entries.isEmpty { await loadMore() }
+        }
+        // Refresh keeps the rows on screen and swaps in the fresh first page.
+        .refreshable { await Task { @MainActor in await refreshFirstPage() }.value }
+    }
+
+    private func refreshFirstPage() async {
+        do {
+            let page = try await CorpusAPI.entries(collectionID: collection.id, sort: .newest, after: nil,
+                                                   limit: pageSize, select: Self.select)
+            entries = page
+            reachedEnd = page.count < pageSize
+            error = nil
+        } catch {
+            if !CorpusAPI.isCancellation(error) && entries.isEmpty { self.error = error.localizedDescription }
         }
     }
+    private static let select = "id,title,type,tags,date,created_at,collection_id,duration_seconds"
 
     private func loadMore() async {
         guard !loading, !reachedEnd else { return }
@@ -351,11 +413,11 @@ struct CollectionDetail: View {
         defer { loading = false }
         do {
             let page = try await CorpusAPI.entries(collectionID: collection.id, sort: .newest, after: entries.last,
-                                                   limit: pageSize, select: "id,title,type,tags,date,created_at,collection_id")
+                                                   limit: pageSize, select: Self.select)
             entries.append(contentsOf: page)
             if page.count < pageSize { reachedEnd = true }
         } catch {
-            if (error as? URLError)?.code != .cancelled { self.error = error.localizedDescription }
+            if !CorpusAPI.isCancellation(error) { self.error = error.localizedDescription }
         }
     }
 }
@@ -398,7 +460,7 @@ struct QuerySection: View {
                 }
 
                 ForEach(hits) { hit in
-                    NavigationLink { HitDestination(hit: hit) } label: { HitRow(hit: hit, query: query) }
+                    NavigationLink(value: Route.hit(hit)) { HitRow(hit: hit, query: query) }
                         .buttonStyle(.plain)
                 }
             }
@@ -494,6 +556,15 @@ struct IngestSection: View {
     @State private var progressTask: Task<Void, Never>? = nil
     @State private var nowProcessing = ""
     @State private var progressSkipped = 0
+    /// Real batch progress from scribbly_queue (0…100), the current row's stage,
+    /// and which item of how many is being worked on.
+    @State private var progressPercent: Double = 0
+    @State private var progressStage = ""
+    @State private var progressPosition = 0
+    @State private var progressRows = 0
+    /// The paste field's previous value — used to spot a Return keypress
+    /// (a vertical TextField inserts "\n" instead of calling onSubmit).
+    @State private var lastText = ""
     @State private var skippedNoCaptions: [[String: String]] = []
     @State private var batchChips: [(label: String, done: Int, total: Int)] = []
     @State private var showWalkAway = true
@@ -526,16 +597,20 @@ struct IngestSection: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("One link.\nOne library.")
                                 .font(.geist(size: 32, weight: .semibold)).tracking(-1.4).lineSpacing(-2)
+                                .multilineTextAlignment(.leading)
                                 .foregroundColor(P.ink)
                             Text("Transcribed · summarized · searchable").monoLabel(9.5, color: Color(hex: 0xD9DCDD))
+                                .multilineTextAlignment(.leading)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(20)
                     }
-                    .frame(height: 196)
+                    .frame(height: FinsBackground.bannerHeight)
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .accessibilityElement(children: .combine)
                 }
                 .padding(.horizontal, 16).padding(.top, 8)
+                .id(ScrollTop.anchor)
                 .task { if let store { await store.loadRecent() } }
 
                 // ── ONE open tile. Paste anything — a channel grabs every video, one
@@ -553,6 +628,20 @@ struct IngestSection: View {
                         .submitLabel(.go)
                         .focused($pasteFocused)
                         .onSubmit { pasteFocused = false; Task { await submit() } }
+                        // A multi-line field turns Return into a newline (onSubmit never
+                        // fires), so a single typed "\n" is treated as Go — exactly like
+                        // Fetch — whether the link was typed or pasted. Pasted blocks
+                        // keep their own line breaks.
+                        .onChange(of: text) { new in
+                            let old = lastText
+                            lastText = new
+                            if let stripped = Self.returnKeyStripped(old: old, new: new) {
+                                text = stripped
+                                lastText = stripped
+                                pasteFocused = false
+                                Task { await submit() }
+                            }
+                        }
                         .padding(.horizontal, 14).padding(.vertical, 14)
                         .toolbar {
                             ToolbarItemGroup(placement: .keyboard) {
@@ -607,8 +696,8 @@ struct IngestSection: View {
                 .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(P.surface)
                     .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(P.edge)))
                 .padding(.horizontal, 16)
-                if files.working {
-                    GradientProgress(value: up.progress).padding(.horizontal, 32)
+                if files.working && up.isUploading {
+                    UploadProgressBar().padding(.horizontal, 32)
                 }
                 if let st = files.status {
                     Text(st).font(.geist(size: 13)).foregroundColor(P.textSec).multilineTextAlignment(.center).padding(.horizontal, 24)
@@ -667,50 +756,7 @@ struct IngestSection: View {
                         .padding(.horizontal, 16)
                     }
 
-                    if progressActive || progressTotal > 0 {
-                        VStack(spacing: 6) {
-                            GradientProgress(value: Double(progressDone + progressFailed), total: Double(max(progressTotal, 1)))
-                            if progressActive && batchChips.count > 1 {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 6) {
-                                        ForEach(batchChips, id: \.label) { c in
-                                            Text("\(c.label) · \(c.done)/\(c.total)")
-                                                .font(.geist(size: 11, weight: .semibold))
-                                                .foregroundColor(c.done >= c.total ? P.good : P.textSec)
-                                                .padding(.horizontal, 8).padding(.vertical, 4)
-                                                .background(P.surface).clipShape(Capsule())
-                                        }
-                                    }
-                                }
-                            }
-                            if progressActive && !nowProcessing.isEmpty {
-                                Text("Now: \(nowProcessing)")
-                                    .font(.geist(size: 12)).foregroundColor(P.ink).lineLimit(1)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            HStack {
-                                Text(progressActive ? "Processing · \(progressDone)/\(progressTotal)" : "Finished · \(progressDone)/\(progressTotal)")
-                                    .font(.geist(size: 12, weight: .semibold)).foregroundColor(P.textSec)
-                                if progressSkipped > 0 {
-                                    Text("· \(progressSkipped) skipped").font(.geist(size: 12)).foregroundColor(.yellow)
-                                }
-                                if progressFailed > 0 {
-                                    NavigationLink { FailedSection().background(SinkyBackdrop()).navigationTitle("Didn't work").navigationBarTitleDisplayMode(.inline) } label: {
-                                        Text("· \(progressFailed) failed ›").font(.geist(size: 12)).foregroundColor(.orange)
-                                    }.buttonStyle(.plain)
-                                }
-                                Spacer()
-                                if progressActive {
-                                    Button {
-                                        Task { await cancelBatch() }
-                                    } label: {
-                                        Text("Cancel").font(.geist(size: 12, weight: .semibold)).foregroundColor(.red)
-                                    }
-                                    ProgressView().controlSize(.small).tint(P.accent)
-                                }
-                            }
-                        }.padding(.horizontal, 16)
-                    }
+                    batchProgressView
 
                     if !progressActive && !skippedNoCaptions.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
@@ -761,6 +807,7 @@ struct IngestSection: View {
             .onTapGesture { pasteFocused = false }
         }
         .scrollDismissesKeyboard(.immediately)
+        .scrollsToTopOnReselect(.home)
         .refreshable { if let store { await store.loadRecent() } }
         .onChange(of: pasteFocused) { BottomChrome.shared.keyboardUp = $0 }
         .onAppear {
@@ -794,6 +841,93 @@ struct IngestSection: View {
         if det.isEmpty { return "Fetch →" }
         let n = det.compactMap { Int($0.split(separator: " ").first ?? "") }.reduce(0, +)
         return n > 1 ? "Fetch \(n) →" : "Fetch →"
+    }
+
+    /// The live batch bar after Fetch: "Processing 3 of 12" + a real percentage.
+    @ViewBuilder private var batchProgressView: some View {
+        if progressActive || progressTotal > 0 {
+            VStack(spacing: 6) {
+                // Live, determinate: average of the batch's queue rows (done = 100,
+                // pending = 0, processing = its own progress), glided between polls.
+                HStack {
+                    Text(progressHeadline)
+                        .font(.geist(size: 13, weight: .semibold)).foregroundColor(P.ink).lineLimit(1)
+                    Spacer()
+                    Text("\(Int(progressPercent.rounded()))%")
+                        .font(.geist(size: 13, weight: .semibold, design: .monospaced)).monospacedDigit()
+                        .foregroundColor(P.textSec)
+                }
+                GradientProgress(value: progressPercent, total: 100, height: 6, duration: 1.8)
+                if progressActive && !progressStage.isEmpty {
+                    Text(progressStage)
+                        .font(.geist(size: 12)).foregroundColor(P.textSec).lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if progressActive && batchChips.count > 1 {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(batchChips, id: \.label) { c in
+                                Text("\(c.label) · \(c.done)/\(c.total)")
+                                    .font(.geist(size: 11, weight: .semibold))
+                                    .foregroundColor(c.done >= c.total ? P.good : P.textSec)
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    .background(P.surface).clipShape(Capsule())
+                            }
+                        }
+                    }
+                }
+                if progressActive && progressStage.isEmpty && !nowProcessing.isEmpty {
+                    Text("Now: \(nowProcessing)")
+                        .font(.geist(size: 12)).foregroundColor(P.ink).lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                HStack {
+                    Text("\(progressDone) saved")
+                        .font(.geist(size: 12, weight: .semibold)).foregroundColor(P.textSec)
+                    if progressSkipped > 0 {
+                        Text("· \(progressSkipped) skipped").font(.geist(size: 12)).foregroundColor(.yellow)
+                    }
+                    if progressFailed > 0 {
+                        NavigationLink(value: Route.failed) {
+                            Text("· \(progressFailed) failed ›").font(.geist(size: 12)).foregroundColor(.orange)
+                        }.buttonStyle(.plain)
+                    }
+                    Spacer()
+                    if progressActive {
+                        Button {
+                            Task { await cancelBatch() }
+                        } label: {
+                            Text("Cancel").font(.geist(size: 12, weight: .semibold)).foregroundColor(.red)
+                        }
+                        ProgressView().controlSize(.small).tint(P.accent)
+                    }
+                }
+            }.padding(.horizontal, 16)
+        }
+    }
+
+    /// "Processing 3 of 12" (or "Finished · 12 of 12") for the live batch bar.
+    private var progressHeadline: String {
+        let total = max(progressRows, progressTotal)
+        if !progressActive { return "Finished · \(progressDone + progressSkipped + progressFailed) of \(total)" }
+        if total <= 0 { return "Processing…" }
+        let pos = min(max(progressPosition, 1), total)
+        return "Processing \(pos) of \(total)"
+    }
+
+    /// If `new` is `old` with exactly one "\n" inserted (the Return key), returns
+    /// the text without it; nil for anything else (typing, pasting, deleting).
+    static func returnKeyStripped(old: String, new: String) -> String? {
+        guard new.count == old.count + 1 else { return nil }
+        var o = old.startIndex, n = new.startIndex
+        while o < old.endIndex, old[o] == new[n] {
+            o = old.index(after: o)
+            n = new.index(after: n)
+        }
+        guard new[n] == "\n" || new[n] == "\r\n" || new[n] == "\r" else { return nil }
+        let after = new.index(after: n)
+        guard new[after...] == old[o...] else { return nil }
+        return old
     }
 
     /// Pull every URL out of whatever was pasted — newlines, spaces, commas,
@@ -994,52 +1128,101 @@ struct IngestSection: View {
         progressDone = 0
         progressFailed = 0
         progressSkipped = 0
+        progressPercent = 0
+        progressStage = ""
+        progressPosition = 1
+        progressRows = total
         progressActive = true
         pollProgress(collection: collection, total: total)
     }
 
-    /// Polls queue-status every 3s while Home is on screen and the batch is running.
+    /// Polls the batch's queue rows every 2s while Home is on screen and the
+    /// batch is running: a real percentage (BatchProgress) and the current
+    /// row's stage. The ingest queue-status call (per-batch chips and the
+    /// "no captions" list) is only needed every few ticks.
     private func pollProgress(collection: String, total: Int) {
         progressTask?.cancel()
         progressTask = Task {
+            var tick = 0
             while !Task.isCancelled, progressActive, progressCollection == collection {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if tick > 0 { try? await Task.sleep(nanoseconds: 2_000_000_000) }
                 if Task.isCancelled { break }
-                guard let st = try? await ingest(["action": "queue-status", "collectionId": collection]),
-                      let byLabel = st["byLabel"] as? [String: [String: Int]] else { continue }
-                var done = 0, failed = 0, pending = 0, skipped = 0
-                for (_, c) in byLabel {
-                    done += c["done"] ?? 0
-                    failed += c["failed"] ?? 0
-                    skipped += c["skipped"] ?? 0
-                    pending += (c["pending"] ?? 0) + (c["processing"] ?? 0)
+                tick += 1
+
+                var rowsFinished = false
+                var haveRows = false
+                if let rows = try? await CorpusAPI.queueRows(collection: collection), !rows.isEmpty {
+                    if Task.isCancelled { break }
+                    haveRows = true
+                    let snap = BatchProgress(rows: rows, expected: total)
+                    progressPercent = snap.percent      // GradientProgress glides to it
+                    progressStage = snap.stage
+                    progressPosition = snap.position
+                    progressRows = snap.total
+                    progressDone = snap.done
+                    progressFailed = snap.failed
+                    progressSkipped = snap.skipped
+                    rowsFinished = snap.active == 0
                 }
-                progressDone = done
-                progressFailed = failed
-                progressSkipped = skipped
-                var chips: [(label: String, done: Int, total: Int)] = []
-                for (key, c) in byLabel {
-                    let d: Int = (c["done"] ?? 0) + (c["skipped"] ?? 0) + (c["failed"] ?? 0)
-                    var t = 0
-                    for v in c.values { t += v }
-                    chips.append((label: "Batch \(key)", done: d, total: t))
+
+                if tick % 3 == 1 || rowsFinished || !haveRows {
+                    if let st = try? await ingest(["action": "queue-status", "collectionId": collection]),
+                       let byLabel = st["byLabel"] as? [String: [String: Int]] {
+                        if Task.isCancelled { break }
+                        applyQueueStatus(st, byLabel: byLabel, total: total, countsFromRows: haveRows)
+                    }
                 }
-                chips.sort { $0.label < $1.label }
-                batchChips = chips
-                nowProcessing = (st["nowProcessing"] as? [String])?.first ?? ""
-                skippedNoCaptions = ((st["skippedNoCaptions"] as? [[String: Any]]) ?? []).map { d in
-                    ["videoId": (d["videoId"] as? String) ?? "", "title": (d["title"] as? String) ?? ""]
-                }
-                // Skipped videos are finished too — without them a batch with skips never completed.
-                if pending == 0 && done + failed + skipped >= total {
+
+                if rowsFinished && progressActive {
                     progressActive = false
-                    status = "Done — \(done) added to Library"
-                        + (failed > 0 ? ", \(failed) failed" : "")
-                        + (skipped > 0 ? ", \(skipped) skipped" : "") + "."
+                    progressPercent = 100
+                    status = "Done — \(progressDone) added to Library"
+                        + (progressFailed > 0 ? ", \(progressFailed) failed" : "")
+                        + (progressSkipped > 0 ? ", \(progressSkipped) skipped" : "") + "."
                 }
             }
             // A cancelled poller was replaced or stopped by whoever cancelled it.
             if !Task.isCancelled { progressTask = nil }
+        }
+    }
+
+    /// Batch chips + the skipped-for-no-captions list from queue-status. When
+    /// the queue rows couldn't be read, its counts drive the bar instead.
+    private func applyQueueStatus(_ st: [String: Any], byLabel: [String: [String: Int]], total: Int, countsFromRows: Bool) {
+        var done = 0, failed = 0, pending = 0, skipped = 0
+        var chips: [(label: String, done: Int, total: Int)] = []
+        for (key, c) in byLabel {
+            done += c["done"] ?? 0
+            failed += c["failed"] ?? 0
+            skipped += c["skipped"] ?? 0
+            pending += (c["pending"] ?? 0) + (c["processing"] ?? 0)
+            let d: Int = (c["done"] ?? 0) + (c["skipped"] ?? 0) + (c["failed"] ?? 0)
+            var t = 0
+            for v in c.values { t += v }
+            chips.append((label: "Batch \(key)", done: d, total: t))
+        }
+        chips.sort { a, b in a.label < b.label }
+        batchChips = chips
+        nowProcessing = (st["nowProcessing"] as? [String])?.first ?? ""
+        skippedNoCaptions = ((st["skippedNoCaptions"] as? [[String: Any]]) ?? []).map { d in
+            ["videoId": (d["videoId"] as? String) ?? "", "title": (d["title"] as? String) ?? ""]
+        }
+        guard !countsFromRows else { return }
+        progressDone = done
+        progressFailed = failed
+        progressSkipped = skipped
+        let finished = done + failed + skipped
+        let all = max(total, finished + pending)
+        progressRows = all
+        progressPercent = all > 0 ? Double(finished) / Double(all) * 100 : 0
+        progressPosition = min(all, finished + 1)
+        // Skipped videos are finished too — without them a batch with skips never completed.
+        if pending == 0 && finished >= total && progressActive {
+            progressActive = false
+            progressPercent = 100
+            status = "Done — \(done) added to Library"
+                + (failed > 0 ? ", \(failed) failed" : "")
+                + (skipped > 0 ? ", \(skipped) skipped" : "") + "."
         }
     }
 
@@ -1130,7 +1313,7 @@ private struct RecentList: View {
     /// Shared with Activity — one poller for both, running only while either is visible.
     @ObservedObject private var jobs = JobsModel.shared
     @ObservedObject private var up = Uploader.shared
-    private func meta(_ e: Entry) -> String { e.displayDate + " · " + (e.type ?? "") }
+    @ObservedObject private var creators = CreatorDirectory.shared
 
     /// Anything still moving: server voice/file jobs that aren't finished,
     /// uploads waiting on this phone, and YouTube batches with videos queued.
@@ -1155,7 +1338,7 @@ private struct RecentList: View {
                     Divider().background(P.border)
                 }
                 ForEach(liveBatches) { b in
-                    NavigationLink { CollectionDetail(collection: Collection(id: b.id, name: b.name, channel: nil, type: nil, source_url: nil, total_videos: b.total, saved_videos: b.done, skipped_videos: nil, failed_videos: nil, batch_number: nil, created_at: nil)) } label: {
+                    NavigationLink(value: Route.collection(Collection(id: b.id, name: b.name, channel: nil, type: nil, source_url: nil, total_videos: b.total, saved_videos: b.done, skipped_videos: nil, failed_videos: nil, batch_number: nil, created_at: nil))) {
                         liveRow(icon: "play.rectangle.fill", tint: P.accent, title: b.name,
                                 sub: "\(b.done)/\(b.total) saved · \(b.pending) queued" + (b.now.map { " · Now: \($0)" } ?? ""), spinning: true)
                     }
@@ -1173,7 +1356,8 @@ private struct RecentList: View {
                     .frame(maxWidth: .infinity).padding(.vertical, 18)
                 }
                 ForEach(Array(store.recent.prefix(5))) { e in
-                    NavigationLink { EntryDetail(entryID: e.id, preloaded: e) } label: { row(e) }
+                    NavigationLink(value: Route.entry(e.id, e)) { row(e) }
+                        .buttonStyle(.plain)
                     Divider().background(P.border)
                 }
                 Button { BottomChrome.shared.currentTab = .library } label: {
@@ -1226,9 +1410,12 @@ private struct RecentList: View {
         }
     }
     private func row(_ e: Entry) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(e.title).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink).lineLimit(2).multilineTextAlignment(.leading)
-            Text(meta(e)).font(.geist(size: 11)).foregroundColor(P.textDim)
+        let creator = creators.creator(for: e)
+        let title = e.displayTitle(creator: creator)
+        let meta = e.metaLine(creator: creator)
+        return VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink).lineLimit(2).multilineTextAlignment(.leading)
+            Text(meta).font(.geist(size: 11)).foregroundColor(P.textDim).lineLimit(2).multilineTextAlignment(.leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 11)
     }

@@ -152,9 +152,15 @@ final class FileIngestModel: ObservableObject {
     /// (all audio + all movie/video UTTypes) rather than a hand-picked list.
     static var contentTypes: [UTType] {
         var t: [UTType] = [.audiovisualContent, .audio, .mpeg4Audio, .mp3, .wav, .aiff, .movie, .mpeg4Movie,
-                           .quickTimeMovie, .video, .mpeg2Video, .avi]
-        for ext in ["mkv", "webm", "flac", "ogg", "opus", "amr", "caf", "3gp", "wma", "wmv", "aac", "m4b"] {
-            if let u = UTType(filenameExtension: ext) { t.append(u) }
+                           .quickTimeMovie, .video, .mpeg2Video, .avi, .mpeg, .appleProtectedMPEG4Audio,
+                           .appleProtectedMPEG4Video]
+        // Containers iOS doesn't classify as audio/video still get picked by extension;
+        // the server's ffmpeg pulls the audio out of whatever arrives.
+        for ext in ["mkv", "mka", "webm", "flac", "ogg", "oga", "ogv", "opus", "spx", "amr", "awb", "caf",
+                    "3gp", "3g2", "wma", "wmv", "asf", "aac", "m4a", "m4b", "m4r", "m4v", "aif", "aifc",
+                    "ac3", "eac3", "mp2", "mpga", "mpg", "mpeg", "vob", "ts", "mts", "m2ts", "flv", "f4v",
+                    "divx", "dv", "mxf", "rm", "rmvb", "ape", "wv", "dsf", "alac"] {
+            if let u = UTType(filenameExtension: ext), !t.contains(u) { t.append(u) }
         }
         return t
     }

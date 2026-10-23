@@ -8,6 +8,8 @@ enum AudioUpload {
     struct Result {
         let entryID: String
         let title: String
+        /// Set when the box accepted the upload as an async job (202 + jobId).
+        var jobID: String? = nil
     }
 
     enum Failure: LocalizedError {
@@ -95,7 +97,7 @@ enum AudioUpload {
         // New async box: upload is accepted the instant bytes land (202) and the
         // box finishes transcription + save on its own clock. The phone is done.
         if let obj, obj["accepted"] as? Bool == true, let jobId = obj["jobId"] as? String {
-            return Result(entryID: jobId, title: title ?? "Voice Note")
+            return Result(entryID: jobId, title: title ?? "Voice Note", jobID: jobId)
         }
         // Back-compat: an older synchronous box returns the finished entry inline.
         if let entry = obj?["entry"] as? [String: Any], let id = entry["id"] as? String {

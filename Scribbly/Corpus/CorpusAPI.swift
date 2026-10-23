@@ -170,7 +170,7 @@ enum CorpusAPI {
         case newest = "Newest", oldest = "Oldest", title = "A–Z"
     }
 
-    static let listSelect = "id,title,type,tags,summary,date,created_at,collection_id"
+    static let listSelect = "id,title,type,tags,summary,date,created_at,collection_id,duration_seconds"
 
     /// PostgREST order clause for a sort; `id` breaks ties so the keyset cursor is exact.
     static func orderClause(_ sort: EntrySort) -> String {
@@ -184,7 +184,7 @@ enum CorpusAPI {
     /// Newest few entries without summaries — tiny payload, used for Home → Recent at launch.
     static func recentEntries(limit: Int = 6) async throws -> [Entry] {
         let url = restURL("scribbly_entries", [
-            .init(name: "select", value: "id,title,type,date,created_at,collection_id"),
+            .init(name: "select", value: "id,title,type,date,created_at,collection_id,duration_seconds"),
             .init(name: "order", value: "created_at.desc"),
             .init(name: "limit", value: String(limit))
         ])
@@ -256,20 +256,70 @@ enum CorpusAPI {
         return try await getJSON(url, as: [Collection].self)
     }
 
-    /// Groups are computed, not stored: GROUP BY channel (falling back to the
-    /// name's pre-dash segment), summed by real saved counts, sorted desc.
+    /// Groups are computed, not stored: one group per creator. Channel names
+    /// are grouped on a normalized key (trim, case, accents, punctuation,
+    /// leading "The ", middle initials) so one creator never shows as two; the
+    /// group takes the spelling with the most saved videos. Holding buckets
+    /// (Unsorted / Mixed Creators / Links / Imported) collapse into one
+    /// "Filing…" group, always last. Creators sorted by saved videos, desc.
     static func groups(from collections: [Collection]) -> [Group] {
         var map: [String: Group] = [:]
+        var spellings: [String: [String: Int]] = [:]
+        var filing = Group(channel: Group.filingName, collections: [], totalVideos: 0)
         for col in collections {
-            let key = col.groupKey
-            var g = map[key] ?? Group(channel: key, collections: [], totalVideos: 0)
+            let raw = col.groupKey
+            if CreatorName.isFiling(raw) || CreatorName.isFiling(col.channel) {
+                filing.collections.append(col)
+                filing.totalVideos += col.saved_videos ?? 0
+                continue
+            }
+            let key = CreatorName.normalizedKey(raw)
+            var g = map[key] ?? Group(channel: raw, collections: [], totalVideos: 0)
             g.collections.append(col)
             g.totalVideos += col.saved_videos ?? 0
             map[key] = g
+            spellings[key, default: [:]][raw, default: 0] += max(col.saved_videos ?? 0, 1)
         }
-        return map.values.sorted { $0.totalVideos > $1.totalVideos }
+        var out: [Group] = []
+        for (key, group) in map {
+            var g = group
+            if let best = spellings[key]?.max(by: { a, b in a.value < b.value })?.key { g.channel = best }
+            out.append(g)
+        }
+        out.sort { a, b in a.totalVideos > b.totalVideos }
+        if !filing.collections.isEmpty { out.append(filing) }
+        return out
     }
 
+    // MARK: - Live batch progress (scribbly_queue)
+
+    struct QueueRow: Decodable {
+        let id: String
+        let status: String
+        let progress: Int?
+        let stage: String?
+        let title: String?
+    }
+
+    /// Every queue row of one batch (paged by id past PostgREST's 1,000 cap).
+    static func queueRows(collection: String) async throws -> [QueueRow] {
+        var out: [QueueRow] = []
+        var lastID: String? = nil
+        while true {
+            var items: [URLQueryItem] = [
+                .init(name: "select", value: "id,status,progress,stage,title"),
+                .init(name: "collection_id", value: "eq.\(collection)"),
+                .init(name: "order", value: "id.asc"),
+                .init(name: "limit", value: "1000")
+            ]
+            if let lastID { items.append(.init(name: "id", value: "gt.\(quoted(lastID))")) }
+            let page = try await getJSON(restURL("scribbly_queue", items), as: [QueueRow].self, timeout: 15)
+            out += page
+            guard page.count == 1000, let l = page.last else { break }
+            lastID = l.id
+        }
+        return out
+    }
     // MARK: - Query (search)
 
     /// Searches master_corpus with the maintained full-text index (search_doc).
@@ -385,6 +435,14 @@ enum CorpusAPI {
 
     // MARK: - Core GET
 
+    /// True for a cancelled request/task — never an error worth showing.
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let u = error as? URLError, u.code == .cancelled { return true }
+        let ns = error as NSError
+        return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
+    }
+
     static func getJSON<T: Decodable>(_ url: URL, as: T.Type, timeout: TimeInterval = 30) async throws -> T {
         var req = URLRequest(url: url)
         req.timeoutInterval = timeout            // reads must fail fast and be retried, never hang for minutes
@@ -392,6 +450,44 @@ enum CorpusAPI {
         let data = try await send(req)
         return try JSONDecoder().decode(T.self, from: data)
     }
+}
+
+/// A batch's real progress from its queue rows: done / failed / skipped (and
+/// any other finished state) count 100, pending 0, processing its own
+/// `progress` (5 when the worker hasn't reported one yet).
+struct BatchProgress {
+    var total = 0, done = 0, failed = 0, skipped = 0, active = 0
+    var percent: Double = 0
+    var stage = ""
+
+    init(rows: [CorpusAPI.QueueRow], expected: Int) {
+        var sum = 0.0
+        var current: CorpusAPI.QueueRow? = nil
+        for r in rows {
+            switch r.status {
+            case "pending":
+                active += 1
+            case "processing":
+                active += 1
+                sum += Double(min(max(r.progress ?? 5, 0), 100))
+                if current == nil { current = r }
+            case "done":    done += 1; sum += 100
+            case "failed":  failed += 1; sum += 100
+            case "skipped": skipped += 1; sum += 100
+            default:        sum += 100
+            }
+        }
+        total = max(rows.count, expected)
+        // Rows not created yet (still being queued) count as pending.
+        percent = total > 0 ? sum / Double(total) : 0
+        if let c = current {
+            if let s = c.stage, !s.isEmpty { stage = s }
+            else if let t = c.title, !t.isEmpty { stage = "Now: " + t }
+        }
+    }
+
+    /// 1-based index of the item being worked on ("Processing 3 of 12").
+    var position: Int { min(total, max(1, total - active + 1)) }
 }
 
 enum CorpusAPIError: LocalizedError {
