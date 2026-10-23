@@ -95,7 +95,7 @@ struct Entry: Codable, Identifiable, Hashable {
     func metaLine(creator: String?) -> String {
         var parts: [String] = []
         if isVoice {
-            parts.append("Voice note")
+            parts.append("Recording")
             parts.append(recordedAtText ?? displayDate)
             if let d = durationText { parts.append(d) }
             if let p = placeFromTitle { parts.append(p) }
@@ -115,7 +115,7 @@ enum CreatorName {
     static let filing: Set<String> = ["unsorted", "mixed creators", "links", "imported"]
     /// Channels that are never shown as a creator on an entry.
     static let notCreators: Set<String> = filing.union([
-        "voice memos", "processing...", "failed", "uncategorized", "duplicate — already ingested", "filing…"
+        "voice memos", "recordings", "processing...", "failed", "uncategorized", "duplicate — already ingested", "filing…"
     ])
 
     static func isFiling(_ s: String?) -> Bool {

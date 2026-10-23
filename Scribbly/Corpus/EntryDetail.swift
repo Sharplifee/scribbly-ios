@@ -50,7 +50,7 @@ struct EntryDetail: View {
     /// "Voice note · Oct 23" over the banner; the entry's own title follows below it.
     private var bannerSubtitle: String {
         guard let e = entry else { return "Entry" }
-        let kind = e.isVoice ? "Voice note" : e.displayType
+        let kind = e.isVoice ? "Recording" : e.displayType
         return kind + " · " + e.displayDate
     }
 

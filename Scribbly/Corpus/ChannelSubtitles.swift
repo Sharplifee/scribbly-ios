@@ -24,6 +24,6 @@ enum ChannelSubtitles {
         "Tony Robbins": "psychology mindset peak performance transformation",
         "Ed Mylett": "mindset fulfillment peak performance",
         "Chris Voss": "fbi negotiation tactical empathy influence",
-        "Voice Memos": "personal audio recordings"
+        "Recordings": "your own recordings"
     ]
 }

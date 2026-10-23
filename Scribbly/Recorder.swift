@@ -50,6 +50,14 @@ final class Recorder: NSObject, ObservableObject {
     /// True between start() and the permission/session answer, so a second tap
     /// (or the Control Center intent firing twice) can't start two recordings.
     private var startPending = false
+    /// Silence watchdog: iOS can hand the app a "live" mic that only delivers
+    /// zeros (recording started while another audio client owns the input, or a
+    /// background start that didn't get the hardware). Pure digital silence sits
+    /// near -120…-160 dBFS; any real room never does. If the first seconds are
+    /// all zeros we rebuild the session once, then tell the user plainly.
+    private var heardSignal = false
+    private var silentTicks = 0
+    private var silenceHealAttempts = 0
 
     override init() {
         super.init()
@@ -108,6 +116,9 @@ final class Recorder: NSObject, ObservableObject {
                 self.accumulated = 0
                 self.elapsed = 0
                 self.userPaused = false
+                self.heardSignal = false
+                self.silentTicks = 0
+                self.silenceHealAttempts = 0
                 try self.beginSegment()
                 self.state = .recording
                 self.startTimer()
@@ -174,7 +185,7 @@ final class Recorder: NSObject, ObservableObject {
                 for (i, seg) in existing.enumerated() {
                     parts.append(Uploader.RecordingPart(
                         url: seg,
-                        title: i == 0 ? nil : "Voice Memo — \(stamp) (part \(i + 1))",
+                        title: i == 0 ? nil : "Recording — \(stamp) (part \(i + 1))",
                         rawSources: [seg]))
                 }
             }
@@ -383,6 +394,7 @@ final class Recorder: NSObject, ObservableObject {
             let db = r.averagePower(forChannel: 0)
             let norm = max(0, min(1, (db + 50) / 50))
             self.level = norm
+            self.checkSilence(peak: r.peakPower(forChannel: 0))
             // Monotonic: the clock can only move forward while recording.
             self.elapsed = max(self.elapsed, self.accumulated + self.sanePosition(r))
         }
@@ -392,6 +404,37 @@ final class Recorder: NSObject, ObservableObject {
     }
 
     private func stopTimer() { timer?.invalidate(); timer = nil }
+
+    /// Called every 50 ms while recording. 60 ticks = 3 s of pure zeros.
+    private func checkSilence(peak: Float) {
+        if heardSignal { return }
+        if peak > -100 {               // anything a real microphone produces
+            heardSignal = true
+            silentTicks = 0
+            if lastError?.hasPrefix("The microphone") == true { lastError = nil }
+            return
+        }
+        silentTicks += 1
+        guard silentTicks >= 60 else { return }
+        silentTicks = 0
+        if silenceHealAttempts == 0 {
+            silenceHealAttempts = 1
+            // Rebuild the audio session and start a fresh segment; the silent
+            // segment stays in the list (harmless) so nothing is ever lost.
+            closeSegment()
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            do {
+                try configureSession()
+                try beginSegment()
+                lastError = "The microphone wasn't picking anything up — reconnected it. Keep talking."
+            } catch {
+                lastError = "The microphone isn't picking anything up. Tap ✕ and Record again."
+            }
+        } else if silenceHealAttempts == 1 {
+            silenceHealAttempts = 2
+            lastError = "The microphone still isn't picking anything up — another app (a call, Siri or dictation) may be holding it. Tap ✕ and Record again."
+        }
+    }
 
     // MARK: - Interruption handling (the whole point)
 

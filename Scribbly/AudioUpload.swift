@@ -97,14 +97,14 @@ enum AudioUpload {
         // New async box: upload is accepted the instant bytes land (202) and the
         // box finishes transcription + save on its own clock. The phone is done.
         if let obj, obj["accepted"] as? Bool == true, let jobId = obj["jobId"] as? String {
-            return Result(entryID: jobId, title: title ?? "Voice Note", jobID: jobId)
+            return Result(entryID: jobId, title: title ?? "Recording", jobID: jobId)
         }
         // Back-compat: an older synchronous box returns the finished entry inline.
         if let entry = obj?["entry"] as? [String: Any], let id = entry["id"] as? String {
-            return Result(entryID: id, title: (entry["title"] as? String) ?? title ?? "Voice Note")
+            return Result(entryID: id, title: (entry["title"] as? String) ?? title ?? "Recording")
         }
         if let id = obj?["entryId"] as? String {
-            return Result(entryID: id, title: title ?? "Voice Note")
+            return Result(entryID: id, title: title ?? "Recording")
         }
         throw Failure.server(code, (obj?["error"] as? String) ?? body)
     }

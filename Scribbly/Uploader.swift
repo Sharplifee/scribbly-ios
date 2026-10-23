@@ -74,7 +74,7 @@ final class Uploader: NSObject, ObservableObject {
         let fmt = DateFormatter()
         fmt.dateFormat = "MMM d, h:mm a"
         let stamp = fmt.string(from: Date())
-        return location.map { "\($0) — \(stamp)" } ?? "Voice Memo — \(stamp)"
+        return location.map { "\($0) — \(stamp)" } ?? "Recording — \(stamp)"
     }
 
     func upload(fileURL: URL, duration: TimeInterval, location: String? = nil, appendTo: String? = nil,
@@ -292,7 +292,7 @@ final class Uploader: NSObject, ObservableObject {
                 // that is sitting right there.
                 let created = (try? audio.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()
                 let fmt = DateFormatter(); fmt.dateFormat = "MMM d, h:mm a"
-                let recovered = Job(id: id, title: "Voice Memo — \(fmt.string(from: created))",
+                let recovered = Job(id: id, title: "Recording — \(fmt.string(from: created))",
                                     mime: "audio/m4a", duration: nil,
                                     createdAt: created, attempts: 0)
                 try? write(recovered)

@@ -218,7 +218,7 @@ struct LibrarySection: View {
     /// A creator (Groups channel name) the feed is narrowed to.
     @State private var creator: String? = nil
 
-    private static let voiceChip = "Voice notes"
+    private static let voiceChip = "Recordings"
 
     // MARK: Derived
 
@@ -533,7 +533,7 @@ struct LibrarySection: View {
     }
     private static func typeHeading(_ t: String) -> String {
         switch t {
-        case "Voice Note": return "Voice notes"
+        case "Voice Note": return "Recordings"
         case "Note":       return "Notes"
         default:           return t
         }
