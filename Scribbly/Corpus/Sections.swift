@@ -473,7 +473,8 @@ struct IngestSection: View {
 
                 // ── Hero: the same pillar banner as every page, with the wordmark,
                 // the line, and what the library holds.
-                PageHeader(eyebrow: "Scribbly®", title: "One link. One library.", subtitle: homeSubtitle)
+                PageHeader(title: "One link.\nOne library.", subtitle: "Transcribed · summarized · searchable",
+                           trailing: homeSavedLabel, cardHeight: FinsBackground.bannerHeight)
                     .id(ScrollTop.anchor)
                     .task { if let store { await store.loadRecent() } }
 
@@ -679,6 +680,11 @@ struct IngestSection: View {
         }
         .onDisappear { progressTask?.cancel(); progressTask = nil }
         .onReceive(BottomChrome.shared.$savedTitle) { if $0 != nil, let store { Task { await store.loadRecent() } } }
+    }
+
+    private var homeSavedLabel: String? {
+        guard let store, store.libraryCount > 0 else { return nil }
+        return "\(store.libraryCount.formatted()) saved"
     }
 
     private var homeSubtitle: String {

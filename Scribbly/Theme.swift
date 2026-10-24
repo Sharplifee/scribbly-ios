@@ -151,7 +151,7 @@ struct FinsBackground: View {
                     var x: CGFloat = 7
                     while x < geo.size.width { p.addRect(CGRect(x: x, y: 0, width: 2, height: geo.size.height)); x += 9 }
                 }
-                .fill(Color.black.opacity(0.5))
+                .fill(Color.black)   // pure black: each stripe reads as a real gap
             }
             LinearGradient(colors: [.clear, .black.opacity(0.72)], startPoint: UnitPoint(x: 0.5, y: 0.3), endPoint: .bottom)
         }
@@ -292,7 +292,7 @@ struct FinsStripes: View {
         Canvas { ctx, size in
             var x: CGFloat = 7
             while x < size.width {
-                ctx.fill(Path(CGRect(x: x, y: 0, width: 2, height: size.height)), with: .color(.black.opacity(0.55)))
+                ctx.fill(Path(CGRect(x: x, y: 0, width: 2, height: size.height)), with: .color(.black))
                 x += 9
             }
         }

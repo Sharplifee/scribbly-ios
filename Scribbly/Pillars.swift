@@ -168,86 +168,91 @@ enum SafeTop {
     }
 }
 
-/// The top of every page: the pillar banner reaching up under the status bar
-/// (and the nav bar on pushed pages), with the page title, an optional mono
-/// eyebrow and subtitle sitting where the pillars melt into black. It is the
-/// first thing in each page's scroll content, so it scrolls away with it.
+/// The top of every page — the same striped teal→copper card as Home's hero
+/// (pure-black gaps between the stripes), with the page title and a mono
+/// subtitle inside it. Root tabs also get the "Scribbly®" wordmark row above
+/// the card (count on the right); More's sub-pages get a "‹ More" button there.
 struct PageHeader: View {
     var eyebrow: String? = nil
     let title: String
     var subtitle: String? = nil
-    /// Pushed pages keep a nav bar (back button); the banner reaches under it.
+    /// Pushed pages keep a nav bar (back button) above the card.
     var underNavBar = false
-    /// More's sub-pages: a "‹ More" capsule in the banner's top-left.
+    /// More's sub-pages: a "‹ More" button in the row above the card.
     var back: (() -> Void)? = nil
     var backLabel = "More"
+    /// Mono text on the right of the wordmark row ("12,108 saved").
+    var trailing: String? = nil
+    /// Card height; Home's hero is taller.
+    var cardHeight: CGFloat = 150
 
-    /// Banner height below the status bar — the same on every page.
     static let height: CGFloat = 150
     static let navBar: CGFloat = 44
 
     var body: some View {
-        let region = underNavBar ? Self.height - Self.navBar : Self.height
-        let safeTop = SafeTop.value
-        // A little extra under a nav bar (its height varies by iOS version).
-        let reach = safeTop + (underNavBar ? Self.navBar + 12 : 0)
-        return ZStack(alignment: .bottomLeading) {
-            Color.clear
-            titles
+        VStack(spacing: 14) {
+            if !underNavBar { topRow }
+            ZStack(alignment: .bottomLeading) {
+                FinsBackground()
+                titles
+            }
+            .frame(height: cardHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(P.edge, lineWidth: 1))
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: region)
-        .background(alignment: .bottom) {
-            PillarBanner()
-                .frame(height: region + reach)
-                .overlay(alignment: .top) {
-                    // Keeps the clock and battery readable over bright pillars.
-                    LinearGradient(colors: [Color.black.opacity(0.45), Color.black.opacity(0)],
-                                   startPoint: .top, endPoint: .bottom)
-                        .frame(height: safeTop + 10)
+        .padding(.horizontal, 16)
+        .padding(.top, underNavBar ? 4 : 8)
+    }
+
+    @ViewBuilder private var topRow: some View {
+        HStack(alignment: .firstTextBaseline) {
+            if let back {
+                Button(action: back) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold))
+                        Text(backLabel).font(.geist(size: 15, weight: .medium))
+                    }
+                    .foregroundColor(P.ink)
+                    .padding(.horizontal, 12).frame(height: 34)
+                    .sinkyGlass(Capsule(), interactive: true)
+                    .contentShape(Capsule())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back to \(backLabel)")
+            } else {
+                HStack(alignment: .top, spacing: 1) {
+                    Text("Scribbly").font(.geist(size: 24, weight: .semibold)).tracking(-1.1).foregroundColor(P.ink)
+                    Text("®").font(.geist(size: 9)).foregroundColor(P.textSec)
+                }
+            }
+            Spacer()
+            if let trailing, !trailing.isEmpty {
+                Text(trailing).monoLabel(10)
+            }
         }
-        .overlay(alignment: .topLeading) { backButton }
+        .padding(.horizontal, 4)
     }
 
     private var titles: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             if let eyebrow, !eyebrow.isEmpty {
-                Text(eyebrow).monoLabel(10, color: P.ink.opacity(0.9))
+                Text(eyebrow).monoLabel(9.5, color: Color(hex: 0xD9DCDD))
             }
             if !title.isEmpty {
                 Text(title)
-                    .font(.geist(size: 34, weight: .semibold)).tracking(-1.2)
-                    .foregroundColor(P.ink).lineLimit(1).minimumScaleFactor(0.55)
+                    .font(.geist(size: 32, weight: .semibold)).tracking(-1.4).lineSpacing(-2)
+                    .multilineTextAlignment(.leading)
+                    .foregroundColor(P.ink).lineLimit(3).minimumScaleFactor(0.55)
             }
             if let subtitle, !subtitle.isEmpty {
-                Text(subtitle).monoLabel(10.5, color: Color(hex: 0xE2E4E5))
-                    .lineLimit(1).minimumScaleFactor(0.75)
+                Text(subtitle).monoLabel(9.5, color: Color(hex: 0xD9DCDD))
+                    .lineLimit(2).minimumScaleFactor(0.75)
             }
         }
-        .shadow(color: Color.black.opacity(0.7), radius: 10, x: 0, y: 2)
-        .padding(.horizontal, 20).padding(.bottom, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
-    }
-
-    @ViewBuilder private var backButton: some View {
-        if let back {
-            Button(action: back) {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold))
-                    Text(backLabel).font(.geist(size: 15, weight: .medium))
-                }
-                .foregroundColor(P.ink)
-                .padding(.horizontal, 12).frame(height: 34)
-                .sinkyGlass(Capsule(), interactive: true)
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, 16).padding(.top, 8)
-            .accessibilityLabel("Back to \(backLabel)")
-        }
+        .padding(20)
     }
 }
 
