@@ -100,15 +100,6 @@ struct LibraryRow: View {
 }
 
 /// A pinned section header: "Today ·········· 7".
-/// The window's top safe-area inset (status bar / Dynamic Island), for headers
-/// that need to know when they've pinned to the top.
-enum SafeTop {
-    static var value: CGFloat {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        return scenes.flatMap(\.windows).first(where: \.isKeyWindow)?.safeAreaInsets.top ?? 59
-    }
-}
-
 struct LibrarySectionHeader: View {
     let title: String
     let count: String
