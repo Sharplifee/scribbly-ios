@@ -345,9 +345,10 @@ extension View {
 // MARK: - Text size (Settings → Text size)
 
 /// App-wide text size. Every Geist font is relative to .body, so this scales
-/// the whole app. "Default" follows the iPhone's own Text Size setting.
+/// the whole app. "Default" follows the iPhone's own Text Size setting, which
+/// reads smaller than "Small" on Connor's phone, so it comes first in the row.
 enum TextSizeOption: String, CaseIterable, Identifiable {
-    case small = "Small", standard = "Default", large = "Large", xLarge = "Larger", xxLarge = "Largest"
+    case standard = "Default", small = "Small", large = "Large", xLarge = "Larger", xxLarge = "Largest"
     var id: String { rawValue }
     var size: DynamicTypeSize? {
         switch self {
@@ -360,7 +361,7 @@ enum TextSizeOption: String, CaseIterable, Identifiable {
     }
     /// Sample size for the picker's "A".
     var sample: CGFloat {
-        switch self { case .small: return 13; case .standard: return 16; case .large: return 19; case .xLarge: return 22; case .xxLarge: return 25 }
+        switch self { case .standard: return 13; case .small: return 16; case .large: return 19; case .xLarge: return 22; case .xxLarge: return 25 }
     }
     static let storageKey = "scribbly.textSize"
 }

@@ -4,13 +4,14 @@ import SwiftUI
 /// element, a 76pt disc standing proud of the bar (per Connor's reference).
 /// Replaces the system tab bar so the mic can overflow it.
 ///
-/// While a recording is live (recording / paused / finishing) or its audio is
-/// uploading, the SAME bar becomes the recorder — same capsule, same height,
-/// no second bar stacked above it: ✕ discard · timer · [✓ finish in the centre
-/// disc] · live wave · pause/resume. Upload shows its live percentage in the
-/// same footprint, then the tabs morph back. Server processing afterwards rides
-/// along as a thin line in the bar plus a ring and % badge on the record disc,
-/// so the tabs stay usable while the server transcribes.
+/// While a recording is live (recording / paused / finishing) the tabs STAY
+/// usable — you can move between pages while you talk. A slim recorder strip
+/// grows out of the top of the same glass shape (one piece, not a second bar):
+/// live dot · timer · live wave · Pause · ✓ Finish · │ · Discard — the order
+/// you'd actually use them. The record disc steps aside so the four tabs
+/// spread out. Upload shows its live percentage in the same strip, then the
+/// strip folds away. Server processing afterwards rides along as a thin line
+/// plus a ring and % badge on the record disc.
 struct GlassTabBar: View {
     @Binding var selection: LibraryScreen.Section
     var onRecord: () -> Void
@@ -40,16 +41,29 @@ struct GlassTabBar: View {
     var body: some View {
         let m = mode
         let live = m == .recorder && rec.state == .recording
-        return ZStack {
-            capsuleContent(m)
+        return VStack(spacing: 0) {
+            if m == .recorder {
+                recorderStrip
+                    .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 2)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+            if m == .upload {
+                uploadStrip
+                    .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 2)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+            tabsRow(withDisc: m == .tabs)
                 .padding(.horizontal, 6).padding(.vertical, 6)
-                .fixedSize(horizontal: false, vertical: true)
-                .sinkyGlass(Capsule(), tint: live ? P.accent.opacity(0.22) : nil)
-                .overlay(alignment: .bottom) { transferLine.padding(.horizontal, 30).padding(.bottom, 3) }
-            centreDisc(m)
+                .overlay(alignment: .center) {
+                    if m == .tabs { centreDisc(m).transition(.scale(scale: 0.6).combined(with: .opacity)) }
+                }
         }
-        .frame(height: 74)
-        .padding(.horizontal, 16).padding(.bottom, 2)
+        .fixedSize(horizontal: false, vertical: true)
+        .sinkyGlass(RoundedRectangle(cornerRadius: 31, style: .continuous),
+                    tint: live ? P.accent.opacity(0.18) : nil)
+        .overlay(alignment: .bottom) { transferLine.padding(.horizontal, 30).padding(.bottom, 3) }
+        .padding(.top, 6)
+        .padding(.horizontal, 16).padding(.bottom, 8)
         .animation(Self.morph, value: m)
         .sinkyHaptic(selection)
         .sinkyHaptic(m)
@@ -59,38 +73,15 @@ struct GlassTabBar: View {
         } message: { Text("The audio will be deleted and cannot be recovered.") }
     }
 
-    // MARK: Capsule content
-
-    /// The tabs always lay out (so the capsule keeps exactly the tab bar's
-    /// height); in recorder / upload mode they fade out and the controls take
-    /// the same footprint.
-    private func capsuleContent(_ m: Mode) -> some View {
-        ZStack {
-            tabsRow
-                .opacity(m == .tabs ? 1 : 0)
-                .scaleEffect(m == .tabs ? 1 : 0.94)
-                .allowsHitTesting(m == .tabs)
-                .accessibilityHidden(m != .tabs)
-            if m == .recorder {
-                recorderRow
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            }
-            if m == .upload {
-                uploadRow
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            }
-        }
-    }
-
-    private var tabsRow: some View {
+    private func tabsRow(withDisc: Bool) -> some View {
         HStack(spacing: 0) {
             ForEach(left) { tab(for: $0) }
-            Spacer().frame(width: Self.disc)          // room under the record button (fixed size)
+            if withDisc { Spacer().frame(width: Self.disc) }   // room under the record button
             ForEach(right) { tab(for: $0) }
         }
     }
 
-    // MARK: Recorder (recording / paused / finishing)
+    // MARK: Recorder strip (recording / paused / finishing)
 
     private var timeString: String {
         let t = Int(rec.elapsed)
@@ -113,43 +104,63 @@ struct GlassTabBar: View {
         return rec.state == .recording ? P.accent : P.textDim
     }
 
-    private var recorderRow: some View {
+    private var recorderStrip: some View {
         let busy = rec.state == .finishing
         let recording = rec.state == .recording
-        return HStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Button { showDiscardConfirm = true } label: {
-                    roundIcon("xmark", tint: P.danger, size: 38)
-                }
-                .buttonStyle(.plain)
-                .disabled(busy)
-                .accessibilityLabel("Discard recording")
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(timeString)
-                        .font(.geist(size: 16, weight: .medium, design: .monospaced)).monospacedDigit()
-                        .foregroundColor(P.ink).lineLimit(1).minimumScaleFactor(0.7)
-                    Text(statusText).monoLabel(8.5, color: statusColor).lineLimit(1)
-                }
-                .accessibilityElement(children: .combine)
-                Spacer(minLength: 0)
+        return HStack(spacing: 10) {
+            Circle().fill(statusColor).frame(width: 8, height: 8)
+                .opacity(recording ? 0.6 + Double(rec.level) * 0.4 : 1)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(timeString)
+                    .font(.geist(size: 16, weight: .medium, design: .monospaced)).monospacedDigit()
+                    .foregroundColor(P.ink).lineLimit(1).minimumScaleFactor(0.7)
+                Text(statusText).monoLabel(8.5, color: statusColor).lineLimit(1)
             }
-            .padding(.leading, 2)
-            .frame(maxWidth: .infinity)
-            Spacer().frame(width: Self.disc)
-            HStack(spacing: 8) {
-                WaveBars(level: rec.level, active: recording).frame(height: 24)
-                    .accessibilityHidden(true)
-                Button {
-                    recording ? rec.pause() : rec.resume()
-                } label: {
-                    roundIcon(recording ? "pause.fill" : "play.fill", tint: P.ink, size: 40)
-                }
-                .buttonStyle(.plain)
-                .disabled(busy)
-                .accessibilityLabel(recording ? "Pause" : "Resume")
+            .fixedSize()
+            .accessibilityElement(children: .combine)
+            WaveBars(level: rec.level, active: recording).frame(height: 22)
+                .frame(maxWidth: .infinity)
+                .accessibilityHidden(true)
+            // 1 · Pause / Resume
+            Button { recording ? rec.pause() : rec.resume() } label: {
+                roundIcon(recording ? "pause.fill" : "play.fill", tint: P.ink, size: 38)
             }
-            .padding(.trailing, 2)
-            .frame(maxWidth: .infinity)
+            .buttonStyle(.plain)
+            .disabled(busy)
+            .accessibilityLabel(recording ? "Pause" : "Resume")
+            // 2 · Finish and save (the primary action)
+            Button {
+                guard rec.state == .recording || rec.state == .paused else { return }
+                finishTaps += 1
+                rec.finishAndUpload()
+            } label: {
+                ZStack {
+                    Circle().fill(P.ink).frame(width: 42, height: 42)
+                    if busy {
+                        ProgressView().tint(.black)
+                    } else {
+                        Image(systemName: "checkmark").font(.system(size: 16, weight: .heavy)).foregroundColor(.black)
+                    }
+                }
+                .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+            .accessibilityLabel("Finish and save recording")
+            .sinkyHaptic(finishTaps)
+            // 3 · Discard — set apart, asks first
+            Rectangle().fill(P.border).frame(width: 1, height: 24).accessibilityHidden(true)
+            Button { showDiscardConfirm = true } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(P.danger.opacity(0.85))
+                    .frame(width: 30, height: 38)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+            .accessibilityLabel("Discard recording")
         }
     }
 
@@ -169,24 +180,18 @@ struct GlassTabBar: View {
 
     private var uploadFraction: Double { min(max(up.uploadFraction, 0), 1) }
 
-    private var uploadRow: some View {
+    private var uploadStrip: some View {
         let frac = uploadFraction
         let pct = Int((frac * 100).rounded())
         let label: String = up.stage.isEmpty ? (frac < 1 ? "Uploading…" : "Handed off") : up.stage
-        return HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Upload").monoLabel(8.5, color: P.accent)
-                Text(label).font(.geist(size: 12, weight: .medium)).foregroundColor(P.ink)
-                    .lineLimit(1).minimumScaleFactor(0.8)
-            }
-            .padding(.leading, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer().frame(width: Self.disc)
+        return HStack(spacing: 10) {
+            Text("Upload").monoLabel(8.5, color: P.accent)
+            Text(label).font(.geist(size: 12, weight: .medium)).foregroundColor(P.ink)
+                .lineLimit(1).minimumScaleFactor(0.8)
+            Spacer(minLength: 6)
             Text("\(pct)%")
-                .font(.geist(size: 17, weight: .medium, design: .monospaced)).monospacedDigit()
+                .font(.geist(size: 15, weight: .medium, design: .monospaced)).monospacedDigit()
                 .foregroundColor(P.ink)
-                .padding(.trailing, 14)
-                .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Uploading, \(pct) percent")

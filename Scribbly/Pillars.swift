@@ -169,29 +169,34 @@ enum SafeTop {
 }
 
 /// The top of every page — the same striped teal→copper card as Home's hero
-/// (pure-black gaps between the stripes), with the page title and a mono
-/// subtitle inside it. Root tabs also get the "Scribbly®" wordmark row above
-/// the card (count on the right); More's sub-pages get a "‹ More" button there.
+/// (pure-black gaps between the stripes), the SAME height on every tab and
+/// pushed page, with the page title and a mono subtitle inside it.
+/// The "Scribbly®" wordmark is on every page: top-left on Home (saved count on
+/// the right), top-right everywhere else so the other pages aren't weighted to
+/// the left — with "‹ More" on the left of that row for More's sub-pages.
 struct PageHeader: View {
     var eyebrow: String? = nil
     let title: String
     var subtitle: String? = nil
-    /// Pushed pages keep a nav bar (back button) above the card.
+    /// Pushed pages keep a nav bar (back button) above the header.
     var underNavBar = false
-    /// More's sub-pages: a "‹ More" button in the row above the card.
+    /// More's sub-pages: a "‹ More" button on the left of the wordmark row.
     var back: (() -> Void)? = nil
     var backLabel = "More"
-    /// Mono text on the right of the wordmark row ("12,108 saved").
+    /// Mono text opposite the wordmark ("12,108 saved").
     var trailing: String? = nil
-    /// Card height; Home's hero is taller.
-    var cardHeight: CGFloat = 150
+    /// Home only: wordmark on the left.
+    var brandLeading = false
+    /// One card height for every page.
+    var cardHeight: CGFloat = PageHeader.height
 
-    static let height: CGFloat = 150
+    static let height: CGFloat = FinsBackground.bannerHeight
     static let navBar: CGFloat = 44
+    private static let rowHeight: CGFloat = 34
 
     var body: some View {
         VStack(spacing: 14) {
-            if !underNavBar { topRow }
+            topRow
             ZStack(alignment: .bottomLeading) {
                 FinsBackground()
                 titles
@@ -203,35 +208,49 @@ struct PageHeader: View {
             .accessibilityAddTraits(.isHeader)
         }
         .padding(.horizontal, 16)
-        .padding(.top, underNavBar ? 4 : 8)
+        .padding(.top, underNavBar ? 2 : 8)
+    }
+
+    private var wordmark: some View {
+        HStack(alignment: .top, spacing: 1) {
+            Text("Scribbly").font(.geist(size: 24, weight: .semibold)).tracking(-1.1).foregroundColor(P.ink)
+            Text("®").font(.geist(size: 9)).foregroundColor(P.textSec)
+        }
+        .accessibilityLabel("Scribbly")
+    }
+
+    @ViewBuilder private var trailingText: some View {
+        if let trailing, !trailing.isEmpty { Text(trailing).monoLabel(10) }
     }
 
     @ViewBuilder private var topRow: some View {
-        HStack(alignment: .firstTextBaseline) {
-            if let back {
-                Button(action: back) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold))
-                        Text(backLabel).font(.geist(size: 15, weight: .medium))
-                    }
-                    .foregroundColor(P.ink)
-                    .padding(.horizontal, 12).frame(height: 34)
-                    .sinkyGlass(Capsule(), interactive: true)
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Back to \(backLabel)")
+        HStack(alignment: .center) {
+            if brandLeading {
+                wordmark
+                Spacer()
+                trailingText
             } else {
-                HStack(alignment: .top, spacing: 1) {
-                    Text("Scribbly").font(.geist(size: 24, weight: .semibold)).tracking(-1.1).foregroundColor(P.ink)
-                    Text("®").font(.geist(size: 9)).foregroundColor(P.textSec)
+                if let back {
+                    Button(action: back) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold))
+                            Text(backLabel).font(.geist(size: 15, weight: .medium))
+                        }
+                        .foregroundColor(P.ink)
+                        .padding(.horizontal, 12).frame(height: 34)
+                        .sinkyGlass(Capsule(), interactive: true)
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Back to \(backLabel)")
+                } else {
+                    trailingText
                 }
-            }
-            Spacer()
-            if let trailing, !trailing.isEmpty {
-                Text(trailing).monoLabel(10)
+                Spacer()
+                wordmark
             }
         }
+        .frame(height: Self.rowHeight)
         .padding(.horizontal, 4)
     }
 

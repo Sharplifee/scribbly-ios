@@ -474,7 +474,7 @@ struct IngestSection: View {
                 // ── Hero: the same pillar banner as every page, with the wordmark,
                 // the line, and what the library holds.
                 PageHeader(title: "One link.\nOne library.", subtitle: "Transcribed · summarized · searchable",
-                           trailing: homeSavedLabel, cardHeight: FinsBackground.bannerHeight)
+                           trailing: homeSavedLabel, brandLeading: true)
                     .id(ScrollTop.anchor)
                     .task { if let store { await store.loadRecent() } }
 
