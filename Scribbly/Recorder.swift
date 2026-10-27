@@ -41,6 +41,17 @@ final class Recorder: NSObject, ObservableObject {
     private var timer: Timer?
     private var accumulated: TimeInterval = 0            // completed segments
     private var segmentStartedAt: Date?                 // wall-clock guard for currentTime
+    /// The on-screen clock is wall-clock time actually spent recording, NOT
+    /// AVAudioRecorder.currentTime — currentTime can stall or jump back to 0
+    /// (another app/picker grabbing audio, route changes), which froze the
+    /// timer while the wave kept moving. Banked on every pause/interruption.
+    private var activeTime: TimeInterval = 0
+    private var runStartedAt: Date?
+    /// Stall watchdog: currentTime not moving while "recording" = a dead
+    /// recorder that still reports isRecording. Rotate to a fresh segment.
+    private var lastRawPos: TimeInterval = -1
+    private var lastRawPosChange = Date()
+    private var lastStallHeal = Date.distantPast
     private var bgTask: UIBackgroundTaskIdentifier = .invalid
     private let session = AVAudioSession.sharedInstance()
 
@@ -114,6 +125,8 @@ final class Recorder: NSObject, ObservableObject {
                 try self.configureSession()
                 self.segments.removeAll()
                 self.accumulated = 0
+                self.activeTime = 0
+                self.runStartedAt = nil
                 self.elapsed = 0
                 self.userPaused = false
                 self.heardSignal = false
@@ -137,6 +150,7 @@ final class Recorder: NSObject, ObservableObject {
         recorder?.pause()
         state = .paused
         stopTimer()
+        level = 0
     }
 
     /// Dismiss the error line under the record bar.
@@ -169,7 +183,7 @@ final class Recorder: NSObject, ObservableObject {
         state = .finishing
         stopTimer()
         closeSegment()
-        let total = accumulated
+        let total = max(activeTime, accumulated)
         let segs = segments
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -198,6 +212,7 @@ final class Recorder: NSObject, ObservableObject {
                 self?.interrupted = false
                 self?.segments = []
                 self?.accumulated = 0
+                self?.activeTime = 0
                 if ready.isEmpty { self?.appendTo = nil }
                 completion(ready, total)
             }
@@ -211,6 +226,8 @@ final class Recorder: NSObject, ObservableObject {
         for u in segments { try? FileManager.default.removeItem(at: u) }
         segments = []
         accumulated = 0
+        activeTime = 0
+        runStartedAt = nil
         elapsed = 0
         level = 0
         interrupted = false
@@ -373,6 +390,9 @@ final class Recorder: NSObject, ObservableObject {
 
     private func startTimer() {
         stopTimer()
+        runStartedAt = Date()
+        lastRawPos = -1
+        lastRawPosChange = Date()
         let t = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
             guard let self else { return }
             guard let r = self.recorder, r.isRecording else {
@@ -395,15 +415,43 @@ final class Recorder: NSObject, ObservableObject {
             let norm = max(0, min(1, (db + 50) / 50))
             self.level = norm
             self.checkSilence(peak: r.peakPower(forChannel: 0))
-            // Monotonic: the clock can only move forward while recording.
-            self.elapsed = max(self.elapsed, self.accumulated + self.sanePosition(r))
+            self.checkStall(r)
+            // Wall clock of time spent recording: always moves, never freezes.
+            let run = self.runStartedAt.map { max(0, -$0.timeIntervalSinceNow) } ?? 0
+            self.elapsed = self.activeTime + run
         }
         // .common so the timer keeps firing while the user scrolls
         RunLoop.main.add(t, forMode: .common)
         timer = t
     }
 
-    private func stopTimer() { timer?.invalidate(); timer = nil }
+    private func stopTimer() {
+        timer?.invalidate(); timer = nil
+        if let s = runStartedAt { activeTime += max(0, -s.timeIntervalSinceNow) }
+        runStartedAt = nil
+    }
+
+    /// A recorder whose position stops advancing for 2 s while we think it is
+    /// recording has silently died (the mic was taken without an interruption
+    /// notice). Start a fresh segment so capture continues; at most every 5 s.
+    private func checkStall(_ r: AVAudioRecorder) {
+        let t = r.currentTime
+        if !t.isFinite || abs(t - lastRawPos) > 0.01 {
+            lastRawPos = t
+            lastRawPosChange = Date()
+            return
+        }
+        guard Date().timeIntervalSince(lastRawPosChange) > 2,
+              Date().timeIntervalSince(lastStallHeal) > 5 else { return }
+        lastStallHeal = Date()
+        closeSegment()
+        try? configureSession()
+        if (try? beginSegment()) == nil {
+            lastError = "Recording stopped unexpectedly — what was captured is safe. Tap Finish to save it."
+        }
+        lastRawPos = -1
+        lastRawPosChange = Date()
+    }
 
     /// Called every 50 ms while recording. 60 ticks = 3 s of pure zeros.
     private func checkSilence(peak: Float) {

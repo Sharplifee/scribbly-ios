@@ -12,6 +12,14 @@ struct GroupDetail: View {
     @State private var showReassign = false
     @State private var moving = false
     @State private var moveError: String?
+    @ViewBuilder private var reassignButton: some View {
+        if moving { ProgressView().tint(P.accent) }
+        else {
+            Button("Reassign") { showReassign = true }
+                .font(.geist(size: 14, weight: .semibold)).foregroundColor(P.accent)
+        }
+    }
+
     private var detailSubtitle: String {
         let n = group.totalVideos
         let b = group.batchCount
@@ -21,7 +29,8 @@ struct GroupDetail: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {   // no gap above the banner
-            PageHeader(title: group.isFiling ? Group.filingName : group.channel, subtitle: detailSubtitle, underNavBar: true)
+            PageHeader(title: group.isFiling ? Group.filingName : group.channel, subtitle: detailSubtitle, underNavBar: true,
+                       accessory: group.isFiling ? nil : AnyView(reassignButton))
             LazyVStack(spacing: 10) {
                 if let err = moveError {
                     Text("Couldn't reassign: \(err)").font(.geist(size: 13)).foregroundColor(P.danger)
@@ -37,17 +46,6 @@ struct GroupDetail: View {
         .background(SinkyBackdrop())
         .navigationTitle(group.channel).navigationBarTitleDisplayMode(.inline)
         .headerOwnsTitle()
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                // "Filing…" is a mix of holding buckets, not one creator — nothing to reassign as a whole.
-                if group.isFiling { EmptyView() }
-                else if moving { ProgressView().tint(P.accent) }
-                else {
-                    Button("Reassign") { showReassign = true }
-                        .font(.geist(size: 14, weight: .semibold)).foregroundColor(P.accent)
-                }
-            }
-        }
         .sheet(isPresented: $showReassign) {
             ReassignSheet(group: group, groups: store.groups) { newChannel in
                 moving = true
@@ -155,11 +153,15 @@ struct CollectionsSection: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {   // no gap above the banner
-            PageHeader(title: "Collections",
-                       subtitle: store.collections.isEmpty ? "Every batch you've queued" : "\(store.collections.count) collections",
+            PageHeader(title: "Batches",
+                       subtitle: store.collections.isEmpty ? "Every fetch you've run" : "\(store.collections.count) batches · one per fetch",
                        back: { BottomChrome.shared.moreSub = nil })
             LazyVStack(spacing: 10) {
-                ListSearch(placeholder: "Search \(store.collections.count) collections…", text: $q,
+                // What a batch is, in one line.
+                Text("A batch is one fetch: a channel, a playlist, or a set of links you pasted. Each shows how much of it is saved.")
+                    .font(.geist(size: 12.5)).foregroundColor(P.textSec)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18).padding(.top, 4)
+                ListSearch(placeholder: "Search \(store.collections.count) batches…", text: $q,
                            sorts: ["Newest", "Oldest", "Most videos", "A–Z"], sort: $sort)
                 FilterSortRow(filters: states, filter: $state)
                 if q.isEmpty {
@@ -169,7 +171,7 @@ struct CollectionsSection: View {
                     }
                 } else {
                     ForEach(grouped, id: \.0) { group, cols in
-                        GroupHeader(title: group, detail: "\(cols.count) collection" + (cols.count == 1 ? "" : "s"))
+                        GroupHeader(title: group, detail: "\(cols.count) batch" + (cols.count == 1 ? "" : "es"))
                         Nested {
                             ForEach(cols) { col in
                                 NavigationLink(value: Route.collection(col)) { CollectionCard(collection: col) }
@@ -177,7 +179,7 @@ struct CollectionsSection: View {
                             }
                         }
                     }
-                    if grouped.isEmpty { Text("No collections match.").font(.geist(size: 13)).foregroundColor(P.textDim).padding(30) }
+                    if grouped.isEmpty { Text("No batches match.").font(.geist(size: 13)).foregroundColor(P.textDim).padding(30) }
                 }
             }.padding(.vertical, 8)
             }
@@ -255,7 +257,7 @@ struct CollectionDetail: View {
                             .font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
                     }.padding(24)
                 } else if reachedEnd && entries.isEmpty {
-                    Text("Nothing saved in this collection yet.").font(.geist(size: 13)).foregroundColor(P.textDim).padding(30)
+                    Text("Nothing saved in this batch yet.").font(.geist(size: 13)).foregroundColor(P.textDim).padding(30)
                 }
             }
             }
@@ -286,7 +288,7 @@ struct CollectionDetail: View {
             if !CorpusAPI.isCancellation(error) && entries.isEmpty { self.error = error.localizedDescription }
         }
     }
-    private static let select = "id,title,type,tags,date,created_at,collection_id,duration_seconds"
+    private static let select = "id,title,type,tags,date,created_at,collection_id,duration_seconds,place,kind"
 
     private func loadMore() async {
         guard !loading, !reachedEnd else { return }
@@ -473,8 +475,8 @@ struct IngestSection: View {
 
                 // ── Hero: the same pillar banner as every page, with the wordmark,
                 // the line, and what the library holds.
-                PageHeader(title: "One link.\nOne library.", subtitle: "Transcribed · summarized · searchable",
-                           trailing: homeSavedLabel, brandLeading: true)
+                PageHeader(title: "Anything in.\nOne library.", subtitle: "Links · recordings · files — transcribed & searchable",
+                           trailing: homeSavedLabel)
                     .id(ScrollTop.anchor)
                     .task { if let store { await store.loadRecent() } }
 
@@ -892,7 +894,7 @@ struct IngestSection: View {
         }
         status = "Queuing \(videos.count) link(s)…"
         let col = try await ingest(["action": "create-collection", "name": "Links — \(Date().formatted(date: .abbreviated, time: .shortened))", "videos": videos])
-        guard let cid = col["collectionId"] as? String else { status = "Could not create the collection (server). Tap Fetch again."; return }
+        guard let cid = col["collectionId"] as? String else { status = "Could not start the batch (server). Tap Fetch again."; return }
         let q = try await ingest(["action": "enqueue", "videos": videos, "collectionId": cid])
         let n = (q["queued"] as? Int) ?? 0
         status = "Queued \(n) YouTube link(s)." + note
@@ -974,7 +976,7 @@ struct IngestSection: View {
         do {
             status = "Queuing \(fresh.count) new videos…"
             let col = try await ingest(["action": "create-collection", "name": name, "videos": fresh])
-            guard let cid = col["collectionId"] as? String else { status = "Could not create the collection (server). Tap Fetch again."; return }
+            guard let cid = col["collectionId"] as? String else { status = "Could not start the batch (server). Tap Fetch again."; return }
             var queued = 0
             for chunk in stride(from: 0, to: fresh.count, by: 100).map({ Array(fresh[$0..<min($0 + 100, fresh.count)]) }) {
                 let q = try await ingest(["action": "enqueue", "videos": chunk, "collectionId": cid])
@@ -1248,7 +1250,7 @@ private struct RecentList: View {
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 18)
                 }
-                ForEach(Array(store.recent.prefix(5))) { e in
+                ForEach(Array(store.recent.prefix(20))) { e in
                     NavigationLink(value: Route.entry(e.id, e)) { row(e) }
                         .buttonStyle(.plain)
                     Divider().background(P.border)

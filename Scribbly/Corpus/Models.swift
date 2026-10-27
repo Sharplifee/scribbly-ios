@@ -15,6 +15,10 @@ struct Entry: Codable, Identifiable, Hashable {
     var notion_url: String? = nil
     /// Length of a recording / audio file in seconds (nil when unknown).
     var duration_seconds: Double? = nil
+    /// Where it was recorded / submitted from ("Maverik, American Fork").
+    var place: String? = nil
+    /// What it is: "Recording", "Screen recording", "Video", "MP4", "M4A"…
+    var kind: String? = nil
 
     var tagList: [String] {
         (tags ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -26,6 +30,11 @@ struct Entry: Codable, Identifiable, Hashable {
         return s
     }
     var displayType: String { type ?? "Note" }
+    /// "Recording" for the in-app recorder; otherwise what was uploaded.
+    var kindLabel: String {
+        if let k = kind?.trimmingCharacters(in: .whitespaces), !k.isEmpty { return k }
+        return "Recording"
+    }
 
     /// The day it was saved, in the phone's time zone ("Oct 23, 2026"), from
     /// created_at — the stored `date` text is only a fallback (older rows wrote
@@ -60,6 +69,8 @@ struct Entry: Codable, Identifiable, Hashable {
     /// The place a recording was made: the part after the last " · " in its
     /// title ("Topic · University Place, Orem" → "University Place, Orem").
     var placeFromTitle: String? {
+        if let p = place?.trimmingCharacters(in: .whitespaces), !p.isEmpty { return p }
+        guard isVoice else { return nil }
         let parts = title.components(separatedBy: " · ")
         guard parts.count >= 2, let last = parts.last?.trimmingCharacters(in: .whitespaces), !last.isEmpty else { return nil }
         return last
@@ -95,7 +106,7 @@ struct Entry: Codable, Identifiable, Hashable {
     func metaLine(creator: String?) -> String {
         var parts: [String] = []
         if isVoice {
-            parts.append("Recording")
+            parts.append(kindLabel)
             parts.append(recordedAtText ?? displayDate)
             if let d = durationText { parts.append(d) }
             if let p = placeFromTitle { parts.append(p) }

@@ -61,17 +61,39 @@ struct EntryDetail: View {
         return out
     }
 
+    /// Copy / export / delete, as a glass circle beside the wordmark.
+    private var moreMenu: some View {
+        Menu {
+            Button { copy(summaryText()) } label: { Label("Copy summary", systemImage: "text.alignleft") }
+            Button { copy(transcriptText()) } label: { Label("Copy transcript", systemImage: "text.quote") }
+            Button { copy(exportText()) } label: { Label("Copy both", systemImage: "doc.on.doc") }
+            ShareLink(item: exportText(), preview: SharePreview(entry?.title ?? "Entry")) {
+                Label("Export…", systemImage: "square.and.arrow.up")
+            }
+            Button(role: .destructive) { confirmDelete = true } label: {
+                Label("Delete entry", systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: "ellipsis").font(.system(size: 15, weight: .bold))
+                .foregroundColor(P.ink)
+                .frame(width: 38, height: 38)
+                .sinkyGlass(Circle(), interactive: true)
+                .contentShape(Circle())
+        }
+        .accessibilityLabel("More actions")
+    }
+
     /// "Voice note · Oct 23" over the banner; the entry's own title follows below it.
     private var bannerSubtitle: String {
         guard let e = entry else { return "Entry" }
-        let kind = e.isVoice ? "Recording" : e.displayType
+        let kind = e.isVoice ? e.kindLabel : e.displayType
         return kind + " · " + e.displayDate
     }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {   // no gap above the banner
-            PageHeader(title: "", subtitle: bannerSubtitle, underNavBar: true)
+            PageHeader(title: "", subtitle: bannerSubtitle, underNavBar: true, accessory: AnyView(moreMenu))
             if let e = entry {
                 VStack(alignment: .leading, spacing: 16) {
                     header(e)
@@ -163,21 +185,6 @@ struct EntryDetail: View {
         }
         .background(SinkyBackdrop())
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button { copy(summaryText()) } label: { Label("Copy summary", systemImage: "text.alignleft") }
-                    Button { copy(transcriptText()) } label: { Label("Copy transcript", systemImage: "text.quote") }
-                    Button { copy(exportText()) } label: { Label("Copy both", systemImage: "doc.on.doc") }
-                    ShareLink(item: exportText(), preview: SharePreview(entry?.title ?? "Entry")) {
-                        Label("Export…", systemImage: "square.and.arrow.up")
-                    }
-                    Button(role: .destructive) { confirmDelete = true } label: {
-                        Label("Delete entry", systemImage: "trash")
-                    }
-                } label: { Image(systemName: "ellipsis.circle").foregroundColor(P.textSec) }
-            }
-        }
         .confirmationDialog("Delete this entry permanently?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 deleting = true

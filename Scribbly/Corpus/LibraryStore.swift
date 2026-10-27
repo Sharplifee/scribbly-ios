@@ -103,7 +103,7 @@ final class LibraryStore: ObservableObject {
     func loadRecent() async {
         for attempt in 0..<2 {
             do {
-                let r = try await CorpusAPI.recentEntries(limit: 6)
+                let r = try await CorpusAPI.recentEntries(limit: 20)
                 recent = r; recentError = nil
                 if libraryCount == 0 { await loadCounts() }
                 if let d = try? JSONEncoder().encode(r) { try? d.write(to: Self.recentCacheURL, options: .atomic) }

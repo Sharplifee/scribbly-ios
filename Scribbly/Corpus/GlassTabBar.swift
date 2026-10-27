@@ -7,8 +7,7 @@ import SwiftUI
 /// While a recording is live (recording / paused / finishing) the tabs STAY
 /// usable — you can move between pages while you talk. A slim recorder strip
 /// grows out of the top of the same glass shape (one piece, not a second bar):
-/// live dot · timer · live wave · Pause · ✓ Finish · │ · Discard — the order
-/// you'd actually use them. The record disc steps aside so the four tabs
+/// timer · live wave · Discard · Pause · ✓ Finish, on dark monochrome glass. The record disc steps aside so the four tabs
 /// spread out. Upload shows its live percentage in the same strip, then the
 /// strip folds away. Server processing afterwards rides along as a thin line
 /// plus a ring and % badge on the record disc.
@@ -40,7 +39,6 @@ struct GlassTabBar: View {
 
     var body: some View {
         let m = mode
-        let live = m == .recorder && rec.state == .recording
         return VStack(spacing: 0) {
             if m == .recorder {
                 recorderStrip
@@ -59,8 +57,9 @@ struct GlassTabBar: View {
                 }
         }
         .fixedSize(horizontal: false, vertical: true)
+        // Monochrome while the recorder/upload strip is showing: dark glass, no colour cast.
         .sinkyGlass(RoundedRectangle(cornerRadius: 31, style: .continuous),
-                    tint: live ? P.accent.opacity(0.18) : nil)
+                    tint: m == .tabs ? nil : Color.black.opacity(0.55))
         .overlay(alignment: .bottom) { transferLine.padding(.horizontal, 30).padding(.bottom, 3) }
         .padding(.top, 6)
         .padding(.horizontal, 16).padding(.bottom, 8)
@@ -104,13 +103,13 @@ struct GlassTabBar: View {
         return rec.state == .recording ? P.accent : P.textDim
     }
 
+    /// Timer · live wave · then the controls in the order you use them:
+    /// Discard, Pause/Resume, ✓ Finish. The live wave is the "it's recording"
+    /// signal, so there's no separate dot.
     private var recorderStrip: some View {
         let busy = rec.state == .finishing
         let recording = rec.state == .recording
         return HStack(spacing: 10) {
-            Circle().fill(statusColor).frame(width: 8, height: 8)
-                .opacity(recording ? 0.6 + Double(rec.level) * 0.4 : 1)
-                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(timeString)
                     .font(.geist(size: 16, weight: .medium, design: .monospaced)).monospacedDigit()
@@ -118,18 +117,26 @@ struct GlassTabBar: View {
                 Text(statusText).monoLabel(8.5, color: statusColor).lineLimit(1)
             }
             .fixedSize()
+            .padding(.leading, 6)
             .accessibilityElement(children: .combine)
             WaveBars(level: rec.level, active: recording).frame(height: 22)
                 .frame(maxWidth: .infinity)
                 .accessibilityHidden(true)
-            // 1 · Pause / Resume
+            // 1 · Discard — asks first
+            Button { showDiscardConfirm = true } label: {
+                roundIcon("trash", tint: P.danger.opacity(0.9), size: 38)
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+            .accessibilityLabel("Discard recording")
+            // 2 · Pause / Resume
             Button { recording ? rec.pause() : rec.resume() } label: {
                 roundIcon(recording ? "pause.fill" : "play.fill", tint: P.ink, size: 38)
             }
             .buttonStyle(.plain)
             .disabled(busy)
             .accessibilityLabel(recording ? "Pause" : "Resume")
-            // 2 · Finish and save (the primary action)
+            // 3 · Finish and save (primary)
             Button {
                 guard rec.state == .recording || rec.state == .paused else { return }
                 finishTaps += 1
@@ -149,18 +156,6 @@ struct GlassTabBar: View {
             .disabled(busy)
             .accessibilityLabel("Finish and save recording")
             .sinkyHaptic(finishTaps)
-            // 3 · Discard — set apart, asks first
-            Rectangle().fill(P.border).frame(width: 1, height: 24).accessibilityHidden(true)
-            Button { showDiscardConfirm = true } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(P.danger.opacity(0.85))
-                    .frame(width: 30, height: 38)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(busy)
-            .accessibilityLabel("Discard recording")
         }
     }
 
@@ -335,16 +330,12 @@ struct MoreSection: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {   // no gap above the banner
-            PageHeader(title: "More", subtitle: "Collections · Query · Activity · Settings")
+            PageHeader(title: "More", subtitle: "Batches · Query · Activity · Settings")
                 .id(ScrollTop.anchor)
             VStack(spacing: 12) {
-                tap(icon: "square.stack.fill", title: "Collections", sub: "Every batch you've queued, with progress.", go: .collections)
+                tap(icon: "square.stack.fill", title: "Batches", sub: "Every fetch you've run — one batch per channel, playlist or set of links, with how much of it is saved.", go: .collections)
                 tap(icon: "sparkle.magnifyingglass", title: "Query", sub: "Ask a question across everything in the library.", go: .query)
-                tap(icon: "waveform.path.ecg", title: "Activity", sub: "Everything processing right now — pause, resume, retry, or cancel.", badge: up.pendingCount, go: .jobs)
-                NavigationLink(value: Route.failed) {
-                    rowLabel(icon: "exclamationmark.triangle.fill", title: "Didn't work", sub: "Every video, link or recording that failed — see why, retry, or remove.", badge: 0)
-                }
-                .buttonStyle(.plain)
+                tap(icon: "waveform.path.ecg", title: "Activity", sub: "What's processing now, the last 30 saved, and anything that didn't work — retry or remove.", badge: up.pendingCount, go: .jobs)
                 tap(icon: "applewatch", title: "Apple Watch", sub: "Record on the wrist; it lands here with the same place title.", go: .watch)
                 tap(icon: "gearshape.fill", title: "Settings", sub: "Permissions, recording, storage, server status.", go: .settings)
             }

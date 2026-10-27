@@ -27,7 +27,7 @@ final class FileIngestModel: ObservableObject {
 
     private let whisperCeilingBytes = 24 * 1024 * 1024
 
-    func handle(_ url: URL) async {
+    func handle(_ url: URL, fromPhotos: Bool = false) async {
         working = true; lastError = nil; status = "Preparing…"
         defer { working = false }
 
@@ -36,10 +36,16 @@ final class FileIngestModel: ObservableObject {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
         do {
+            // What it is (read from the ORIGINAL file, before any audio extraction)
+            // and where it was submitted from — both shown on the saved entry.
+            let kind = await Self.kind(of: url, fromPhotos: fromPhotos)
+            async let place = Self.currentPlace()
             let (local, mime, name, temporary) = try await prepare(url)
             let size = (try? local.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             status = "Uploading \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))…"
-            _ = try await Uploader.shared.uploadFile(at: local, title: name, mime: mime)
+            // Photos hands over "photos-<uuid>" — show what it is until the server titles it.
+            _ = try await Uploader.shared.uploadFile(at: local, title: fromPhotos ? kind : name, mime: mime,
+                                                     kind: kind, location: await place)
             if temporary { try? FileManager.default.removeItem(at: local) }
             status = "Saved — transcript is in your Library."
         } catch {
@@ -106,12 +112,42 @@ final class FileIngestModel: ObservableObject {
                     "Photos didn't hand over that video. If it's in iCloud, open it in Photos once so it downloads, then try again."])
             }
             working = false
-            await handle(movie.url)
+            await handle(movie.url, fromPhotos: true)
             try? FileManager.default.removeItem(at: movie.url)
         } catch {
             working = false
             lastError = error.localizedDescription
             status = nil
+        }
+    }
+
+    /// "Screen recording" / "Video" for Photos picks; the file type ("MP4",
+    /// "MOV", "M4A", "MP3"…) for files. Screen recordings carry no camera
+    /// make/model and match the screen's aspect ratio; camera video has both.
+    nonisolated static func kind(of url: URL, fromPhotos: Bool) async -> String {
+        let ext = url.pathExtension.lowercased()
+        guard fromPhotos else { return ext.isEmpty ? "File" : ext.uppercased() }
+        let asset = AVURLAsset(url: url)
+        let meta = (try? await asset.load(.metadata)) ?? []
+        var hasCamera = false
+        for item in meta {
+            let key = (item.identifier?.rawValue ?? "").lowercased()
+            if key.contains("make") || key.contains("model") || key.contains("camera") { hasCamera = true; break }
+        }
+        if !hasCamera, let track = try? await asset.loadTracks(withMediaType: .video).first,
+           let size = try? await track.load(.naturalSize) {
+            let screen = await MainActor.run { UIScreen.main.nativeBounds.size }
+            let a = max(size.width, size.height) / max(1, min(size.width, size.height))
+            let b = max(screen.width, screen.height) / max(1, min(screen.width, screen.height))
+            if abs(a - b) < 0.03 { return "Screen recording" }
+        }
+        return "Video"
+    }
+
+    /// Where the upload is being submitted from (nil if location is off / slow).
+    static func currentPlace() async -> String? {
+        await withCheckedContinuation { cont in
+            PlaceTagger.shared.tag { cont.resume(returning: $0) }
         }
     }
 

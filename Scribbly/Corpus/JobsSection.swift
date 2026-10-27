@@ -10,11 +10,29 @@ struct JobsSection: View {
     @ObservedObject private var model = JobsModel.shared
     @ObservedObject private var up = Uploader.shared
 
+    /// Activity is one page with two halves: what's happening + the last 30
+    /// saved, and everything that didn't work.
+    enum Half: String, CaseIterable { case saved = "Now & saved", failed = "Didn't work" }
+    @State private var half: Half = .saved
+    @State private var failedCount: Int?
+    @State private var saved: [Entry] = []
+    @State private var savedError: String?
+
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {   // no gap above the banner
             PageHeader(title: "Activity", subtitle: activitySubtitle,
                        back: { BottomChrome.shared.moreSub = nil })
+            Picker("Show", selection: $half) {
+                ForEach(Half.allCases, id: \.self) { h in
+                    Text(h == .failed && (failedCount ?? 0) > 0 ? "Didn't work \(failedCount!)" : h.rawValue).tag(h)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16).padding(.top, 14)
+            if half == .failed {
+                FailedList(onCount: { failedCount = $0 }).padding(.vertical, 14)
+            } else {
             VStack(spacing: 14) {
 
                 // ── Phone-side: not yet uploaded
@@ -47,12 +65,13 @@ struct JobsSection: View {
                     }
                 }
 
-                // ── Server-side voice/file jobs
-                card(title: "VOICE & FILES ON SHARP'S CLOUD COMPUTER · \(model.voiceJobs.count)") {
-                    if model.voiceJobs.isEmpty {
+                // ── Server-side voice/file jobs still in motion (saved ones move to
+                // "Last 30 saved" below; failed ones live under Didn't work).
+                card(title: "PROCESSING ON SHARP'S CLOUD COMPUTER · \(activeVoice.count)") {
+                    if activeVoice.isEmpty {
                         Text("Nothing processing.").font(.geist(size: 13)).foregroundColor(P.textDim)
                     }
-                    ForEach(model.voiceJobs) { j in
+                    ForEach(activeVoice) { j in
                         HStack(alignment: .top, spacing: 10) {
                             stateIcon(j.state)
                             VStack(alignment: .leading, spacing: 4) {
@@ -140,18 +159,44 @@ struct JobsSection: View {
                     }
                 }
 
+                // ── The last 30 things that made it into the Library
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("LAST 30 SAVED").sectionHead().padding(.horizontal, 18)
+                    if saved.isEmpty {
+                        Text(savedError ?? "Loading…").font(.geist(size: 13)).foregroundColor(P.textDim)
+                            .padding(.horizontal, 18)
+                    }
+                    LazyVStack(spacing: 0) {
+                        ForEach(saved) { e in
+                            NavigationLink(value: Route.entry(e.id, e)) { LibraryRow(entry: e) }
+                                .buttonStyle(.plain)
+                        }
+                    }
+                }
+
                 if let e = model.error {
                     Text(e).font(.geist(size: 12)).foregroundColor(P.danger).multilineTextAlignment(.center).padding(.horizontal, 20)
                 }
                 Text(model.lastRefresh.map { "Updated \($0.formatted(date: .omitted, time: .standard))" } ?? "Loading…")
                     .font(.geist(size: 11)).foregroundColor(P.textDim)
             }
-            .padding(.top, 8).padding(.bottom, 30)
+            .padding(.top, 14).padding(.bottom, 30)
+            }
             }
         }
+        .task(id: model.lastRefresh) { await loadSaved() }
         .onAppear { model.watch("activity") }
         .onDisappear { model.unwatch("activity") }
         .refreshable { await model.refresh() }
+    }
+
+    private var activeVoice: [JobsModel.VoiceJob] {
+        model.voiceJobs.filter { ["pending", "transcribing", "saving", "paused"].contains($0.state) }
+    }
+
+    private func loadSaved() async {
+        do { saved = try await CorpusAPI.recentEntries(limit: 30); savedError = nil }
+        catch { if saved.isEmpty { savedError = "Couldn't load — pull down to retry." } }
     }
 
     /// "2 running · 1 waiting on this phone", or that it's all quiet.

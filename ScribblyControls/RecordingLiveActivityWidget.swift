@@ -8,12 +8,11 @@ import ActivityKit
 /// Dynamic Island + Lock Screen (+ CarPlay, which mirrors it) for a Scribbly
 /// recording, in the Sinky look: true black, Geist Mono timer, a live
 /// copper → tan → teal sound wave driven by the real input level, ink
-/// controls, and a bright copper keyline / border.
+/// controls, and a white keyline / border.
 ///
 /// No recording dot anywhere — the moving wave is the "recording" signal.
-///   • Compact: wave on the leading side, elapsed time trailing.
-///   • Expanded: wave leading, elapsed time trailing (same places as compact,
-///     so it grows in place), status + Pause/Resume + ✓ Finish along the bottom.
+///   • Compact: elapsed time leading, live wave trailing (taps open the app).
+///   • Expanded: time top-left, Pause/Resume + ✓ Finish top-right, wave below.
 ///   • Minimal: a three-bar wave.
 ///   • Lock Screen: time, wave, Pause/Resume + ✓, gradient rule, copper border.
 /// The timer is Text(timerInterval:), so it ticks without any app updates; the
@@ -27,43 +26,47 @@ struct RecordingLiveActivityWidget: Widget {
                 .activitySystemActionForegroundColor(Sinky.ink)
                 .widgetURL(URL(string: "scribbly://open"))
         } dynamicIsland: { ctx in
+            // Collapsed (compact): elapsed time far left, live wave right.
+            // iOS opens the app on any tap in the collapsed island — buttons
+            // there can't be pressed — so the working Pause/✓ live in the
+            // expanded island (touch and hold) and on the Lock Screen.
+            // Expanded: time top-left, Pause + ✓ top-right, wave across the middle.
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Wave(levels: ctx.state.levels, paused: ctx.state.paused, bars: 14, height: 30)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.leading, 8).padding(.top, 4)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Self.timer(ctx.state)
+                            .font(Sinky.font(24, .medium, mono: true)).foregroundColor(Sinky.ink)
+                            .lineLimit(1).minimumScaleFactor(0.6)
+                            .multilineTextAlignment(.leading)
+                            .frame(width: 104, alignment: .leading)
+                        Self.status(ctx.state).font(Sinky.font(9, .medium, mono: true)).tracking(0.8)
+                    }
+                    .padding(.leading, 8).padding(.top, 2)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Self.timer(ctx.state)
-                        .font(Sinky.font(24, .medium, mono: true)).foregroundColor(Sinky.ink)
-                        .lineLimit(1).minimumScaleFactor(0.6)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 104, alignment: .trailing)
-                        .padding(.trailing, 8).padding(.top, 4)
+                    Self.controls(ctx.state, size: 40)
+                        .padding(.trailing, 8).padding(.top, 2)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    HStack(spacing: 10) {
-                        Self.status(ctx.state).font(Sinky.font(10, .medium, mono: true)).tracking(0.8)
-                        Spacer(minLength: 8)
-                        Self.controls(ctx.state, size: 40)
-                    }
-                    .padding(.horizontal, 8).padding(.top, 6)
+                    Wave(levels: ctx.state.levels, paused: ctx.state.paused, bars: 28, height: 26)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 10).padding(.top, 6)
                 }
             } compactLeading: {
-                Wave(levels: ctx.state.levels, paused: ctx.state.paused, bars: 6, height: 14)
-                    .frame(width: 28)
-                    .padding(.leading, 2)
-            } compactTrailing: {
                 Self.timer(ctx.state)
                     .font(Sinky.font(13, .medium, mono: true)).foregroundColor(Sinky.ink)
                     .lineLimit(1).minimumScaleFactor(0.7)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 48, alignment: .trailing)
+                    .multilineTextAlignment(.leading)
+                    .frame(width: 46, alignment: .leading)
+                    .padding(.leading, 2)
+            } compactTrailing: {
+                Wave(levels: ctx.state.levels, paused: ctx.state.paused, bars: 7, height: 14)
+                    .frame(width: 34)
             } minimal: {
                 Wave(levels: ctx.state.levels, paused: ctx.state.paused, bars: 3, height: 12)
                     .frame(width: 14)
             }
-            .keylineTint(Sinky.copperBright)
+            .keylineTint(Color.white.opacity(0.85))
             .widgetURL(URL(string: "scribbly://open"))
         }
     }
@@ -144,7 +147,7 @@ private struct LockScreenRecording: View {
         .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
         .overlay {
             ContainerRelativeShape()
-                .strokeBorder(Sinky.copperBright.opacity(state.paused ? 0.55 : 0.9), lineWidth: 1.5)
+                .strokeBorder(Color.white.opacity(state.paused ? 0.45 : 0.8), lineWidth: 1.5)
         }
     }
 }
@@ -179,5 +182,7 @@ private struct Wave: View {
             }
         }
         .frame(height: height)
+        // Short, snappy transitions so the wave tracks the voice, not the default slow fade.
+        .animation(.easeOut(duration: 0.2), value: levels)
     }
 }

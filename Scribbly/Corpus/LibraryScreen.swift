@@ -103,7 +103,7 @@ struct LibraryScreen: View {
             }
             .toolbar(.hidden, for: .tabBar)
             .navigationDestination(for: String.self) { id in
-                EntryDetail(entryID: id, preloaded: nil).chromeInset().toolbar(.visible, for: .navigationBar)
+                EntryDetail(entryID: id, preloaded: nil).chromeInset().toolbar(.hidden, for: .navigationBar)
             }
             .navigationDestination(for: Route.self) { r in destination(r) }
             .navigationTitle(title(for: s))
@@ -153,7 +153,9 @@ struct LibraryScreen: View {
 
     /// Every pushed screen, by value, so a tab can always be popped to its root.
     private func destination(_ r: Route) -> some View {
-        destinationContent(r).toolbar(.visible, for: .navigationBar)
+        // Pushed pages draw their own back button in the PageHeader row (next to
+        // the wordmark), so the system bar stays hidden; swipe-back still works.
+        destinationContent(r).toolbar(.hidden, for: .navigationBar)
     }
 
     @ViewBuilder private func destinationContent(_ r: Route) -> some View {

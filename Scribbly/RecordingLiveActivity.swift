@@ -22,7 +22,7 @@ final class RecordingLiveActivity {
     /// Seconds between Live Activity pushes while recording. ActivityKit
     /// throttles anything faster, and the timer ticks on its own
     /// (Text(timerInterval:)), so the only reason to push is the waveform.
-    private static let pushInterval: UInt64 = 1_000_000_000
+    private static let pushInterval: UInt64 = 500_000_000
 
     func bind() {
         guard !started else { return }
@@ -51,7 +51,7 @@ final class RecordingLiveActivity {
             // window so the wave reads like speech, not a flat average.
             self.windowPeak = max(self.windowPeak, Double(min(1, max(0.05, l))))
             let now = Date()
-            if now.timeIntervalSince(self.windowStart) >= 0.25 {
+            if now.timeIntervalSince(self.windowStart) >= 0.12 {
                 self.recentLevels.append(self.windowPeak)
                 let n = RecordingLiveActivity.levelSamples
                 if self.recentLevels.count > n { self.recentLevels.removeFirst(self.recentLevels.count - n) }

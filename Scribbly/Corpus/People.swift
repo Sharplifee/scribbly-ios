@@ -66,7 +66,7 @@ struct PersonEntry: Decodable, Identifiable, Hashable {
 extension CorpusAPI {
     /// The person page's segments.
     enum PersonRole: String, CaseIterable, Identifiable {
-        case all = "All", own = "Their videos", featured = "Appearances"
+        case own = "Their videos", featured = "Appearances", all = "All"
         var id: String { rawValue }
     }
 
@@ -76,7 +76,7 @@ extension CorpusAPI {
         var isByDate: Bool { self == .newest || self == .oldest }
     }
 
-    static let personSelect = "person,role,id,title,type,tags,date,created_at,collection_id,duration_seconds,notion_url"
+    static let personSelect = "person,role,id,title,type,tags,date,created_at,collection_id,duration_seconds,notion_url,place,kind"
 
     /// Every query character outside the unreserved set is percent-encoded —
     /// names like "Sinclair & Saxon" must not split the query string (URLComponents
@@ -331,7 +331,13 @@ struct PersonRow: View {
 struct PersonDetail: View {
     let person: Person
 
-    @State private var role: CorpusAPI.PersonRole = .all
+    /// Opens on their own videos (or Appearances when they have none of their own).
+    @State private var role: CorpusAPI.PersonRole
+
+    init(person: Person) {
+        self.person = person
+        _role = State(initialValue: person.own_videos > 0 ? .own : .featured)
+    }
     @State private var sortName = CorpusAPI.PersonSort.newest.rawValue
     @State private var search = ""
 
@@ -360,8 +366,6 @@ struct PersonDetail: View {
     private var request: Request {
         Request(role: role, sort: sort, search: search.trimmingCharacters(in: .whitespacesAndNewlines))
     }
-    /// Segments only when the person has both kinds.
-    private var showSegments: Bool { person.own_videos > 0 && person.appearances > 0 }
 
     var body: some View {
         ScrollView {
@@ -403,16 +407,23 @@ struct PersonDetail: View {
         VStack(alignment: .leading, spacing: 8) {
             ListSearch(placeholder: "Search \(person.person)…", text: $search,
                        sorts: CorpusAPI.PersonSort.allCases.map { s in s.rawValue }, sort: $sortName)
-            if showSegments {
-                Picker("Show", selection: $role) {
-                    ForEach(CorpusAPI.PersonRole.allCases) { r in Text(r.rawValue).tag(r) }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 16)
-                .padding(.top, 2)
+            // Every person gets the same three views, with real counts.
+            Picker("Show", selection: $role) {
+                ForEach(CorpusAPI.PersonRole.allCases) { r in Text(segmentLabel(r)).tag(r) }
             }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.top, 2)
         }
         .padding(.top, 2)
+    }
+
+    private func segmentLabel(_ r: CorpusAPI.PersonRole) -> String {
+        switch r {
+        case .own: return "Their videos \(person.own_videos)"
+        case .featured: return "Appearances \(person.appearances)"
+        case .all: return "All"
+        }
     }
 
     /// "3,487 videos · Newest first", or "12 matches" while searching.

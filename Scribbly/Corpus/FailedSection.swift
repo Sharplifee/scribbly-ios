@@ -4,6 +4,20 @@ import SwiftUI
 /// Library — from any batch, any day — with the reason in plain words and a
 /// way to retry each one (or all of them) or remove it from the list.
 struct FailedSection: View {
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {   // no gap above the banner
+                PageHeader(title: "Didn't work", subtitle: "Retry or remove anything that failed", underNavBar: true)
+                FailedList().padding(.vertical, 12)
+            }
+        }
+        .headerOwnsTitle()
+    }
+}
+
+/// The failed items themselves — shown inside Activity (its "Didn't work" half)
+/// and on the standalone page.
+struct FailedList: View {
     @StateObject private var model = FailedModel()
     /// Groups the user expanded past the first few rows. Hundreds of rows with
     /// three buttons each, built eagerly, froze the phone (watchdog kill, build 220 —
@@ -11,11 +25,10 @@ struct FailedSection: View {
     /// and each group shows a handful until asked for more.
     @State private var expanded: Set<String> = []
     private let preview = 5
+    /// Reports the count to the Activity segment label.
+    var onCount: ((Int) -> Void)? = nil
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {   // no gap above the banner
-            PageHeader(title: "Didn't work", subtitle: "Retry or remove anything that failed", underNavBar: true)
             LazyVStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text(model.loading && model.total == 0 ? "Loading…" : "\(model.total) didn't make it into your Library")
@@ -28,7 +41,8 @@ struct FailedSection: View {
                     }
                 }
                 .padding(.horizontal, 18)
-
+                Text("Videos with no spoken words are saved automatically from their YouTube details, and download failures are retried by the server every 30 minutes — they drop off this list once they're in your Library.")
+                    .font(.geist(size: 11.5)).foregroundColor(P.textDim).padding(.horizontal, 18)
                 if let m = model.message {
                     Text(m).font(.geist(size: 12)).foregroundColor(P.good).padding(.horizontal, 18)
                 }
@@ -62,12 +76,8 @@ struct FailedSection: View {
                         .frame(maxWidth: .infinity).padding(.top, 40)
                 }
             }
-            .padding(.vertical, 12)
-            }
-        }
-        .headerOwnsTitle()
-        .refreshable { await model.load() }
-        .task { await model.load() }
+            .task { await model.load() }
+            .onChange(of: model.total) { onCount?($0) }
     }
 
     @ViewBuilder private func moreButton(id: String, count: Int) -> some View {

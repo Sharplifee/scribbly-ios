@@ -147,10 +147,12 @@ final class Uploader: NSObject, ObservableObject {
     }
 
     @discardableResult
-    func uploadFile(at fileURL: URL, title: String, mime: String) async throws -> String {
+    func uploadFile(at fileURL: URL, title: String, mime: String,
+                    kind: String? = nil, location: String? = nil) async throws -> String {
         let duration = try? await AudioSplitter.durationSeconds(of: AVURLAsset(url: fileURL))
         let id = try await Task.detached(priority: .userInitiated) { [self] in
-            try self.enqueue(fileURL: fileURL, title: title, duration: duration, mime: mime)
+            try self.enqueue(fileURL: fileURL, title: title, duration: duration, mime: mime,
+                             location: location, kind: kind)
         }.value
         let outcome: (Bool, String?) = await withCheckedContinuation { (cont: CheckedContinuation<(Bool, String?), Never>) in
             Task { await self.drain(jobID: id) { ok, msg in cont.resume(returning: (ok, msg)) } }
@@ -212,6 +214,8 @@ final class Uploader: NSObject, ObservableObject {
         var location: String? = nil
         /// "Add to this recording": the entry this audio is appended to instead of creating a new one.
         var appendTo: String? = nil
+        /// What it is, shown on the entry: "Recording", "Screen recording", "Video", "MP4", "M4A"…
+        var kind: String? = nil
     }
 
     /// Queue audio WITHOUT uploading — shown in Jobs as "needs your OK".
@@ -244,7 +248,8 @@ final class Uploader: NSObject, ObservableObject {
     /// the main thread.
     @discardableResult
     private func enqueue(fileURL: URL, title: String, duration: TimeInterval?, mime: String,
-                         held: Bool = false, location: String? = nil, appendTo: String? = nil) throws -> String {
+                         held: Bool = false, location: String? = nil, appendTo: String? = nil,
+                         kind: String? = nil) throws -> String {
         let id = UUID().uuidString
         let srcBytes = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
         for (job, audio) in jobs() {
@@ -263,7 +268,8 @@ final class Uploader: NSObject, ObservableObject {
         try fm.copyItem(at: fileURL, to: dest)
 
         try write(Job(id: id, title: title, mime: mime, duration: duration,
-                      createdAt: Date(), attempts: 0, held: held ? true : nil, location: location, appendTo: appendTo))
+                      createdAt: Date(), attempts: 0, held: held ? true : nil, location: location, appendTo: appendTo,
+                      kind: kind))
         refreshPendingCount()
         return id
     }
@@ -411,7 +417,7 @@ final class Uploader: NSObject, ObservableObject {
                     DispatchQueue.main.async { self.stage = "Uploading…"; self.uploadFraction = 0 }
                     let result = try await AudioUpload.ingestWhole(
                         fileURL: audio, title: job.title, mime: job.mime, location: job.location,
-                        appendTo: job.appendTo,
+                        appendTo: job.appendTo, kind: job.kind ?? "Recording",
                         onProgress: { frac in
                             DispatchQueue.main.async {
                                 // The bar shows real bytes on the wire (with the %);

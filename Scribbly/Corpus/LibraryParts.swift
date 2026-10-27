@@ -100,6 +100,15 @@ struct LibraryRow: View {
 }
 
 /// A pinned section header: "Today ·········· 7".
+/// The window's top safe-area inset (status bar / Dynamic Island), for headers
+/// that need to know when they've pinned to the top.
+enum SafeTop {
+    static var value: CGFloat {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        return scenes.flatMap(\.windows).first(where: \.isKeyWindow)?.safeAreaInsets.top ?? 59
+    }
+}
+
 struct LibrarySectionHeader: View {
     let title: String
     let count: String
@@ -115,8 +124,23 @@ struct LibrarySectionHeader: View {
             }
             .padding(.horizontal, 18).padding(.vertical, 9)
             .frame(maxWidth: .infinity)
-            .background(Color.black.opacity(0.96))
-            .overlay(alignment: .bottom) { Rectangle().fill(P.border.opacity(0.7)).frame(height: 1) }
+            // Seamless sticky header: in the list it's a plain black band; once it
+            // pins to the top it fills up behind the status bar (no rows peeking
+            // through above it) and fades softly into the list below — no hard bar.
+            .background(GeometryReader { g in
+                let minY = g.frame(in: .global).minY
+                let pinned = minY <= SafeTop.value + 1
+                ZStack(alignment: .top) {
+                    Rectangle().fill(Color.black)
+                        .frame(height: g.size.height + (pinned ? max(0, minY) : 0))
+                        .offset(y: pinned ? -max(0, minY) : 0)
+                    LinearGradient(colors: [Color.black, Color.black.opacity(0)], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 22)
+                        .offset(y: g.size.height)
+                        .opacity(pinned ? 1 : 0)
+                }
+                .animation(.easeOut(duration: 0.18), value: pinned)
+            })
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
         }

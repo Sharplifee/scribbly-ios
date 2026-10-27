@@ -377,3 +377,16 @@ struct AppTextSize: ViewModifier {
         }
     }
 }
+
+/// Pushed pages hide the system nav bar (their back button lives in the
+/// PageHeader row), which would normally also kill the edge swipe-back.
+/// Keep it: the pop gesture is allowed whenever there's something to pop.
+extension UINavigationController: UIGestureRecognizerDelegate {
+    override open func viewDidLoad() {
+        super.viewDidLoad()
+        interactivePopGestureRecognizer?.delegate = self
+    }
+    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        viewControllers.count > 1
+    }
+}
