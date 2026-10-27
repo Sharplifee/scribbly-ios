@@ -1221,22 +1221,29 @@ private struct RecentList: View {
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(RecentFilter.allCases) { f in
-                    let on = f == filter
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { filter = f }
-                    } label: {
-                        Text(f.rawValue).font(.geist(size: 14, weight: on ? .semibold : .medium))
-                            .foregroundColor(on ? .black : P.ink)
-                            .padding(.horizontal, 14).frame(height: 34)
-                            .background(Capsule().fill(on ? P.ink : P.surface))
-                            .overlay(Capsule().stroke(on ? Color.clear : P.edge))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(on ? .isSelected : [])
+                ForEach(RecentFilter.allCases, id: \.rawValue) { (f: RecentFilter) in
+                    chip(f)
                 }
             }
         }
+    }
+
+    private func chip(_ f: RecentFilter) -> some View {
+        let on: Bool = f.rawValue == filter.rawValue
+        let weight: Font.Weight = on ? .semibold : .medium
+        let fg: Color = on ? Color.black : P.ink
+        let bg: Color = on ? P.ink : P.surface
+        return Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { filter = f }
+        } label: {
+            Text(f.rawValue).font(.geist(size: 14, weight: weight))
+                .foregroundColor(fg)
+                .padding(.horizontal, 14).frame(height: 34)
+                .background(Capsule().fill(bg))
+                .overlay(Capsule().stroke(P.edge).opacity(on ? 0 : 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     private func loadFiltered() async {

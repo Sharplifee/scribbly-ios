@@ -274,7 +274,7 @@ struct WaveBars: View {
             HStack(alignment: .center, spacing: 4) {
                 ForEach(0..<count, id: \.self) { i in
                     Capsule()
-                        .fill(active ? AnyShapeStyle(Sinky.rotatingColor(i, of: count, phase: phase)) : AnyShapeStyle(P.border))
+                        .fill(active ? AnyShapeStyle(WaveBars.rotatingColor(i, of: count, phase: phase)) : AnyShapeStyle(P.border))
                         .frame(width: 4, height: Self.barHeight(i, of: count, level: level, active: active, maxH: maxH))
                         .animation(.linear(duration: 0.08), value: level)
                 }
@@ -283,6 +283,21 @@ struct WaveBars: View {
         }
         }
         .frame(minWidth: 0, maxWidth: .infinity)
+    }
+
+    /// Copper → tan → teal looped and shifted by `phase`, so the gradient
+    /// travels across the bars while recording.
+    static func rotatingColor(_ i: Int, of n: Int, phase: Double) -> Color {
+        var t = ((n > 1 ? Double(i) / Double(n) : 0) + phase).truncatingRemainder(dividingBy: 1)
+        if t < 0 { t += 1 }
+        let u = t < 0.5 ? t * 2 : (1 - t) * 2
+        let a: (Double, Double, Double) = (0.910, 0.529, 0.353)
+        let b: (Double, Double, Double) = (0.788, 0.635, 0.478)
+        let c: (Double, Double, Double) = (0.310, 0.639, 0.682)
+        func mix(_ x: (Double, Double, Double), _ y: (Double, Double, Double), _ k: Double) -> Color {
+            Color(red: x.0 + (y.0 - x.0) * k, green: x.1 + (y.1 - x.1) * k, blue: x.2 + (y.2 - x.2) * k)
+        }
+        return u < 0.5 ? mix(a, b, u * 2) : mix(b, c, (u - 0.5) * 2)
     }
 
     static func barHeight(_ i: Int, of count: Int, level: Float, active: Bool, maxH: CGFloat) -> CGFloat {
