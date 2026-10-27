@@ -61,39 +61,28 @@ struct EntryDetail: View {
         return out
     }
 
-    /// Copy / export / delete, as a glass circle beside the wordmark.
-    private var moreMenu: some View {
-        Menu {
-            Button { copy(summaryText()) } label: { Label("Copy summary", systemImage: "text.alignleft") }
-            Button { copy(transcriptText()) } label: { Label("Copy transcript", systemImage: "text.quote") }
-            Button { copy(exportText()) } label: { Label("Copy both", systemImage: "doc.on.doc") }
-            ShareLink(item: exportText(), preview: SharePreview(entry?.title ?? "Entry")) {
-                Label("Export…", systemImage: "square.and.arrow.up")
-            }
-            Button(role: .destructive) { confirmDelete = true } label: {
-                Label("Delete entry", systemImage: "trash")
-            }
-        } label: {
-            Image(systemName: "ellipsis").font(.system(size: 15, weight: .bold))
-                .foregroundColor(P.ink)
-                .frame(width: 38, height: 38)
-                .sinkyGlass(Circle(), interactive: true)
-                .contentShape(Circle())
-        }
-        .accessibilityLabel("More actions")
+    private var bannerTitle: String {
+        guard let e = entry else { return "" }
+        return e.displayTitle(creator: creators.creator(for: e))
+    }
+    private var bannerEyebrow: String? {
+        guard let e = entry else { return nil }
+        return creators.creator(for: e)?.uppercased()
     }
 
     /// "Voice note · Oct 23" over the banner; the entry's own title follows below it.
     private var bannerSubtitle: String {
         guard let e = entry else { return "Entry" }
-        let kind = e.isVoice ? e.kindLabel : e.displayType
-        return kind + " · " + e.displayDate
+        return e.metaLine(creator: nil)
     }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {   // no gap above the banner
-            PageHeader(title: "", subtitle: bannerSubtitle, underNavBar: true, accessory: AnyView(moreMenu))
+            // The entry's title and its details live IN the banner: creator,
+            // title, then "Recording · Oct 27, 2:37 PM · 3m 50s · Sleepy Ridge, Orem".
+            PageHeader(eyebrow: bannerEyebrow, title: bannerTitle, subtitle: bannerSubtitle,
+                       underNavBar: true, titleSize: 26)
             if let e = entry {
                 VStack(alignment: .leading, spacing: 16) {
                     header(e)
@@ -219,15 +208,7 @@ struct EntryDetail: View {
     /// Creator, title ("Creator — Title" when the title doesn't name them),
     /// the meta line (voice: time · duration · place), and Open original.
     @ViewBuilder private func header(_ e: Entry) -> some View {
-        let creator = creators.creator(for: e)
-        if let c = creator {
-            Text(c).monoLabel(10.5, color: P.accent)
-        }
-        Text(e.displayTitle(creator: creator)).font(.geist(size: 26, weight: .semibold)).tracking(-0.8).foregroundColor(P.ink)
-        // The creator is already the accent line above, so the meta line skips it.
-        Text(e.metaLine(creator: nil)).font(.geist(size: 13)).foregroundColor(P.textSec)
-        GradientRule(width: 64)
-
+        // Creator, title and details are in the banner above.
         if let link = originalLink(e) {
             Link(destination: link) {
                 HStack(spacing: 8) {
@@ -379,8 +360,14 @@ struct EntryDetail: View {
         }
     }
 
+    /// Clear, unmistakable section breaks: Summary · Send to · Transcript.
     private func sectionLabel(_ t: String) -> some View {
-        Text(t.uppercased()).sectionHead()
+        VStack(alignment: .leading, spacing: 6) {
+            Text(t).font(.geist(size: 21, weight: .bold)).tracking(-0.5).foregroundColor(P.ink)
+            GradientRule(width: 40)
+        }
+        .padding(.top, 10)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 

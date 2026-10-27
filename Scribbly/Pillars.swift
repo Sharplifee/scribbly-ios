@@ -190,6 +190,8 @@ struct PageHeader: View {
     var accessory: AnyView? = nil
     /// One card height for every page.
     var cardHeight: CGFloat = PageHeader.height
+    /// Title size inside the card (entries use a smaller one for long titles).
+    var titleSize: CGFloat = 32
 
     static let height: CGFloat = FinsBackground.bannerHeight
     static let navBar: CGFloat = 44
@@ -197,7 +199,8 @@ struct PageHeader: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: 14) {
+        // Wordmark row sits snug on the card — no dead band between them.
+        VStack(spacing: 6) {
             topRow
             ZStack(alignment: .bottomLeading) {
                 FinsBackground()
@@ -210,19 +213,19 @@ struct PageHeader: View {
             .accessibilityAddTraits(.isHeader)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.top, 4)
     }
 
     private var wordmark: some View {
         HStack(alignment: .top, spacing: 1) {
-            Text("Scribbly").font(.geist(size: 27, weight: .semibold)).tracking(-1.2).foregroundColor(P.ink)
-            Text("®").font(.geist(size: 10)).foregroundColor(P.textSec)
+            Text("Scribbly").font(.geist(size: 30, weight: .semibold)).tracking(-1.3).foregroundColor(P.ink)
+            Text("®").font(.geist(size: 11)).foregroundColor(P.textSec)
         }
         .accessibilityLabel("Scribbly")
     }
 
     @ViewBuilder private var trailingText: some View {
-        if let trailing, !trailing.isEmpty { Text(trailing).monoLabel(10) }
+        if let trailing, !trailing.isEmpty { Text(trailing).monoLabel(11) }
     }
 
     @ViewBuilder private var topRow: some View {
@@ -268,7 +271,7 @@ struct PageHeader: View {
             }
             if !title.isEmpty {
                 Text(title)
-                    .font(.geist(size: 32, weight: .semibold)).tracking(-1.4).lineSpacing(-2)
+                    .font(.geist(size: titleSize, weight: .semibold)).tracking(-1.4).lineSpacing(-2)
                     .multilineTextAlignment(.leading)
                     .foregroundColor(P.ink).lineLimit(3).minimumScaleFactor(0.55)
             }

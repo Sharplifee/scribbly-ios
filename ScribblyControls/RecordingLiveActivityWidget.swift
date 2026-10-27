@@ -174,10 +174,12 @@ private struct Wave: View {
 
     var body: some View {
         let s = samples
+        // Shifts every update, so the gradient rotates across the wave.
+        let phase = (Date().timeIntervalSinceReferenceDate * 0.35).truncatingRemainder(dividingBy: 1)
         return HStack(alignment: .center, spacing: 2) {
             ForEach(0..<s.count, id: \.self) { i in
                 Capsule()
-                    .fill(paused ? Color.white.opacity(0.25) : Sinky.rampColor(i, of: s.count))
+                    .fill(paused ? Color.white.opacity(0.25) : Sinky.rotatingColor(i, of: s.count, phase: phase))
                     .frame(width: 3, height: max(3, height * CGFloat(paused ? 0.12 : min(1, s[i]))))
             }
         }

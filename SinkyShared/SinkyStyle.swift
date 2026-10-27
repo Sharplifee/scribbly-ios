@@ -44,6 +44,17 @@ enum Sinky {
         }
         return t < 0.5 ? mix(a, b, t * 2) : mix(b, c, (t - 0.5) * 2)
     }
+
+    /// The same copper → tan → teal ramp, looped (… → teal → tan → copper) and
+    /// shifted by `phase` (0…1), so a row of bars can show a gradient that
+    /// travels/rotates across it over time.
+    static func rotatingColor(_ i: Int, of n: Int, phase: Double) -> Color {
+        let base = n > 1 ? Double(i) / Double(n) : 0
+        var t = (base + phase).truncatingRemainder(dividingBy: 1)
+        if t < 0 { t += 1 }
+        let tri = t < 0.5 ? t * 2 : (1 - t) * 2      // 0→1→0: seamless loop
+        return rampColor(Int((tri * 1000).rounded()), of: 1001)
+    }
 }
 
 /// The record mark: an ink disc with a copper dot — the app's centre button.

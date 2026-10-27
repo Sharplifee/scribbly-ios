@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import UIKit
 #if canImport(ActivityKit)
 import ActivityKit
 #endif
@@ -66,10 +67,34 @@ final class RecordingLiveActivity {
                 self.sync(state: .recording, appending: Recorder.shared.appendTo != nil)
             }
         }
+        // Leaving the app mid-recording: pop the island open (silently) so
+        // Pause and ✓ Finish are right there. iOS only allows buttons in the
+        // expanded island — the small pill opens the app when tapped.
+        NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.popOpen() }
+            .store(in: &bag)
         rec.$state.combineLatest(rec.$appendTo)
             .receive(on: RunLoop.main)
             .sink { [weak self] state, appendTo in self?.sync(state: state, appending: appendTo != nil) }
             .store(in: &bag)
+    }
+
+    private func popOpen() {
+        guard #available(iOS 16.2, *) else { return }
+        let rec = Recorder.shared
+        guard rec.state == .recording || rec.state == .paused,
+              let a = Activity<RecordingActivityAttributes>.activities.first else { return }
+        let cs = RecordingActivityAttributes.ContentState(
+            timerStart: Date().addingTimeInterval(-rec.elapsed),
+            paused: rec.state == .paused,
+            pausedElapsed: Int(rec.elapsed),
+            appending: rec.appendTo != nil,
+            levels: recentLevels)
+        let alert = AlertConfiguration(title: "Recording", body: "Pause or finish from here.",
+                                       sound: .named("silence.wav"))
+        Task { await a.update(ActivityContent(state: cs, staleDate: nil), alertConfiguration: alert) }
+        CrashReporter.shared.add("live activity popped open on background")
     }
 
     private func sync(state: Recorder.State, appending: Bool) {

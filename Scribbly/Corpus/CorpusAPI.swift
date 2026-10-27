@@ -189,12 +189,12 @@ enum CorpusAPI {
     }
 
     /// Newest few entries without summaries — tiny payload, used for Home → Recent at launch.
-    static func recentEntries(limit: Int = 6) async throws -> [Entry] {
+    static func recentEntries(limit: Int = 6, filters: [URLQueryItem] = []) async throws -> [Entry] {
         let url = restURL("scribbly_entries", [
             .init(name: "select", value: "id,title,type,date,created_at,collection_id,duration_seconds,place,kind"),
             .init(name: "order", value: "created_at.desc"),
             .init(name: "limit", value: String(limit))
-        ])
+        ] + filters)
         return try await getJSON(url, as: [Entry].self, timeout: 20)
     }
 

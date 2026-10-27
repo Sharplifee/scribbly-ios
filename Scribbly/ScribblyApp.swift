@@ -265,18 +265,22 @@ struct WaveBars: View {
     let active: Bool
 
     var body: some View {
+        // While recording, the copper → tan → teal gradient rotates across the bars.
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !active)) { tl in
+        let phase = (tl.date.timeIntervalSinceReferenceDate * 0.35).truncatingRemainder(dividingBy: 1)
         GeometryReader { geo in
             let count = max(6, min(28, Int(geo.size.width / 8)))
             let maxH = max(4, geo.size.height)
             HStack(alignment: .center, spacing: 4) {
                 ForEach(0..<count, id: \.self) { i in
                     Capsule()
-                        .fill(active ? AnyShapeStyle(P.accent) : AnyShapeStyle(P.border))
+                        .fill(active ? AnyShapeStyle(Sinky.rotatingColor(i, of: count, phase: phase)) : AnyShapeStyle(P.border))
                         .frame(width: 4, height: Self.barHeight(i, of: count, level: level, active: active, maxH: maxH))
                         .animation(.linear(duration: 0.08), value: level)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
+        }
         }
         .frame(minWidth: 0, maxWidth: .infinity)
     }

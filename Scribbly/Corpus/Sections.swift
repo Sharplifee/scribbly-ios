@@ -1191,8 +1191,61 @@ struct IngestSection: View {
 
 
 /// "Recent" on Home — the four newest entries, then a link to the whole library.
+/// Home → Recent activity filter: one tap shows just that kind, newest first.
+enum RecentFilter: String, CaseIterable, Identifiable {
+    case all = "All", youtube = "YouTube", recordings = "Recordings", uploads = "Uploads",
+         instagram = "Instagram", notes = "Notes"
+    var id: String { rawValue }
+    var query: [URLQueryItem] {
+        switch self {
+        case .all: return []
+        case .youtube: return [.init(name: "type", value: "eq.YouTube")]
+        case .recordings: return [.init(name: "type", value: "eq.Voice Note"),
+                                  .init(name: "or", value: "(kind.is.null,kind.eq.Recording)")]
+        case .uploads: return [.init(name: "type", value: "eq.Voice Note"),
+                               .init(name: "kind", value: "not.is.null"), .init(name: "kind", value: "neq.Recording")]
+        case .instagram: return [.init(name: "type", value: "eq.Instagram")]
+        case .notes: return [.init(name: "type", value: "eq.Note")]
+        }
+    }
+}
+
 private struct RecentList: View {
     @ObservedObject var store: LibraryStore
+    @State private var filter: RecentFilter = .all
+    @State private var filtered: [Entry] = []
+    @State private var filteredLoading = false
+
+    private var shown: [Entry] { filter == .all ? Array(store.recent.prefix(20)) : filtered }
+
+    private var filterChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(RecentFilter.allCases) { f in
+                    let on = f == filter
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { filter = f }
+                    } label: {
+                        Text(f.rawValue).font(.geist(size: 14, weight: on ? .semibold : .medium))
+                            .foregroundColor(on ? .black : P.ink)
+                            .padding(.horizontal, 14).frame(height: 34)
+                            .background(Capsule().fill(on ? P.ink : P.surface))
+                            .overlay(Capsule().stroke(on ? Color.clear : P.edge))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+        }
+    }
+
+    private func loadFiltered() async {
+        guard filter != .all else { return }
+        filteredLoading = true
+        let f = filter
+        let rows = (try? await CorpusAPI.recentEntries(limit: 20, filters: f.query)) ?? []
+        if f == filter { filtered = rows; filteredLoading = false }
+    }
     /// Shared with Activity — one poller for both, running only while either is visible.
     @ObservedObject private var jobs = JobsModel.shared
     @ObservedObject private var up = Uploader.shared
@@ -1215,7 +1268,9 @@ private struct RecentList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("RECENT ACTIVITY").sectionHead()
+            filterChips.padding(.bottom, 2)
             VStack(spacing: 0) {
+                if filter == .all {
                 // ── Live: what's processing right now
                 ForEach(up.pendingItems()) { item in
                     liveRow(icon: "iphone", tint: .orange, title: item.title,
@@ -1240,9 +1295,14 @@ private struct RecentList: View {
                     .buttonStyle(.plain)
                     Divider().background(P.border)
                 }
+                }
 
-                // ── Saved: newest entries
-                if store.recent.isEmpty {
+                // ── Saved: newest entries (of the chosen kind)
+                if filter != .all && filtered.isEmpty {
+                    Text(filteredLoading ? "Loading…" : "Nothing here yet.")
+                        .font(.geist(size: 13)).foregroundColor(P.textDim)
+                        .frame(maxWidth: .infinity).padding(.vertical, 18)
+                } else if store.recent.isEmpty {
                     HStack(spacing: 8) {
                         if store.recentError == nil { ProgressView().tint(P.accent) }
                         Text(store.recentError == nil ? "Loading…" : "Couldn't load recent entries — pull down to retry.")
@@ -1250,7 +1310,7 @@ private struct RecentList: View {
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 18)
                 }
-                ForEach(Array(store.recent.prefix(20))) { e in
+                ForEach(shown) { e in
                     NavigationLink(value: Route.entry(e.id, e)) { row(e) }
                         .buttonStyle(.plain)
                     Divider().background(P.border)
@@ -1270,6 +1330,7 @@ private struct RecentList: View {
         // something finishes (fewer live items), the saved list reloads to show it.
         .onAppear { jobs.watch("home") }
         .onDisappear { jobs.unwatch("home") }
+        .task(id: filter) { filtered = []; await loadFiltered() }
         .onChange(of: liveJobs.count + liveBatches.count) { [old = liveJobs.count + liveBatches.count] now in
             if now < old { Task { await store.loadRecent() } }
         }
