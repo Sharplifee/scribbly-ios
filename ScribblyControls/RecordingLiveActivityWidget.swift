@@ -19,9 +19,11 @@ import ActivityKit
 /// app only pushes the waveform (≤ 1 update a second).
 @available(iOS 16.2, *)
 struct RecordingLiveActivityWidget: Widget {
-    var body: some WidgetConfiguration {
+    var body: some WidgetConfiguration { Self.config() }
+
+    static func config() -> some WidgetConfiguration {
         ActivityConfiguration(for: RecordingActivityAttributes.self) { ctx in
-            LockScreenRecording(state: ctx.state)
+            RecordingActivityContent(state: ctx.state)
                 .activityBackgroundTint(Color.black.opacity(0.92))
                 .activitySystemActionForegroundColor(Sinky.ink)
                 .widgetURL(URL(string: "scribbly://open"))
@@ -120,7 +122,57 @@ struct RecordingLiveActivityWidget: Widget {
     }
 }
 
-/// Lock Screen / banner / CarPlay: elapsed time, live wave, controls, the
+/// iOS 18+: the same Live Activity, plus the small layout CarPlay and the
+/// Apple Watch Smart Stack use (otherwise they'd only get the island's
+/// leading/trailing bits with no Pause or Finish).
+@available(iOS 18.0, *)
+struct RecordingLiveActivityWidgetPlus: Widget {
+    var body: some WidgetConfiguration {
+        RecordingLiveActivityWidget.config().supplementalActivityFamilies([.small, .medium])
+    }
+}
+
+/// Picks the layout: small (CarPlay / Watch) or the full Lock Screen card.
+@available(iOS 16.2, *)
+private struct RecordingActivityContent: View {
+    let state: RecordingActivityAttributes.ContentState
+    var body: some View {
+        if #available(iOS 18.0, *) { FamilyRouted(state: state) } else { LockScreenRecording(state: state) }
+    }
+}
+
+@available(iOS 18.0, *)
+private struct FamilyRouted: View {
+    let state: RecordingActivityAttributes.ContentState
+    @Environment(\.activityFamily) private var family
+    var body: some View {
+        if family == .small { SmallRecording(state: state) } else { LockScreenRecording(state: state) }
+    }
+}
+
+/// CarPlay / Apple Watch: big timer, status, Pause + ✓ — readable at a glance.
+@available(iOS 18.0, *)
+private struct SmallRecording: View {
+    let state: RecordingActivityAttributes.ContentState
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                RecordingLiveActivityWidget.timer(state)
+                    .font(Sinky.font(22, .medium, mono: true)).foregroundColor(Sinky.ink)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .multilineTextAlignment(.leading)
+                RecordingLiveActivityWidget.status(state)
+                    .font(Sinky.font(10, .medium, mono: true)).tracking(0.8)
+                Wave(levels: state.levels, paused: state.paused, bars: 10, height: 14)
+            }
+            Spacer(minLength: 0)
+            RecordingLiveActivityWidget.controls(state, size: 36)
+        }
+        .padding(10)
+    }
+}
+
+/// Lock Screen / banner: elapsed time, live wave, controls, the
 /// gradient rule, inside a bright copper border.
 @available(iOS 16.2, *)
 private struct LockScreenRecording: View {

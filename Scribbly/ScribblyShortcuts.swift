@@ -9,6 +9,7 @@ struct ScribblyShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: StartScribblyRecordingIntent(),
             phrases: [
+                "Hey \(.applicationName)",
                 "Start a \(.applicationName) recording",
                 "Start recording in \(.applicationName)",
                 "Record with \(.applicationName)",
