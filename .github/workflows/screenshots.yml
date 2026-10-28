@@ -42,6 +42,8 @@ jobs:
             xcrun simctl io $UDID screenshot shots/$name.png >/dev/null 2>&1 || true
             echo "$name: $(alive)" | tee -a crashes/summary.txt
           }
+          step signin       8 SIMCTL_CHILD_SCRIBBLY_AUTH=signin
+          step onboarding   8 SIMCTL_CHILD_SCRIBBLY_AUTH=onboarding
           step home        14 SIMCTL_CHILD_SCRIBBLY_TAB=home
           step library     12 SIMCTL_CHILD_SCRIBBLY_TAB=library
           step groups      10 SIMCTL_CHILD_SCRIBBLY_TAB=groups

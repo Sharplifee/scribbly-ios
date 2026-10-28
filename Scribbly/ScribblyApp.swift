@@ -19,7 +19,7 @@ struct ScribblyApp: App {
     }
     var body: some Scene {
         WindowGroup {
-            RootView()
+            AuthGate { RootView() }
                 .preferredColorScheme(.dark)
                 .modifier(AppTextSize())
                 // Anything that didn't finish uploading is retried here, so a

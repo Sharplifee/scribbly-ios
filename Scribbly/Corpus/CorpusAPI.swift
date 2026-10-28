@@ -28,7 +28,7 @@ enum CorpusAPI {
     /// Every PostgREST call carries these; Content-Type is harmless on reads and
     /// required on writes (without it PostgREST rejects the JSON body).
     static var restHeaders: [String: String] {
-        ["apikey": anonKey, "Authorization": "Bearer \(anonKey)", "Content-Type": "application/json"]
+        ["apikey": anonKey, "Authorization": "Bearer \(AuthTokens.access ?? anonKey)", "Content-Type": "application/json"]
     }
 
     // MARK: - Request plumbing
@@ -460,6 +460,7 @@ enum CorpusAPI {
         var req = URLRequest(url: URL(string: base + "/podcast")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let t = AuthTokens.access { req.setValue(t, forHTTPHeaderField: "x-auth") }
         req.timeoutInterval = 60
         req.httpBody = try JSONSerialization.data(withJSONObject: ["url": link])
         let (d, resp) = try await URLSession.shared.data(for: req)
