@@ -6,6 +6,9 @@ import PhotosUI
 
 @main
 struct ScribblyApp: App {
+    init() {
+        EventLog.configure(url: "https://lbvaosyfikkpvcwksiph.supabase.co", apiKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxidmFvc3lmaWtrcHZjd2tzaXBoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwMDg0MDksImV4cCI6MjA5MDU4NDQwOX0.Gh9whjmUPz4rdKYr5yo8ZHS0nSNpkQUOwdIladX6mG4", project: "scribbly", accessToken: { AuthTokens.access })   // append-only event log (public.event_log)
+    }
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     init() {
         // Must exist before any view appears: Siri/Control Center/widgets can
