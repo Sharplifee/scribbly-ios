@@ -38,6 +38,7 @@ targets:
   ScribblyControls:
     type: app-extension
     platform: iOS
+    deploymentTarget: "18.0"   # CarPlay / Watch Live Activity layout needs iOS 18
     sources:
       - ScribblyControls
       - Shared
