@@ -836,6 +836,7 @@ struct IngestSection: View {
         // Channel / playlist links always take the whole-list path, even when
         // pasted alongside other links; everything else is handled link-by-link.
         let channelURLs = urls.filter(isChannelOrPlaylist)
+        EventLog.shared.log("links.submitted", ["count": urls.count, "urls": Array(urls.prefix(50))])
         let linkURLs = urls.filter { !isChannelOrPlaylist($0) }
         // Submitted = the field resets immediately (restored only if the request errors out).
         let original = text

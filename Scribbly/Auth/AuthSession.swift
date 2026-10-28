@@ -8,6 +8,8 @@ import Security
 enum AuthTokens {
     private static let lock = NSLock()
     private static var _access: String?
+    /// Signed-in user's id (for the event log).
+    static var userID: String?
     private static var loaded = false
     /// Read from the Keychain on first use, so a recording started by Siri or
     /// the Control Center before any view appears still files to the right library.
@@ -49,7 +51,7 @@ final class AuthSession: ObservableObject {
     @Published var error: String?
 
     private struct Stored: Codable { var access: String; var refresh: String; var expiresAt: Date; var user: User }
-    private var stored: Stored? { didSet { AuthTokens.access = stored?.access } }
+    private var stored: Stored? { didSet { AuthTokens.access = stored?.access; AuthTokens.userID = stored?.user.id } }
     private var refreshTask: Task<Void, Never>?
 
     private static let authBase = CorpusAPI.supabaseURL + "/auth/v1"
@@ -134,6 +136,7 @@ final class AuthSession: ObservableObject {
     }
 
     func signOut() {
+        EventLog.shared.log("auth.signed_out")
         if let t = stored?.access {
             var req = URLRequest(url: URL(string: Self.authBase + "/logout")!)
             req.httpMethod = "POST"
@@ -247,9 +250,11 @@ final class AuthSession: ObservableObject {
             let (d, r) = try await URLSession.shared.data(for: req)
             guard (r as? HTTPURLResponse)?.statusCode == 200, let s = Self.session(from: d) else {
                 error = Self.message(d) ?? "That didn't work — check the code and try again."
+                EventLog.shared.error("auth.sign_in_failed", error ?? "", ["method": path])
                 return false
             }
             store(s)
+            EventLog.shared.log("auth.signed_in", status: "ok", ["method": path])
             await afterSignIn()
             return true
         } catch { self.error = "No connection — try again." }

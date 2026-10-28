@@ -84,6 +84,7 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
 
     /// Record one breadcrumb (cheap; written through to disk off the main thread).
     func add(_ s: String) {
+        EventLog.shared.log("app.step", ["note": s])
         let line = "\(Self.stamp()) \(s)"
         q.async { [self] in
             crumbs.append(line)
