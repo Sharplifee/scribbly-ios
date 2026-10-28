@@ -429,6 +429,7 @@ final class Uploader: NSObject, ObservableObject {
                         })
 
                     finishJob(job, audio: audio)
+                    EventLog.shared.log("upload.handed_off", subject: result.jobID ?? job.id, status: "ok", ["title": result.title ?? "", "attempt": job.attempts + 1])
                     results[job.id] = (true, result.title)
                     lastTitle = result.title
                     if let jid = result.jobID { trackServerJob(jid, title: result.title) }
@@ -439,6 +440,7 @@ final class Uploader: NSObject, ObservableObject {
                 } catch {
                     let msg = error.localizedDescription
                     job.attempts += 1
+                    EventLog.shared.error("upload.failed", subject: job.id, msg, ["attempt": job.attempts])
                     // "No speech" won't change on retry, but the audio is never
                     // deleted on the server's say-so: it is held for the user to
                     // listen to, export, re-approve or discard in Activity.

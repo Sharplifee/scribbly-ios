@@ -30,6 +30,7 @@ final class FileIngestModel: ObservableObject {
 
     /// Several files from the Files picker, one after another.
     func handleFiles(_ urls: [URL]) async {
+        EventLog.shared.log("files.picked", ["count": urls.count, "names": urls.prefix(50).map { $0.lastPathComponent }])
         for (i, url) in urls.enumerated() {
             if urls.count > 1 { batchLabel = "\(i + 1) of \(urls.count)" }
             let ext = url.pathExtension.lowercased()
@@ -47,6 +48,7 @@ final class FileIngestModel: ObservableObject {
 
     /// Several picks from Photos (videos and/or photos), one after another.
     func handlePhotos(_ items: [PhotosPickerItem]) async {
+        EventLog.shared.log("photos.picked", ["count": items.count])
         for (i, item) in items.enumerated() {
             if items.count > 1 { batchLabel = "\(i + 1) of \(items.count)" }
             if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) || $0.conforms(to: .audiovisualContent) }) {
@@ -80,6 +82,7 @@ final class FileIngestModel: ObservableObject {
                                           title: title, type: "Image", tags: "image",
                                           summary: "", transcript: text)
             status = "Saved — the image's text is in your Library."
+            EventLog.shared.log("image.saved", status: "ok", ["chars": text.count])
         } catch {
             lastError = "Couldn't save the image's text: \(error.localizedDescription)"
             status = nil
@@ -119,8 +122,10 @@ final class FileIngestModel: ObservableObject {
                                                      kind: kind, location: await place)
             if temporary { try? FileManager.default.removeItem(at: local) }
             status = "Saved — transcript is in your Library."
+            EventLog.shared.log("file.uploaded", status: "ok", ["kind": kind, "bytes": size])
         } catch {
             lastError = error.localizedDescription
+            EventLog.shared.error("file.failed", error.localizedDescription, ["name": url.lastPathComponent])
             status = nil
         }
     }

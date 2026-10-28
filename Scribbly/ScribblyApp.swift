@@ -147,9 +147,13 @@ struct RootView: View {
 final class BottomChrome: ObservableObject {
     static let shared = BottomChrome()
     @Published var hideRecordBar = false
-    @Published var currentTab: LibraryScreen.Section = .home
+    @Published var currentTab: LibraryScreen.Section = .home {
+        didSet { if oldValue != currentTab { EventLog.shared.log("nav.tab", ["tab": "\(currentTab)"]) } }
+    }
     /// Which sub-page More is showing (Collections / Query / Activity), if any.
-    @Published var moreSub: LibraryScreen.Section? = nil
+    @Published var moreSub: LibraryScreen.Section? = nil {
+        didSet { if let m = moreSub { EventLog.shared.log("nav.page", ["page": "\(m)"]) } }
+    }
     /// True while the paste field owns the keyboard — the glass bar steps out of the way.
     @Published var keyboardUp = false
     @Published var armToken = 0

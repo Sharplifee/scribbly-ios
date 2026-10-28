@@ -109,6 +109,7 @@ final class Recorder: NSObject, ObservableObject {
     // MARK: - Controls
 
     func start() {
+        EventLog.shared.log("record.start")
         guard state == .idle, !startPending else { return }
         startPending = true
         lastError = nil
@@ -145,6 +146,7 @@ final class Recorder: NSObject, ObservableObject {
 
     /// User-initiated pause. Distinct from an interruption.
     func pause() {
+        EventLog.shared.log("record.pause")
         guard state == .recording else { return }
         userPaused = true
         recorder?.pause()
@@ -157,6 +159,7 @@ final class Recorder: NSObject, ObservableObject {
     func clearError() { lastError = nil }
 
     func resume() {
+        EventLog.shared.log("record.resume")
         guard state == .paused else { return }
         userPaused = false
         // If an interruption killed the session while paused, rebuild it.
@@ -175,6 +178,7 @@ final class Recorder: NSObject, ObservableObject {
     /// audio is safely in its pending store, so a failed copy leaves them for
     /// crash recovery instead of losing the recording.
     func finish(completion: @escaping ([Uploader.RecordingPart], TimeInterval) -> Void) {
+        EventLog.shared.log("record.finish")
         guard state == .recording || state == .paused else {
             if state == .idle { appendTo = nil }
             completion([], 0)
@@ -220,6 +224,7 @@ final class Recorder: NSObject, ObservableObject {
     }
 
     func discard() {
+        EventLog.shared.log("record.discard")
         guard state != .finishing else { return }
         stopTimer()
         closeSegment()
