@@ -12,7 +12,6 @@ struct ScribblyApp: App {
         // Must exist before any view appears: Siri/Control Center/widgets can
         // launch Scribbly in the background just to start a recording.
         CrashReporter.shared.start()
-        EventLog.shared.log("app.launch")
         SinkyAppearance.apply()
         MainActor.assumeIsolated { RecordingLiveActivity.shared.bind() }
         // Watch memos sent over WatchConnectivity arrive even when the app is
