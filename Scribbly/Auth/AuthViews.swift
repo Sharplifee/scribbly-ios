@@ -232,7 +232,6 @@ struct OnboardingView: View {
     @AppStorage(TextSizeOption.storageKey) private var textSize = TextSizeOption.standard.rawValue
     @State private var step = 0
     @State private var name = ""
-    @State private var showSizes = false
     @State private var saving = false
     @State private var micAsked = false
     @State private var locAsked = false
@@ -286,7 +285,6 @@ struct OnboardingView: View {
             if name.isEmpty { name = auth.profile?.display_name ?? auth.pendingName ?? "" }
             nameFocused = true
         }
-        .sheet(isPresented: $showSizes) { sizeSheet }
     }
 
     private var nameStep: some View {
@@ -302,29 +300,11 @@ struct OnboardingView: View {
         }
     }
 
+    /// Sizes and a live preview right on the page — no pop-up covering it.
     private var sizeStep: some View {
-        let current = TextSizeOption(rawValue: textSize) ?? .standard
-        return VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("How big should text be?").font(.geist(size: 30, weight: .semibold)).foregroundColor(P.ink)
-            Text("You can change this any time in Settings.").font(.geist(size: 15)).foregroundColor(P.textSec)
-            Button { showSizes = true } label: {
-                HStack {
-                    Text("Aa").font(.custom("Geist-SemiBold", fixedSize: current.sample + 4))
-                    Text(current.rawValue).font(.geist(size: 17, weight: .medium))
-                    Spacer()
-                    Text("Change").font(.geist(size: 15)).foregroundColor(P.textSec)
-                }
-                .foregroundColor(P.ink).padding(.horizontal, 18).frame(height: 58)
-                .background(Capsule().fill(P.surface2)).overlay(Capsule().stroke(P.border))
-            }
-            .buttonStyle(.plain)
-        }
-        .onAppear { showSizes = true }
-    }
-
-    private var sizeSheet: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Text size").font(.geist(size: 22, weight: .semibold)).foregroundColor(P.ink)
+            Text("Tap a size. You can change it any time in Settings.").font(.geist(size: 15)).foregroundColor(P.textSec)
             HStack(alignment: .bottom, spacing: 8) {
                 ForEach(TextSizeOption.allCases) { o in
                     let on = textSize == o.rawValue
@@ -341,26 +321,19 @@ struct OnboardingView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Text size \(o.rawValue)")
+                    .accessibilityAddTraits(on ? .isSelected : [])
                 }
             }
             VStack(alignment: .leading, spacing: 6) {
                 Text("Morning walk notes").font(.geist(size: 17, weight: .semibold)).foregroundColor(P.ink)
                 Text("Transcribed, summarized, searchable — this is how text will look.")
                     .font(.geist(size: 15)).foregroundColor(P.textSec)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(P.surface))
-            .modifier(AppTextSize())
-            Button { showSizes = false } label: {
-                Text("Done").font(.geist(size: 17, weight: .semibold)).foregroundColor(.black)
-                    .frame(maxWidth: .infinity).frame(height: 50).background(Capsule().fill(P.ink))
-            }
-            .buttonStyle(.plain)
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(P.border))
         }
-        .padding(22)
-        .presentationDetents([.height(400)])
-        .presentationDragIndicator(.visible)
-        .preferredColorScheme(.dark)
     }
 
     private var permissionStep: some View {

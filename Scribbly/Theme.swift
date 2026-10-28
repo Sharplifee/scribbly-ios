@@ -368,13 +368,15 @@ enum TextSizeOption: String, CaseIterable, Identifiable {
 
 struct AppTextSize: ViewModifier {
     @AppStorage(TextSizeOption.storageKey) private var raw = TextSizeOption.standard.rawValue
-    @ViewBuilder
+    /// One code path for every size, so changing it never rebuilds the app's
+    /// views (an if/else here reset whatever screen you were on — e.g. setup
+    /// jumping back to "What should we call you?").
     func body(content: Content) -> some View {
-        if let s = (TextSizeOption(rawValue: raw) ?? .standard).size {
-            content.dynamicTypeSize(s)
-        } else {
-            content.dynamicTypeSize(...DynamicTypeSize.accessibility2)
-        }
+        let range: ClosedRange<DynamicTypeSize> = {
+            if let s = (TextSizeOption(rawValue: raw) ?? .standard).size { return s...s }
+            return DynamicTypeSize.xSmall...DynamicTypeSize.accessibility2
+        }()
+        return content.dynamicTypeSize(range)
     }
 }
 
