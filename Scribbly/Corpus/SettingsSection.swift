@@ -51,7 +51,7 @@ struct SettingsSection: View {
                             Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(P.textDim)
                         }.padding(.vertical, 10)
                     }.buttonStyle(.plain)
-                    plainRow("Signed in with", auth.user?.email ?? auth.user?.phone ?? "Apple")
+                    plainRow("Signed in with", auth.user == nil ? "Not signed in" : (auth.user?.email ?? auth.user?.phone ?? "Apple"))
                     Button { confirmSignOut = true } label: {
                         HStack { Text("Sign out").foregroundColor(P.danger); Spacer() }.padding(.vertical, 10)
                     }.buttonStyle(.plain)
