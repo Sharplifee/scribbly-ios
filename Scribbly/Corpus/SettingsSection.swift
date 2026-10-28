@@ -10,6 +10,10 @@ struct SettingsSection: View {
     @AppStorage("defaultDestination") private var defaultDestination = "Claude"
     @AppStorage(TextSizeOption.storageKey) private var textSize = TextSizeOption.standard.rawValue
     @ObservedObject private var up = Uploader.shared
+    @ObservedObject private var auth = AuthSession.shared
+    @State private var editingName = false
+    @State private var nameDraft = ""
+    @State private var confirmSignOut = false
     @State private var serverOK: Bool? = nil
     /// Last known library size (shared with Home/Library), refreshed from the server on open.
     @State private var entryCount: Int = UserDefaults.standard.integer(forKey: "libraryCount")
@@ -39,6 +43,19 @@ struct SettingsSection: View {
             PageHeader(title: "Settings", subtitle: "Version " + version,
                        back: { BottomChrome.shared.moreSub = nil })
             VStack(alignment: .leading, spacing: 8) {
+                header("ACCOUNT")
+                card {
+                    Button { nameDraft = auth.displayName ?? ""; editingName = true } label: {
+                        HStack { Text("Name").foregroundColor(P.ink); Spacer()
+                            Text(auth.displayName ?? "Add").foregroundColor(P.textSec)
+                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(P.textDim)
+                        }.padding(.vertical, 10)
+                    }.buttonStyle(.plain)
+                    plainRow("Signed in with", auth.user?.email ?? auth.user?.phone ?? "Apple")
+                    Button { confirmSignOut = true } label: {
+                        HStack { Text("Sign out").foregroundColor(P.danger); Spacer() }.padding(.vertical, 10)
+                    }.buttonStyle(.plain)
+                }
                 header("TEXT SIZE")
                 card {
                     VStack(alignment: .leading, spacing: 12) {
@@ -107,6 +124,14 @@ struct SettingsSection: View {
             }
             .padding(16)
             }
+        }
+        .alert("What should we call you?", isPresented: $editingName) {
+            TextField("Your name", text: $nameDraft)
+            Button("Save") { let n = nameDraft; Task { await auth.rename(n) } }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog("Sign out of Scribbly?", isPresented: $confirmSignOut, titleVisibility: .visible) {
+            Button("Sign out", role: .destructive) { BottomChrome.shared.moreSub = nil; auth.signOut() }
         }
         .task {
             if let u = URL(string: CorpusAPI.voiceIngestURL.replacingOccurrences(of: "/upload", with: "/health")),

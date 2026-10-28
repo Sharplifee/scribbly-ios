@@ -75,6 +75,7 @@ enum AudioUpload {
         if let kind, let enc = kind.addingPercentEncoding(withAllowedCharacters: .alphanumerics) {
             req.setValue(enc, forHTTPHeaderField: "x-source-kind")
         }
+        if let t = AuthTokens.access { req.setValue(t, forHTTPHeaderField: "x-auth") }
         if let a = appendTo, let enc = a.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
             req.setValue(enc, forHTTPHeaderField: "x-append-to")
         }
