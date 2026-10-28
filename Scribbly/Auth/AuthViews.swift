@@ -210,7 +210,7 @@ struct OnboardingView: View {
                 }
                 .padding(.top, 8)
                 Spacer(minLength: 10)
-                Group {
+                SwiftUI.Group {
                     switch step {
                     case 0: nameStep
                     case 1: sizeStep
