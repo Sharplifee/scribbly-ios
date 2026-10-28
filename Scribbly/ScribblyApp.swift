@@ -94,23 +94,25 @@ struct RootView: View {
             NavigationStack { FailedSection().background(SinkyBackdrop()).navigationTitle("Didn't work") }
                 .preferredColorScheme(.dark)
         }
-        // Videos from the Photos library (they never show up in the Files picker).
-        // Pick up to 10, tap Add, then they upload one after another.
-        .photosPicker(isPresented: $files.pickingPhotos, selection: $photoItems, maxSelectionCount: 10,
-                      selectionBehavior: .ordered, matching: .videos, preferredItemEncoding: .current)
-        .onChange(of: photoItems) { items in
-            guard !items.isEmpty else { return }
-            let batch = items
+        // Videos and photos from the Photos library. Pick as many as you like,
+        // tap Add — nothing starts until the picker is closed, then they upload
+        // one after another.
+        .photosPicker(isPresented: $files.pickingPhotos, selection: $photoItems, maxSelectionCount: 50,
+                      selectionBehavior: .ordered, matching: .any(of: [.videos, .images]),
+                      preferredItemEncoding: .current)
+        .onChange(of: files.pickingPhotos) { open in
+            guard !open, !photoItems.isEmpty else { return }
+            let batch = photoItems
             photoItems = []
-            Task { for item in batch { await files.handlePhoto(item) } }
+            Task { await files.handlePhotos(batch) }
         }
         .fileImporter(isPresented: $files.picking,
                       allowedContentTypes: FileIngestModel.contentTypes,
-                      allowsMultipleSelection: false) { result in
+                      allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls):
                 CrashReporter.shared.add("upload picked \(urls.count)")
-                if let url = urls.first { Task { await files.handle(url) } }
+                Task { await files.handleFiles(urls) }
             case .failure(let e):
                 CrashReporter.shared.add("upload picker failed: \(e.localizedDescription)")
                 files.lastError = e.localizedDescription

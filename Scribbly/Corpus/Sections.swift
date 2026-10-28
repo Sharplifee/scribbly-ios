@@ -567,7 +567,8 @@ struct IngestSection: View {
                     UploadProgressBar().padding(.horizontal, 32)
                 }
                 if let st = files.status {
-                    Text(st).font(.geist(size: 13)).foregroundColor(P.textSec).multilineTextAlignment(.center).padding(.horizontal, 24)
+                    let line: String = files.batchLabel.map { "\($0) · " + st } ?? st
+                    Text(line).font(.geist(size: 13)).foregroundColor(P.textSec).multilineTextAlignment(.center).padding(.horizontal, 24)
                 }
                 if let fe = files.lastError {
                     Text(fe).font(.geist(size: 13)).foregroundColor(P.danger).multilineTextAlignment(.center).padding(.horizontal, 24)
