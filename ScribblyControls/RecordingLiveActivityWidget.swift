@@ -66,7 +66,7 @@ struct RecordingLiveActivityWidget: Widget {
                 Wave(levels: ctx.state.levels, paused: ctx.state.paused, bars: 3, height: 12)
                     .frame(width: 14)
             }
-            .keylineTint(Color.white.opacity(0.85))
+            .keylineTint(Color.white.opacity(0.45))   // clearly there, not glowing
             .widgetURL(URL(string: "scribbly://open"))
         }
     }
@@ -88,7 +88,7 @@ struct RecordingLiveActivityWidget: Widget {
     }
 
     static func status(_ s: RecordingActivityAttributes.ContentState) -> some View {
-        Text(s.paused ? "PAUSED" : (s.appending ? "ADDING TO ENTRY" : "RECORDING"))
+        Text(s.paused ? "PAUSED" : "RECORDING")
             .foregroundColor(s.paused ? Sinky.tan : Sinky.copperBright)
             .lineLimit(1)
     }
@@ -147,7 +147,7 @@ private struct LockScreenRecording: View {
         .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
         .overlay {
             ContainerRelativeShape()
-                .strokeBorder(Color.white.opacity(state.paused ? 0.45 : 0.8), lineWidth: 1.5)
+                .strokeBorder(Color.white.opacity(state.paused ? 0.25 : 0.4), lineWidth: 1.5)
         }
     }
 }

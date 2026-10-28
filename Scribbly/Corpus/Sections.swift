@@ -475,7 +475,7 @@ struct IngestSection: View {
 
                 // ── Hero: the same pillar banner as every page, with the wordmark,
                 // the line, and what the library holds.
-                PageHeader(title: "Anything in.\nOne library.", subtitle: "Links · recordings · files — transcribed & searchable",
+                PageHeader(title: "Every word.\nOne library.", subtitle: "Transcribed · Summarized · Searchable",
                            trailing: homeSavedLabel)
                     .id(ScrollTop.anchor)
                     .task { if let store { await store.loadRecent() } }
@@ -861,11 +861,17 @@ struct IngestSection: View {
         if !podcasts.isEmpty {
             status = "Processing \(podcasts.count) podcast link(s)…"
             var okCount = 0, failCount = 0
+            // Sharp's Cloud Computer queues them: a show link → every episode as one
+            // batch (watch it on Home / Activity); an episode link → just that one.
+            var queued = 0
             for pu in podcasts {
-                if let r = try? await ingest(["action": "process-podcast", "podcastUrl": pu]),
-                   (r["success"] as? Bool) == true { okCount += 1 } else { failCount += 1 }
+                if let r = try? await CorpusAPI.queuePodcast(pu), r.ok {
+                    okCount += 1; queued += r.queued
+                    note += r.single ? " Episode queued." : " \(r.name): \(r.queued) new episode\(r.queued == 1 ? "" : "s") queued."
+                } else { failCount += 1 }
             }
-            note += " \(okCount) podcast(s) saved" + (failCount > 0 ? ", \(failCount) not saved." : ".")
+            if failCount > 0 { note += " \(failCount) podcast link\(failCount == 1 ? "" : "s") couldn't be read." }
+            _ = queued
         }
         // Instagram + any other direct URL: social links go to Sharp's Cloud Computer,
         // the rest through the pipeline endpoint (fetch, transcribe, summarise, save).
@@ -1193,8 +1199,8 @@ struct IngestSection: View {
 /// "Recent" on Home — the four newest entries, then a link to the whole library.
 /// Home → Recent activity filter: one tap shows just that kind, newest first.
 enum RecentFilter: String, CaseIterable, Identifiable {
-    case all = "All", youtube = "YouTube", recordings = "Recordings", uploads = "Uploads",
-         instagram = "Instagram", notes = "Notes"
+    case all = "All", youtube = "YouTube", recordings = "Recordings", podcasts = "Podcasts",
+         uploads = "Uploads", instagram = "Instagram", notes = "Notes"
     var id: String { rawValue }
     var query: [URLQueryItem] {
         switch self {
@@ -1204,6 +1210,7 @@ enum RecentFilter: String, CaseIterable, Identifiable {
                                   .init(name: "or", value: "(kind.is.null,kind.eq.Recording)")]
         case .uploads: return [.init(name: "type", value: "eq.Voice Note"),
                                .init(name: "kind", value: "not.is.null"), .init(name: "kind", value: "neq.Recording")]
+        case .podcasts: return [.init(name: "type", value: "eq.Podcast")]
         case .instagram: return [.init(name: "type", value: "eq.Instagram")]
         case .notes: return [.init(name: "type", value: "eq.Note")]
         }

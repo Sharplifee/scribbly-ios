@@ -72,7 +72,7 @@ enum P {
 struct RootView: View {
     @State private var armToken = 0
     @ObservedObject private var files = FileIngestModel.shared
-    @State private var photoItem: PhotosPickerItem?
+    @State private var photoItems: [PhotosPickerItem] = []
     /// QA hook only: SCRIBBLY_FAILED=1 opens the "Didn't work" screen on launch.
     @State private var qaFailed = ProcessInfo.processInfo.environment["SCRIBBLY_FAILED"] == "1"
 
@@ -94,12 +94,14 @@ struct RootView: View {
                 .preferredColorScheme(.dark)
         }
         // Videos from the Photos library (they never show up in the Files picker).
-        .photosPicker(isPresented: $files.pickingPhotos, selection: $photoItem, matching: .videos,
-                      preferredItemEncoding: .current)
-        .onChange(of: photoItem) { item in
-            guard let item else { return }
-            photoItem = nil
-            Task { await files.handlePhoto(item) }
+        // Pick up to 10, tap Add, then they upload one after another.
+        .photosPicker(isPresented: $files.pickingPhotos, selection: $photoItems, maxSelectionCount: 10,
+                      selectionBehavior: .ordered, matching: .videos, preferredItemEncoding: .current)
+        .onChange(of: photoItems) { items in
+            guard !items.isEmpty else { return }
+            let batch = items
+            photoItems = []
+            Task { for item in batch { await files.handlePhoto(item) } }
         }
         .fileImporter(isPresented: $files.picking,
                       allowedContentTypes: FileIngestModel.contentTypes,

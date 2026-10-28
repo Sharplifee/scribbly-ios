@@ -48,6 +48,7 @@ struct PillarTile: View {
     /// Icon and tone for an entry's type (YouTube takes its creator's tone).
     static func style(for e: Entry, creator: String?) -> (symbol: String, tone: PillarRGB) {
         if e.isVoice { return ("waveform", PillarRGB(0xE8875A)) }
+        if e.isPodcast { return ("mic.fill", PillarRGB(0xC9A27A)) }
         switch e.displayType {
         case "YouTube":   return ("play.fill", PillarPalette.tone(for: creator ?? "YouTube"))
         case "Instagram": return ("camera.fill", PillarRGB(0x4FA3AE))

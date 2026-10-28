@@ -390,3 +390,19 @@ extension UINavigationController: UIGestureRecognizerDelegate {
         viewControllers.count > 1
     }
 }
+
+extension View {
+    /// A solid band under the clock / Dynamic Island / battery, so rows
+    /// scrolling up never run underneath them; it fades softly into the page.
+    @MainActor func statusBand() -> some View {
+        overlay(alignment: .top) {
+            VStack(spacing: 0) {
+                Color.black.frame(height: SafeTop.value)
+                LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 10)
+            }
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+        }
+    }
+}

@@ -141,20 +141,20 @@ struct EntryDetail: View {
                             PlaceTagger.shared.tag { Recorder.shared.place = $0 }
                             rec.start()
                         } label: {
-                            // Same record button as the centre of the Home tab bar:
-                            // an ink disc with a copper dot, ringed off the background.
-                            VStack(spacing: 6) {
+                            // One slim row, not a block: the record mark, the label, a hint.
+                            HStack(spacing: 12) {
                                 ZStack {
-                                    Circle().fill(P.bg).frame(width: 46, height: 46)
-                                    Circle().stroke(P.border, lineWidth: 1).frame(width: 46, height: 46)
-                                    Circle().fill(P.ink).frame(width: 38, height: 38)
-                                    Circle().fill(P.accent).frame(width: 12, height: 12)
+                                    Circle().fill(P.ink).frame(width: 28, height: 28)
+                                    Circle().fill(P.accent).frame(width: 9, height: 9)
                                 }
-                                Text("Add to this recording").font(.geist(size: 13, weight: .medium)).foregroundColor(P.textSec)
+                                Text("Add to this recording").font(.geist(size: 15, weight: .semibold)).foregroundColor(P.ink)
+                                Spacer(minLength: 6)
+                                Text("Records more onto the end").font(.geist(size: 11.5)).foregroundColor(P.textDim)
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .contentShape(Rectangle())
+                            .padding(.horizontal, 14).frame(height: 50)
+                            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(P.surface))
+                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(P.edge))
+                            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }
                         .accessibilityLabel("Add to this recording")
                         .accessibilityHint("Records more; it's transcribed and added to the end of this transcript.")

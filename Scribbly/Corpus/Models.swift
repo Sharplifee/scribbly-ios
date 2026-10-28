@@ -61,8 +61,11 @@ struct Entry: Codable, Identifiable, Hashable {
 
     // MARK: Display helpers (rows + detail header)
 
+    var isPodcast: Bool { (type ?? "").lowercased() == "podcast" }
+
     var isVoice: Bool {
         let t = (type ?? "").lowercased()
+        if t == "podcast" { return false }
         return t.contains("voice") || t.contains("audio") || id.hasPrefix("voice_")
     }
 
@@ -114,6 +117,7 @@ struct Entry: Codable, Identifiable, Hashable {
             parts.append(displayType)
             if let c = creator, !c.isEmpty { parts.append(c) }
             parts.append(displayDate)
+            if isPodcast, let d = durationText { parts.append(d) }
         }
         return parts.filter { !$0.isEmpty }.joined(separator: " · ")
     }

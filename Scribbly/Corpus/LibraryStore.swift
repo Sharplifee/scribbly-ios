@@ -63,7 +63,7 @@ final class LibraryStore: ObservableObject {
 
     /// The entry types the Library filters by, in chip order.
     static let filterTypes: [(chip: String, type: String)] = [
-        ("Recordings", "Voice Note"), ("YouTube", "YouTube"), ("Instagram", "Instagram"), ("Notes", "Note")
+        ("Recordings", "Voice Note"), ("YouTube", "YouTube"), ("Podcasts", "Podcast"), ("Instagram", "Instagram"), ("Notes", "Note")
     ]
 
     /// The server filters a query adds beyond type/search/sort: its date range

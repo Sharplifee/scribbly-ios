@@ -452,6 +452,23 @@ enum CorpusAPI {
 
     // MARK: - Per-entry Ask (grounded chat) via the app's pipeline route
 
+    struct PodcastQueued { let ok: Bool; let name: String; let queued: Int; let single: Bool }
+    /// Hands a podcast link (Apple or Spotify, show or episode) to Sharp's Cloud Computer.
+    static func queuePodcast(_ link: String) async throws -> PodcastQueued {
+        var base = voiceIngestURL
+        if let r = base.range(of: "/upload", options: .backwards) { base = String(base[..<r.lowerBound]) }
+        var req = URLRequest(url: URL(string: base + "/podcast")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 60
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["url": link])
+        let (d, resp) = try await URLSession.shared.data(for: req)
+        let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] ?? [:]
+        let ok = (resp as? HTTPURLResponse)?.statusCode == 200 && (o["ok"] as? Bool) == true
+        return PodcastQueued(ok: ok, name: o["name"] as? String ?? "Podcast",
+                             queued: o["queued"] as? Int ?? 0, single: o["single"] as? Bool ?? false)
+    }
+
     static func ask(entry: Entry, question: String, history: [[String: String]]) async throws -> String {
         var req = URLRequest(url: URL(string: "\(appBase)/api/pipeline")!)
         req.httpMethod = "POST"

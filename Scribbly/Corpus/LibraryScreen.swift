@@ -101,9 +101,12 @@ struct LibraryScreen: View {
                 content(for: s)
                     .chromeInset()
             }
+            // A solid band under the clock / Dynamic Island / battery, so rows
+            // scrolling up never run underneath them; it fades into the page.
+            .statusBand()
             .toolbar(.hidden, for: .tabBar)
             .navigationDestination(for: String.self) { id in
-                EntryDetail(entryID: id, preloaded: nil).chromeInset().toolbar(.hidden, for: .navigationBar)
+                EntryDetail(entryID: id, preloaded: nil).chromeInset().statusBand().toolbar(.hidden, for: .navigationBar)
             }
             .navigationDestination(for: Route.self) { r in destination(r) }
             .navigationTitle(title(for: s))
@@ -155,7 +158,7 @@ struct LibraryScreen: View {
     private func destination(_ r: Route) -> some View {
         // Pushed pages draw their own back button in the PageHeader row (next to
         // the wordmark), so the system bar stays hidden; swipe-back still works.
-        destinationContent(r).toolbar(.hidden, for: .navigationBar)
+        destinationContent(r).statusBand().toolbar(.hidden, for: .navigationBar)
     }
 
     @ViewBuilder private func destinationContent(_ r: Route) -> some View {
@@ -267,6 +270,16 @@ struct LibrarySection: View {
         (sort == .newest ? 0 : 1) + (range == .any ? 0 : 1) + (creator == nil ? 0 : 1)
     }
 
+    /// Entries · YouTube · Recordings · Podcasts, as big numbers on the banner.
+    private var libraryStats: [(String, String)] {
+        guard store.libraryCount > 0 else { return [] }
+        var out: [(String, String)] = [(store.libraryCount.formatted(), "entries")]
+        if let n = store.typeCounts["YouTube"], n > 0 { out.append((n.formatted(), "YouTube")) }
+        if let n = store.typeCounts["Voice Note"], n > 0 { out.append((n.formatted(), "recordings")) }
+        if let n = store.typeCounts["Podcast"], n > 0 { out.append((n.formatted(), "podcasts")) }
+        return Array(out.prefix(4))
+    }
+
     private var headerSubtitle: String {
         var parts: [String] = []
         if store.libraryCount > 0 { parts.append("\(store.libraryCount.formatted()) entries") }
@@ -303,7 +316,7 @@ struct LibrarySection: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                 ScrollTopAnchor()
-                PageHeader(title: "Library", subtitle: headerSubtitle)
+                PageHeader(title: "Library", subtitle: headerSubtitle, stats: libraryStats)
                 controls
                 if showCreators {
                     CreatorsStrip(groups: Array(creatorGroups.prefix(16)), selected: creator,

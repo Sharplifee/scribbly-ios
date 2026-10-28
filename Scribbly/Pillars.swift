@@ -192,18 +192,23 @@ struct PageHeader: View {
     var cardHeight: CGFloat = PageHeader.height
     /// Title size inside the card (entries use a smaller one for long titles).
     var titleSize: CGFloat = 32
+    /// Big numbers across the top of the card ("12,108 / ENTRIES").
+    var stats: [(String, String)] = []
 
     static let height: CGFloat = FinsBackground.bannerHeight
     static let navBar: CGFloat = 44
-    private static let rowHeight: CGFloat = 38
+    private static let rowHeight: CGFloat = 36
+    /// One stripe of the banner (FinsStripes pitch) — the wordmark sits one in from the edge.
+    private static let stripe: CGFloat = 9
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         // Wordmark row sits snug on the card — no dead band between them.
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             topRow
             ZStack(alignment: .bottomLeading) {
                 FinsBackground()
+                if !stats.isEmpty { statsRow }
                 titles
             }
             .frame(height: cardHeight)
@@ -222,14 +227,33 @@ struct PageHeader: View {
             Text("®").font(.geist(size: 11)).foregroundColor(P.textSec)
         }
         .accessibilityLabel("Scribbly")
+        // Sit on the text baseline, so the gap to the banner matches the back button's.
+        .alignmentGuide(.bottom) { d in d[.lastTextBaseline] }
+    }
+
+    private var statsRow: some View {
+        HStack(alignment: .top, spacing: 22) {
+            ForEach(Array(stats.enumerated()), id: \.offset) { _, s in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(s.0).font(.geist(size: 20, weight: .semibold)).tracking(-0.6).foregroundColor(P.ink)
+                        .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+                    Text(s.1.uppercased()).monoLabel(8.5, color: Color(hex: 0xD9DCDD)).lineLimit(1)
+                }
+            }
+        }
+        .padding(.horizontal, 20).padding(.top, 18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder private var trailingText: some View {
-        if let trailing, !trailing.isEmpty { Text(trailing).monoLabel(11) }
+        if let trailing, !trailing.isEmpty {
+            Text(trailing).monoLabel(11).alignmentGuide(.bottom) { d in d[.lastTextBaseline] }
+        }
     }
 
     @ViewBuilder private var topRow: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .bottom, spacing: 10) {
             if let back {
                 Button(action: back) {
                     HStack(spacing: 6) {
@@ -237,7 +261,7 @@ struct PageHeader: View {
                         Text(backLabel).font(.geist(size: 15, weight: .medium))
                     }
                     .foregroundColor(P.ink)
-                    .padding(.horizontal, 12).frame(height: 36)
+                    .padding(.horizontal, 12).frame(height: 34)
                     .sinkyGlass(Capsule(), interactive: true)
                     .contentShape(Capsule())
                 }
@@ -247,7 +271,7 @@ struct PageHeader: View {
                 Button { dismiss() } label: {
                     Image(systemName: "chevron.left").font(.system(size: 16, weight: .semibold))
                         .foregroundColor(P.ink)
-                        .frame(width: 38, height: 38)
+                        .frame(width: 34, height: 34)
                         .sinkyGlass(Circle(), interactive: true)
                         .contentShape(Circle())
                 }
@@ -258,9 +282,9 @@ struct PageHeader: View {
             }
             Spacer(minLength: 8)
             if let accessory { accessory }
-            wordmark
+            wordmark.padding(.trailing, Self.stripe)
         }
-        .frame(height: Self.rowHeight)
+        .frame(height: Self.rowHeight, alignment: .bottom)
         .padding(.horizontal, 4)
     }
 

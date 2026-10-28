@@ -31,11 +31,12 @@ struct Person: Decodable, Identifiable, Hashable {
     }
 
     /// "3,490 videos · 3 appearances" (appearances only when there are some).
+    /// Plain words, app-wide: "452 videos · on 3 other shows".
     var countLine: String {
-        let videos = entries.formatted() + (entries == 1 ? " video" : " videos")
-        guard appearances > 0 else { return videos }
-        let apps = appearances.formatted() + (appearances == 1 ? " appearance" : " appearances")
-        return videos + " · " + apps
+        var parts: [String] = []
+        if own_videos > 0 { parts.append(own_videos.formatted() + (own_videos == 1 ? " video" : " videos")) }
+        if appearances > 0 { parts.append("on " + appearances.formatted() + (appearances == 1 ? " other show" : " other shows")) }
+        return parts.isEmpty ? entries.formatted() + (entries == 1 ? " video" : " videos") : parts.joined(separator: " · ")
     }
 
     /// Holding buckets and placeholders are never people.
@@ -66,7 +67,7 @@ struct PersonEntry: Decodable, Identifiable, Hashable {
 extension CorpusAPI {
     /// The person page's segments.
     enum PersonRole: String, CaseIterable, Identifiable {
-        case own = "Their videos", featured = "Appearances", all = "All"
+        case own = "Their videos", featured = "On other shows", all = "All"
         var id: String { rawValue }
     }
 
@@ -218,7 +219,7 @@ struct GroupsSection: View {
     @ObservedObject private var directory = PeopleDirectory.shared
     @State private var q = ""
     @State private var sort = "Most videos"
-    private static let sorts = ["Most videos", "A–Z", "Most appearances"]
+    private static let sorts = ["Most videos", "A–Z", "Most on other shows"]
 
     private var shown: [Person] {
         let s = q.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -229,7 +230,7 @@ struct GroupsSection: View {
         switch sort {
         case "A–Z":
             return xs.sorted { a, b in a.person.localizedCaseInsensitiveCompare(b.person) == .orderedAscending }
-        case "Most appearances":
+        case "Most on other shows":
             return xs.sorted { a, b in
                 a.appearances != b.appearances ? a.appearances > b.appearances : a.entries > b.entries
             }
@@ -242,6 +243,15 @@ struct GroupsSection: View {
     }
 
     /// "39 people" (a video total would double-count shared appearances).
+    /// People · their videos · on other shows, as big numbers on the banner.
+    private var groupStats: [(String, String)] {
+        let ps = directory.people
+        guard !ps.isEmpty else { return [] }
+        let own = ps.reduce(0) { $0 + $1.own_videos }
+        let guest = ps.reduce(0) { $0 + $1.appearances }
+        return [(ps.count.formatted(), "people"), (own.formatted(), "their videos"), (guest.formatted(), "on other shows")]
+    }
+
     private var subtitle: String {
         let ps = directory.people
         if ps.isEmpty { return directory.loading ? "Loading people…" : "Everyone in your library" }
@@ -258,7 +268,8 @@ struct GroupsSection: View {
         ScrollView {
             VStack(spacing: 0) {   // no gap above the banner
                 ScrollTopAnchor()
-                PageHeader(title: "Groups", subtitle: subtitle)
+                PageHeader(title: "Groups", subtitle: "Each person's own videos, plus the shows they were on",
+                           stats: groupStats)
                 LazyVStack(spacing: 8) {
                     ListSearch(placeholder: placeholder, text: $q, sorts: Self.sorts, sort: $sort)
                     listBody
@@ -370,7 +381,10 @@ struct PersonDetail: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                PageHeader(title: person.person, subtitle: person.countLine, underNavBar: true)
+                PageHeader(title: person.person, subtitle: ChannelSubtitles.map[person.person],
+                           underNavBar: true,
+                           stats: [(person.own_videos.formatted(), "their videos"),
+                                   (person.appearances.formatted(), "on other shows")])
                 controls
                 metaRow
                 listBody
@@ -407,23 +421,39 @@ struct PersonDetail: View {
         VStack(alignment: .leading, spacing: 8) {
             ListSearch(placeholder: "Search \(person.person)…", text: $search,
                        sorts: CorpusAPI.PersonSort.allCases.map { s in s.rawValue }, sort: $sortName)
-            // Every person gets the same three views, with real counts.
-            Picker("Show", selection: $role) {
-                ForEach(CorpusAPI.PersonRole.allCases) { r in Text(segmentLabel(r)).tag(r) }
+            // Every person gets the same three views; each pill is as wide as
+            // its label + count, so 452 and 3 don't get equal weight.
+            HStack(spacing: 8) {
+                ForEach(CorpusAPI.PersonRole.allCases) { r in rolePill(r) }
+                Spacer(minLength: 0)
             }
-            .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.top, 2)
         }
         .padding(.top, 2)
     }
 
-    private func segmentLabel(_ r: CorpusAPI.PersonRole) -> String {
-        switch r {
-        case .own: return "Their videos \(person.own_videos)"
-        case .featured: return "Appearances \(person.appearances)"
-        case .all: return "All"
+    private func rolePill(_ r: CorpusAPI.PersonRole) -> some View {
+        let on = r == role
+        let count: Int = r == .own ? person.own_videos : (r == .featured ? person.appearances : person.entries)
+        let empty = count == 0
+        let fg: Color = on ? Color.black : (empty ? P.textDim : P.ink)
+        let bg: Color = on ? P.ink : P.surface
+        return Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { role = r } } label: {
+            HStack(spacing: 6) {
+                Text(r.rawValue).font(.geist(size: 14, weight: on ? .semibold : .medium))
+                Text(count.formatted()).font(.geist(size: 12, weight: .medium, design: .monospaced))
+                    .opacity(on ? 0.7 : 0.6)
+            }
+            .foregroundColor(fg)
+            .padding(.horizontal, 14).frame(height: 34)
+            .background(Capsule().fill(bg))
+            .overlay(Capsule().stroke(P.edge).opacity(on ? 0 : 1))
         }
+        .buttonStyle(.plain)
+        .disabled(empty && !on)
+        .accessibilityLabel("\(r.rawValue), \(count)")
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     /// "3,487 videos · Newest first", or "12 matches" while searching.
@@ -440,7 +470,7 @@ struct PersonDetail: View {
         case .featured: n = person.appearances
         }
         let noun: String
-        if r.role == .featured { noun = n == 1 ? " appearance" : " appearances" }
+        if r.role == .featured { noun = n == 1 ? " show they were on" : " shows they were on" }
         else { noun = n == 1 ? " video" : " videos" }
         let order: String
         switch sort {
@@ -516,7 +546,7 @@ struct PersonDetail: View {
         switch role {
         case .all: return "Nothing here yet"
         case .own: return "No videos of their own"
-        case .featured: return "No appearances yet"
+        case .featured: return "Not on other shows yet"
         }
     }
 
