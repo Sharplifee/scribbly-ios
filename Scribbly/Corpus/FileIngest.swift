@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import AVFoundation
 import PhotosUI
 import CoreTransferable
+import Vision
 
 /// Picks an audio OR video file and sends it through the same
 /// transcribe-and-summarize path a live recording uses.
@@ -26,6 +27,76 @@ final class FileIngestModel: ObservableObject {
     @Published var lastError: String?
 
     private let whisperCeilingBytes = 24 * 1024 * 1024
+
+    /// Several files from the Files picker, one after another.
+    func handleFiles(_ urls: [URL]) async {
+        for (i, url) in urls.enumerated() {
+            if urls.count > 1 { batchLabel = "\(i + 1) of \(urls.count)" }
+            let ext = url.pathExtension.lowercased()
+            if let t = UTType(filenameExtension: ext), t.conforms(to: .image) {
+                let scoped = url.startAccessingSecurityScopedResource()
+                let data = try? Data(contentsOf: url)
+                if scoped { url.stopAccessingSecurityScopedResource() }
+                if let data { await handleImage(data, name: url.deletingPathExtension().lastPathComponent) }
+            } else {
+                await handle(url)
+            }
+        }
+        batchLabel = nil
+    }
+
+    /// Several picks from Photos (videos and/or photos), one after another.
+    func handlePhotos(_ items: [PhotosPickerItem]) async {
+        for (i, item) in items.enumerated() {
+            if items.count > 1 { batchLabel = "\(i + 1) of \(items.count)" }
+            if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) || $0.conforms(to: .audiovisualContent) }) {
+                await handlePhoto(item)
+            } else if let data = try? await item.loadTransferable(type: Data.self) {
+                await handleImage(data, name: "Photo")
+            } else {
+                lastError = "Photos didn't hand over one of the items. If it's in iCloud, open it in Photos once, then try again."
+            }
+        }
+        batchLabel = nil
+    }
+
+    /// "2 of 7" while a multi-pick is working through its items.
+    @Published var batchLabel: String?
+
+    /// A photo or screenshot: read its text on the phone, save it as an entry.
+    func handleImage(_ data: Data, name: String) async {
+        working = true; lastError = nil; status = "Reading text from the image…"
+        defer { working = false }
+        let text = await Self.recognizeText(data)
+        guard !text.isEmpty else {
+            lastError = "No readable text in that image, so nothing was saved."
+            status = nil
+            return
+        }
+        let firstLine = text.split(separator: "\n").first.map(String.init) ?? name
+        let title = String(firstLine.prefix(80))
+        do {
+            try await CorpusAPI.saveEntry(id: "image_\(Int(Date().timeIntervalSince1970 * 1000))_\(Int.random(in: 100...999))",
+                                          title: title, type: "Image", tags: "image",
+                                          summary: "", transcript: text)
+            status = "Saved — the image's text is in your Library."
+        } catch {
+            lastError = "Couldn't save the image's text: \(error.localizedDescription)"
+            status = nil
+        }
+    }
+
+    private nonisolated static func recognizeText(_ data: Data) async -> String {
+        await Task.detached(priority: .userInitiated) { () -> String in
+            guard let img = UIImage(data: data), let cg = img.cgImage else { return "" }
+            let req = VNRecognizeTextRequest()
+            req.recognitionLevel = .accurate
+            req.usesLanguageCorrection = true
+            try? VNImageRequestHandler(cgImage: cg, options: [:]).perform([req])
+            let lines = (req.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+            return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        }.value
+    }
 
     func handle(_ url: URL, fromPhotos: Bool = false) async {
         working = true; lastError = nil; status = "Preparing…"
@@ -187,7 +258,7 @@ final class FileIngestModel: ObservableObject {
     /// normalize. The box runs ffmpeg on whatever arrives, so we accept broadly
     /// (all audio + all movie/video UTTypes) rather than a hand-picked list.
     static var contentTypes: [UTType] {
-        var t: [UTType] = [.audiovisualContent, .audio, .mpeg4Audio, .mp3, .wav, .aiff, .movie, .mpeg4Movie,
+        var t: [UTType] = [.image, .audiovisualContent, .audio, .mpeg4Audio, .mp3, .wav, .aiff, .movie, .mpeg4Movie,
                            .quickTimeMovie, .video, .mpeg2Video, .avi, .mpeg, .appleProtectedMPEG4Audio,
                            .appleProtectedMPEG4Video]
         // Containers iOS doesn't classify as audio/video still get picked by extension;
