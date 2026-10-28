@@ -100,6 +100,25 @@ final class AuthSession: ObservableObject {
     /// Apple only shares the name on the very first sign-in; it pre-fills setup.
     @Published var pendingName: String?
 
+    /// Email + password. On success the login is kept behind Face ID so the
+    /// next sign-in is just a glance.
+    func signInWithPassword(_ email: String, _ password: String) async {
+        let e = email.trimmingCharacters(in: .whitespaces).lowercased()
+        if await exchange(path: "/token?grant_type=password", body: ["email": e, "password": password]) {
+            FaceIDVault.save(email: e, password: password)
+        } else if error?.lowercased().contains("invalid") == true {
+            error = "That email and password don't match. Try again, or get a code instead."
+        }
+    }
+
+    /// Face ID → saved login → signed in. Returns false if nothing is saved or Face ID is cancelled.
+    @discardableResult
+    func signInWithFaceID() async -> Bool {
+        guard let c = await FaceIDVault.load() else { return false }
+        await signInWithPassword(c.email, c.password)
+        return phase != .signedOut
+    }
+
     func sendEmailCode(_ email: String) async -> Bool {
         await post("/otp", ["email": email.trimmingCharacters(in: .whitespaces).lowercased(), "create_user": true])
     }
@@ -215,7 +234,8 @@ final class AuthSession: ObservableObject {
         return false
     }
 
-    private func exchange(path: String, body: [String: Any]) async {
+    @discardableResult
+    private func exchange(path: String, body: [String: Any]) async -> Bool {
         error = nil
         var req = URLRequest(url: URL(string: Self.authBase + path)!)
         req.httpMethod = "POST"
@@ -227,11 +247,13 @@ final class AuthSession: ObservableObject {
             let (d, r) = try await URLSession.shared.data(for: req)
             guard (r as? HTTPURLResponse)?.statusCode == 200, let s = Self.session(from: d) else {
                 error = Self.message(d) ?? "That didn't work — check the code and try again."
-                return
+                return false
             }
             store(s)
             await afterSignIn()
+            return true
         } catch { self.error = "No connection — try again." }
+        return false
     }
 
     private func refresh() async {
@@ -333,4 +355,48 @@ enum Keychain {
         return SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess ? out as? Data : nil
     }
     static func delete(_ key: String) { SecItemDelete(query(key) as CFDictionary) }
+}
+
+import LocalAuthentication
+
+/// The email + password, stored in the Keychain so only Face ID (on this
+/// iPhone, with the current enrolled face) can read it back.
+enum FaceIDVault {
+    private static let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                              kSecAttrService as String: "com.connor.scribbly.faceid",
+                                              kSecAttrAccount as String: "login"]
+    static func save(email: String, password: String) {
+        guard let data = try? JSONEncoder().encode([email, password]) else { return }
+        SecItemDelete(base as CFDictionary)
+        var q = base
+        q[kSecValueData as String] = data
+        if let ac = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly, .biometryCurrentSet, nil) {
+            q[kSecAttrAccessControl as String] = ac
+        }
+        SecItemAdd(q as CFDictionary, nil)
+    }
+    /// True if a login is saved — checked without showing Face ID.
+    static var hasLogin: Bool {
+        var q = base
+        let ctx = LAContext(); ctx.interactionNotAllowed = true
+        q[kSecUseAuthenticationContext as String] = ctx
+        let st = SecItemCopyMatching(q as CFDictionary, nil)
+        return st == errSecSuccess || st == errSecInteractionNotAllowed
+    }
+    static func load() async -> (email: String, password: String)? {
+        await withCheckedContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                var q = base
+                let ctx = LAContext(); ctx.localizedReason = "Sign in to Scribbly"
+                q[kSecUseAuthenticationContext as String] = ctx
+                q[kSecReturnData as String] = true
+                q[kSecMatchLimit as String] = kSecMatchLimitOne
+                var out: CFTypeRef?
+                guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,
+                      let d = out as? Data, let a = try? JSONDecoder().decode([String].self, from: d), a.count == 2
+                else { cont.resume(returning: nil); return }
+                cont.resume(returning: (a[0], a[1]))
+            }
+        }
+    }
 }

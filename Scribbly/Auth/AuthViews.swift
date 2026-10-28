@@ -59,6 +59,9 @@ struct SignInView: View {
     @State private var code = ""
     @State private var sent = false
     @State private var busy = false
+    @State private var password = ""
+    @State private var useCode = false
+    @State private var hasFaceID = FaceIDVault.hasLogin
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -81,7 +84,8 @@ struct SignInView: View {
                 VStack(spacing: 12) {
                     switch mode {
                     case .choose: chooser
-                    case .email, .phone: codeFlow
+                    case .email: if useCode { codeFlow } else { passwordFlow }
+                    case .phone: codeFlow
                     }
                     if let e = auth.error {
                         Text(e).font(.geist(size: 13)).foregroundColor(P.danger)
@@ -95,10 +99,17 @@ struct SignInView: View {
             }
             .padding(.top, 8)
         }
+        .task {
+            // Face ID is the default: if a login is saved, ask straight away.
+            if hasFaceID, mode == .choose, ProcessInfo.processInfo.environment["SCRIBBLY_AUTH"] == nil { faceID() }
+        }
     }
 
     private var chooser: some View {
         VStack(spacing: 12) {
+            if hasFaceID {
+                pill(busy ? "Signing in…" : "Sign in with Face ID", icon: "faceid", primary: true) { faceID() }
+            }
             SignInWithAppleButton(.continue) { auth.prepareApple($0) } onCompletion: { r in
                 Task { busy = true; await auth.finishApple(r); busy = false }
             }
@@ -109,6 +120,38 @@ struct SignInView: View {
             pill("Continue with phone", icon: "phone") { start(.phone) }
         }
         .disabled(busy)
+    }
+
+    private var passwordFlow: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button { mode = .choose; auth.error = nil } label: {
+                Label("Other ways", systemImage: "chevron.left").font(.geist(size: 14)).foregroundColor(P.textSec)
+            }
+            Text("Sign in with email").font(.geist(size: 24, weight: .semibold)).foregroundColor(P.ink)
+            field("you@example.com", text: $target, kb: .emailAddress, content: .username)
+            SecureField("Password", text: $password)
+                .textContentType(.password).submitLabel(.go).onSubmit { passwordSignIn() }
+                .font(.geist(size: 18)).foregroundColor(P.ink)
+                .padding(.horizontal, 18).frame(height: 54)
+                .background(Capsule().fill(P.surface2)).overlay(Capsule().stroke(P.border))
+            pill(busy ? "Signing in…" : "Sign in", icon: nil, primary: true) { passwordSignIn() }
+                .disabled(busy || !valid || password.isEmpty)
+            Text("Face ID will sign you in next time.").font(.geist(size: 13)).foregroundColor(P.textDim)
+            Button("Email me a code instead") { auth.error = nil; useCode = true; sent = false }
+                .font(.geist(size: 14)).foregroundColor(P.textSec)
+        }
+    }
+
+    private func passwordSignIn() {
+        Task { busy = true; await auth.signInWithPassword(target, password); busy = false }
+    }
+    private func faceID() {
+        Task {
+            busy = true
+            let ok = await auth.signInWithFaceID()
+            busy = false
+            if !ok { hasFaceID = FaceIDVault.hasLogin }
+        }
     }
 
     private var codeFlow: some View {
@@ -138,7 +181,7 @@ struct SignInView: View {
         mode == .email ? (target.contains("@") && target.contains(".")) : target.filter(\.isNumber).count >= 10
     }
 
-    private func start(_ m: Mode) { auth.error = nil; mode = m; target = ""; code = ""; sent = false; focused = true }
+    private func start(_ m: Mode) { auth.error = nil; mode = m; target = ""; code = ""; password = ""; useCode = false; sent = false; focused = true }
     private func send() {
         Task {
             busy = true
