@@ -241,6 +241,7 @@ struct CollectionDetail: View {
         ScrollView {
             VStack(spacing: 0) {   // no gap above the banner
             PageHeader(title: collection.displayName, subtitle: detailSubtitle, underNavBar: true)
+            BatchProgressPanel(collectionID: collection.id)
             LazyVStack(spacing: 0) {
                 if entries.isEmpty && !reachedEnd && error == nil { SkeletonRows() }
                 ForEach(entries) { e in
