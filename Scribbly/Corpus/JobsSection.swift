@@ -349,7 +349,12 @@ final class JobsModel: ObservableObject {
         lastRefresh = Date()
     }
 
+    func reset() { voiceJobs = []; batches = []; error = nil; lastRefresh = nil }
+
     private func loadVoice() async {
+        // The cloud computer's job list isn't per-account yet; only the
+        // library's owner sees it, so a new account never sees someone else's.
+        guard AuthSession.shared.isLibraryOwner else { voiceJobs = []; return }
         do {
             var req = URLRequest(url: URL(string: voiceBase + "/jobs")!)
             req.timeoutInterval = 20

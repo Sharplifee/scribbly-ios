@@ -448,6 +448,8 @@ final class CreatorDirectory: ObservableObject {
         byID = Dictionary(cols.map { c in (c.id, c) }, uniquingKeysWith: { a, _ in a })
     }
 
+    func reset() { byID = [:] }
+
     func loadIfNeeded() async {
         guard byID.isEmpty, !loading else { return }
         loading = true
