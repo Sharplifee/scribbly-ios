@@ -80,8 +80,6 @@ struct SettingsSection: View {
                         }
                         Text("Transcribed, summarized, searchable — this is how text will look.")
                             .font(.geist(size: 14)).foregroundColor(P.textSec)
-                        Text("Default follows your iPhone's Text Size setting.")
-                            .font(.geist(size: 12)).foregroundColor(P.textDim)
                     }
                     .padding(.vertical, 14)
                 }
