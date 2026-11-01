@@ -349,7 +349,12 @@ final class JobsModel: ObservableObject {
         lastRefresh = Date()
     }
 
+    func reset() { voiceJobs = []; batches = []; error = nil; lastRefresh = nil }
+
     private func loadVoice() async {
+        // The cloud computer's job list isn't per-account yet; only the
+        // library's owner sees it, so a new account never sees someone else's.
+        guard AuthSession.shared.isLibraryOwner else { voiceJobs = []; return }
         do {
             var req = URLRequest(url: URL(string: voiceBase + "/jobs")!)
             req.timeoutInterval = 20
@@ -357,7 +362,7 @@ final class JobsModel: ObservableObject {
             struct R: Decodable { let jobs: [VoiceJob] }
             voiceJobs = try JSONDecoder().decode(R.self, from: d).jobs
             error = nil
-        } catch { self.error = "Cloud computer unreachable: \(error.localizedDescription)" }
+        } catch { self.error = "Scribbly® server unreachable: \(error.localizedDescription)" }
     }
 
     /// One row per collection with videos still queued or running. Only

@@ -1151,7 +1151,7 @@ struct IngestSection: View {
                 status = "Couldn't queue that link: " + ((j["error"] as? String) ?? "HTTP \(code)") + " — check it opens publicly and try again."
                 return false
             } catch {
-                status = "Couldn't reach Sharp's Cloud Computer (\(error.localizedDescription)). The link wasn't queued — try again."
+                status = "Couldn't reach the Scribbly® server (\(error.localizedDescription)). The link wasn't queued — try again."
                 return false
             }
         }
@@ -1375,7 +1375,7 @@ private struct RecentList: View {
     }
     private func label(_ s: String) -> String {
         switch s {
-        case "pending": return "Queued on the cloud computer"
+        case "pending": return "Queued on the Scribbly® server"
         case "transcribing": return "Transcribing…"
         case "saving": return "Saving to your library…"
         case "paused": return "Paused"

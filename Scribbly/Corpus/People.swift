@@ -193,6 +193,8 @@ final class PeopleDirectory: ObservableObject {
     @Published private(set) var loaded = false
     @Published var error: String?
 
+    func reset() { people = []; loaded = false; error = nil }
+
     func loadIfNeeded() async {
         guard people.isEmpty else { return }
         await reload()

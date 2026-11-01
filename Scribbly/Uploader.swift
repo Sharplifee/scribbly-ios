@@ -477,7 +477,7 @@ final class Uploader: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.serverTrackTask?.cancel()
             self.serverJob = ServerJob(id: id, title: title, state: "pending", progress: nil,
-                                       stage: "Queued on the cloud computer…")
+                                       stage: "Queued on the Scribbly® server…")
             self.serverTrackTask = Task { [weak self] in await self?.pollServerJob(id) }
         }
     }
@@ -492,7 +492,7 @@ final class Uploader: NSObject, ObservableObject {
 
     private static func stageText(_ state: String) -> String {
         switch state {
-        case "pending":      return "Queued on the cloud computer…"
+        case "pending":      return "Queued on the Scribbly® server…"
         case "transcribing": return "Transcribing…"
         case "saving":       return "Summarizing & saving…"
         case "paused":       return "Paused"

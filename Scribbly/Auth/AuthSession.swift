@@ -49,6 +49,9 @@ final class AuthSession: ObservableObject {
     @Published private(set) var user: User?
     @Published private(set) var profile: Profile?
     @Published var error: String?
+    /// True for the account that owns the original library (sees the cloud
+    /// computer's job list); every other account sees only its own things.
+    @Published private(set) var isLibraryOwner = false
 
     private struct Stored: Codable { var access: String; var refresh: String; var expiresAt: Date; var user: User }
     private var stored: Stored? { didSet { AuthTokens.access = stored?.access; AuthTokens.userID = stored?.user.id } }
@@ -157,6 +160,8 @@ final class AuthSession: ObservableObject {
             URLSession.shared.dataTask(with: req).resume()
         }
         Keychain.delete(Self.keychainKey)
+        AccountScope.switchTo(nil)
+        isLibraryOwner = false
         stored = nil; user = nil; profile = nil
         refreshTask?.cancel()
         phase = .signedOut
@@ -183,7 +188,9 @@ final class AuthSession: ObservableObject {
 
     private func afterSignIn() async {
         // The very first sign-in by the library's owner claims the existing library.
-        _ = try? await rpc("scribbly_claim_library")
+        let claim = (try? await rpc("scribbly_claim_library")).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        isLibraryOwner = claim.contains("owner") || claim.contains("claimed")
+        AccountScope.switchTo(user?.id)
         await loadProfile()
         if let size = profile?.text_size, !size.isEmpty {
             UserDefaults.standard.set(size, forKey: TextSizeOption.storageKey)
@@ -415,5 +422,26 @@ enum FaceIDVault {
                 cont.resume(returning: (a[0], a[1]))
             }
         }
+    }
+}
+
+/// Everything the phone remembers about a library (counts, recent list,
+/// people, creators, jobs) belongs to one account. When a different account
+/// signs in — or anyone signs out — it is all wiped so a new account starts
+/// truly empty.
+@MainActor
+enum AccountScope {
+    private static let key = "scribbly.lastUserID"
+    static func switchTo(_ uid: String?) {
+        let last = UserDefaults.standard.string(forKey: key)
+        guard last != uid else { return }
+        for k in ["libraryCount", "collectionCount"] { UserDefaults.standard.removeObject(forKey: k) }
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent("recent.json"))
+        CreatorDirectory.shared.reset()
+        PeopleDirectory.shared.reset()
+        JobsModel.shared.reset()
+        if let uid { UserDefaults.standard.set(uid, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
+        EventLog.shared.log("account.switched", status: "ok", ["fresh": true])
     }
 }

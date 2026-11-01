@@ -13,7 +13,7 @@ struct AuthGate<Content: View>: View {
 
     var body: some View {
         ZStack {
-            content()
+            content().id(auth.user?.id ?? "signed-out")
             if forced == "signin" { SignInView() }
             else if forced == "onboarding" { OnboardingView() }
             else if !qa {
