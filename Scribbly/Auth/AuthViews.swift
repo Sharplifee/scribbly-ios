@@ -61,6 +61,8 @@ struct SignInView: View {
     @State private var busy = false
     @State private var password = ""
     @State private var useCode = false
+    @State private var signUp = false
+    @State private var confirm = ""
     @State private var hasFaceID = FaceIDVault.hasLogin
     @FocusState private var focused: Bool
 
@@ -105,19 +107,41 @@ struct SignInView: View {
         }
     }
 
+    /// Sign in | Create account — same choices, labelled for what you're doing.
+    private var modeToggle: some View {
+        HStack(spacing: 4) {
+            ForEach([false, true], id: \.self) { up in
+                let on = signUp == up
+                Button { withAnimation(.easeInOut(duration: 0.2)) { signUp = up; auth.error = nil } } label: {
+                    Text(up ? "Create account" : "Sign in")
+                        .font(.geist(size: 15, weight: .semibold))
+                        .foregroundColor(on ? .black : P.textSec)
+                        .frame(maxWidth: .infinity).frame(height: 40)
+                        .background(Capsule().fill(on ? P.ink : Color.clear))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(Capsule().fill(P.surface2))
+        .overlay(Capsule().stroke(P.border))
+    }
+
     private var chooser: some View {
         VStack(spacing: 12) {
-            if hasFaceID {
+            modeToggle
+            if hasFaceID && !signUp {
                 pill(busy ? "Signing in…" : "Sign in with Face ID", icon: "faceid", primary: true) { faceID() }
             }
-            SignInWithAppleButton(.continue) { auth.prepareApple($0) } onCompletion: { r in
+            SignInWithAppleButton(signUp ? .signUp : .signIn) { auth.prepareApple($0) } onCompletion: { r in
                 Task { busy = true; await auth.finishApple(r); busy = false }
             }
             .signInWithAppleButtonStyle(.white)
             .frame(height: 52)
             .clipShape(Capsule())
-            pill("Continue with email", icon: "envelope") { start(.email) }
-            pill("Continue with phone", icon: "phone") { start(.phone) }
+            .id(signUp)
+            pill(signUp ? "Sign up with email" : "Sign in with email", icon: "envelope") { start(.email) }
+            pill(signUp ? "Sign up with phone" : "Sign in with phone", icon: "phone") { start(.phone) }
         }
         .disabled(busy)
     }
@@ -127,23 +151,47 @@ struct SignInView: View {
             Button { mode = .choose; auth.error = nil } label: {
                 Label("Other ways", systemImage: "chevron.left").font(.geist(size: 14)).foregroundColor(P.textSec)
             }
-            Text("Sign in with email").font(.geist(size: 24, weight: .semibold)).foregroundColor(P.ink)
+            Text(signUp ? "Create your account" : "Sign in with email")
+                .font(.geist(size: 24, weight: .semibold)).foregroundColor(P.ink)
             field("you@example.com", text: $target, kb: .emailAddress, content: .username)
-            SecureField("Password", text: $password)
-                .textContentType(.password).submitLabel(.go).onSubmit { passwordSignIn() }
-                .font(.geist(size: 18)).foregroundColor(P.ink)
-                .padding(.horizontal, 18).frame(height: 54)
-                .background(Capsule().fill(P.surface2)).overlay(Capsule().stroke(P.border))
-            pill(busy ? "Signing in…" : "Sign in", icon: nil, primary: true) { passwordSignIn() }
-                .disabled(busy || !valid || password.isEmpty)
+            secure(signUp ? "Choose a password (8+ characters)" : "Password", $password, newPassword: signUp)
+            if signUp { secure("Type it again", $confirm, newPassword: true) }
+            pill(busy ? (signUp ? "Creating…" : "Signing in…") : (signUp ? "Create account" : "Sign in"),
+                 icon: nil, primary: true) { passwordSubmit() }
+                .disabled(busy || !passwordReady)
             Text("Face ID will sign you in next time.").font(.geist(size: 13)).foregroundColor(P.textDim)
-            Button("Email me a code instead") { auth.error = nil; useCode = true; sent = false }
+            Button(signUp ? "Already have an account? Sign in" : "New here? Create an account") {
+                withAnimation { signUp.toggle(); auth.error = nil; confirm = "" }
+            }
+            .font(.geist(size: 14, weight: .medium)).foregroundColor(P.ink)
+            Button(signUp ? "Email me a code instead" : "Email me a code instead") { auth.error = nil; useCode = true; sent = false }
                 .font(.geist(size: 14)).foregroundColor(P.textSec)
         }
     }
 
-    private func passwordSignIn() {
-        Task { busy = true; await auth.signInWithPassword(target, password); busy = false }
+    private var passwordReady: Bool {
+        guard valid, !password.isEmpty else { return false }
+        return !signUp || (password.count >= 8 && password == confirm)
+    }
+    private func passwordSubmit() {
+        guard passwordReady else {
+            if signUp && password != confirm { auth.error = "The two passwords don't match." }
+            else if signUp { auth.error = "Use at least 8 characters." }
+            return
+        }
+        Task {
+            busy = true
+            if signUp { await auth.signUpWithPassword(target, password) } else { await auth.signInWithPassword(target, password) }
+            busy = false
+        }
+    }
+    private func secure(_ placeholder: String, _ text: Binding<String>, newPassword: Bool) -> some View {
+        SecureField(placeholder, text: text)
+            .textContentType(newPassword ? .newPassword : .password)
+            .submitLabel(.go).onSubmit { passwordSubmit() }
+            .font(.geist(size: 18)).foregroundColor(P.ink)
+            .padding(.horizontal, 18).frame(height: 54)
+            .background(Capsule().fill(P.surface2)).overlay(Capsule().stroke(P.border))
     }
     private func faceID() {
         Task {
@@ -181,7 +229,7 @@ struct SignInView: View {
         mode == .email ? (target.contains("@") && target.contains(".")) : target.filter(\.isNumber).count >= 10
     }
 
-    private func start(_ m: Mode) { auth.error = nil; mode = m; target = ""; code = ""; password = ""; useCode = false; sent = false; focused = true }
+    private func start(_ m: Mode) { auth.error = nil; mode = m; target = ""; code = ""; password = ""; confirm = ""; useCode = false; sent = false; focused = true }
     private func send() {
         Task {
             busy = true
