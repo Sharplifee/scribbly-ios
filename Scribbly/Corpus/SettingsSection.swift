@@ -108,7 +108,7 @@ struct SettingsSection: View {
                 }
                 header("SERVER")
                 card {
-                    plainRow("Sharp's Cloud Computer", serverOK == nil ? "Checking…" : (serverOK! ? "Online" : "Unreachable"), good: serverOK == true)
+                    plainRow("Scribbly® server", serverOK == nil ? "Checking…" : (serverOK! ? "Online" : "Unreachable"), good: serverOK == true)
                     plainRow("Library", entryCount > 0
                              ? "\(entryCount.formatted()) entries" + (countFailed ? " (last known)" : "")
                              : (countFailed ? "Couldn't count" : "Counting…"))
