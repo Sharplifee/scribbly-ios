@@ -109,7 +109,19 @@ final class AuthSession: ObservableObject {
         if await exchange(path: "/token?grant_type=password", body: ["email": e, "password": password]) {
             FaceIDVault.save(email: e, password: password)
         } else if error?.lowercased().contains("invalid") == true {
-            error = "That email and password don't match. Try again, or get a code instead."
+            error = "That email and password don't match. Try again, create an account, or get a code instead."
+        }
+    }
+
+    /// New account with email + password. If that email already has an
+    /// account, says so instead of failing silently.
+    func signUpWithPassword(_ email: String, _ password: String) async {
+        let e = email.trimmingCharacters(in: .whitespaces).lowercased()
+        if await exchange(path: "/signup", body: ["email": e, "password": password]) {
+            FaceIDVault.save(email: e, password: password)
+            EventLog.shared.log("auth.signed_up", status: "ok", ["method": "email_password"])
+        } else if let m = error?.lowercased(), m.contains("registered") || m.contains("already") || m.contains("exists") {
+            error = "That email already has an account — switch to Sign in."
         }
     }
 
