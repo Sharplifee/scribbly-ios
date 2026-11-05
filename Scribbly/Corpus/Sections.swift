@@ -1135,7 +1135,7 @@ struct IngestSection: View {
             }
             return j
         }
-        // Social video (Instagram / TikTok / Facebook / Vimeo / X) → Sharp's Cloud Computer pulls the audio
+        // Social video (Instagram / TikTok / Facebook / Vimeo / X) → the Scribbly® server pulls the audio
         // and transcribes it on its own clock, exactly like a recording. Accepted instantly; shows in Activity.
         let low0 = url.lowercased()
         if ["instagram.com", "tiktok.com", "facebook.com", "fb.watch", "vimeo.com", "x.com/", "twitter.com/"].contains(where: { low0.contains($0) }) {
@@ -1143,14 +1143,17 @@ struct IngestSection: View {
                 var req = URLRequest(url: URL(string: CorpusAPI.voiceIngestURL.replacingOccurrences(of: "/upload", with: "/link"))!)
                 req.httpMethod = "POST"; req.timeoutInterval = 30
                 req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                if let t = AuthTokens.access { req.setValue(t, forHTTPHeaderField: "x-auth") }
                 req.httpBody = try JSONSerialization.data(withJSONObject: ["url": url])
                 let (d, r) = try await URLSession.shared.data(for: req)
                 let code = (r as? HTTPURLResponse)?.statusCode ?? 0
                 if code == 202 { return true }
                 let j = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] ?? [:]
+                EventLog.shared.error("queue.link_failed", subject: url, (j["error"] as? String) ?? "HTTP \(code)", ["http": code])
                 status = "Couldn't queue that link: " + ((j["error"] as? String) ?? "HTTP \(code)") + " — check it opens publicly and try again."
                 return false
             } catch {
+                EventLog.shared.error("queue.server_unreachable", subject: url, error.localizedDescription)
                 status = "Couldn't reach the Scribbly® server (\(error.localizedDescription)). The link wasn't queued — try again."
                 return false
             }
@@ -1193,6 +1196,7 @@ struct IngestSection: View {
         let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         if code != 200 {
+            EventLog.shared.error("ingest.failed", subject: body["url"] as? String, (json["error"] as? String) ?? "HTTP \(code)", ["http": code])
             throw NSError(domain: "Ingest", code: code,
                           userInfo: [NSLocalizedDescriptionKey: (json["error"] as? String) ?? "Ingest returned HTTP \(code)."])
         }

@@ -331,6 +331,8 @@ final class AuthSession: ObservableObject {
         guard let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
         let m = (o["msg"] as? String) ?? (o["error_description"] as? String) ?? (o["message"] as? String)
         guard let m, !m.isEmpty else { return nil }
+        if m.lowercased().contains("invalid login credentials") { return "That email and password don't match. Try again, create an account, or get a code instead." }
+        if m.lowercased().contains("password should") || m.lowercased().contains("weak") { return "Pick a longer password — at least 6 characters." }
         if m.lowercased().contains("expired") || m.lowercased().contains("invalid") { return "That code didn't work or has expired — send a new one." }
         if m.lowercased().contains("rate limit") { return "Too many codes requested — wait a few minutes and try again." }
         return m
