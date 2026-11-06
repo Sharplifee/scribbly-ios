@@ -67,7 +67,7 @@ struct JobsSection: View {
 
                 // ── Server-side voice/file jobs still in motion (saved ones move to
                 // "Last 30 saved" below; failed ones live under Didn't work).
-                card(title: "PROCESSING ON SHARP'S CLOUD COMPUTER · \(activeVoice.count)") {
+                card(title: "PROCESSING ON SCRIBBLY® SERVER · \(activeVoice.count)") {
                     if activeVoice.isEmpty {
                         Text("Nothing processing.").font(.geist(size: 13)).foregroundColor(P.textDim)
                     }

@@ -236,7 +236,7 @@ final class FailedModel: ObservableObject {
         var req = URLRequest(url: URL(string: "\(CorpusAPI.restBase)/\(path)")!)
         req.timeoutInterval = 30
         CorpusAPI.restHeaders.forEach { req.setValue($1, forHTTPHeaderField: $0) }
-        let (d, _) = try await URLSession.shared.data(for: req)
+        let (d, _) = try await CorpusAPI.authed(req)
         return try JSONDecoder().decode(T.self, from: d)
     }
     private func patch(_ path: String, _ body: [String: Any]) async throws {

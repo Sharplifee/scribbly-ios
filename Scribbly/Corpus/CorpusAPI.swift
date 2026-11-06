@@ -56,10 +56,31 @@ enum CorpusAPI {
         return req
     }
 
+    /// Runs a Supabase request with a fresh sign-in token: refreshes a token that's
+    /// about to expire, and on a 401 refreshes once and retries — so a phone that
+    /// slept past the 1-hour token never shows "JWT expired".
+    static func authed(_ req: URLRequest) async throws -> (Data, URLResponse) {
+        var req = req
+        let signedIn = AuthTokens.access != nil
+        if signedIn {
+            await AuthSession.shared.refreshIfNeeded()
+            if let t = AuthTokens.access { req.setValue("Bearer \(t)", forHTTPHeaderField: "Authorization") }
+        }
+        var (data, resp) = try await URLSession.shared.data(for: req)
+        if (resp as? HTTPURLResponse)?.statusCode == 401, signedIn {
+            await AuthSession.shared.forceRefresh()
+            req.setValue("Bearer \(AuthTokens.access ?? anonKey)", forHTTPHeaderField: "Authorization")
+            (data, resp) = try await URLSession.shared.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+            EventLog.shared.log("auth.retry_after_401", status: (200..<300).contains(code) ? "ok" : "fail", ["http": code])
+        }
+        return (data, resp)
+    }
+
     /// Sends a request and throws a readable error unless the server answered 2xx.
     @discardableResult
     static func send(_ req: URLRequest) async throws -> Data {
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await authed(req)
         let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
         guard (200..<300).contains(status) else {
             throw CorpusAPIError.http(status, errorText(data))
@@ -441,7 +462,7 @@ enum CorpusAPI {
     static func count(table: String, filters: [URLQueryItem] = []) async throws -> Int {
         var req = try restRequest(restURL(table, [URLQueryItem(name: "select", value: "id")] + filters), method: "HEAD", prefer: "count=exact")
         req.timeoutInterval = 20
-        let (_, resp) = try await URLSession.shared.data(for: req)
+        let (_, resp) = try await authed(req)
         guard let http = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard (200..<300).contains(http.statusCode) else { throw CorpusAPIError.http(http.statusCode, "count failed") }
         guard let range = http.value(forHTTPHeaderField: "content-range"),

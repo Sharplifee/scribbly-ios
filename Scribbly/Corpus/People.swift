@@ -173,7 +173,7 @@ extension CorpusAPI {
         let url = strictRestURL("scribbly_person_entries", [URLQueryItem(name: "select", value: "id")] + filters)
         var req = try restRequest(url, method: "HEAD", prefer: "count=exact")
         req.timeoutInterval = 20
-        let (_, resp) = try await URLSession.shared.data(for: req)
+        let (_, resp) = try await authed(req)
         guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               let range = http.value(forHTTPHeaderField: "content-range"),
               let total = range.split(separator: "/").last, let n = Int(total) else {

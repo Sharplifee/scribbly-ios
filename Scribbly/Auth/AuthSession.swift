@@ -226,7 +226,7 @@ final class AuthSession: ObservableObject {
         var req = restRequest("rpc/\(name)")
         req.httpMethod = "POST"
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (d, _) = try await URLSession.shared.data(for: req)
+        let (d, _) = try await CorpusAPI.authed(req)
         return d
     }
 
@@ -307,7 +307,21 @@ final class AuthSession: ObservableObject {
     }
 
     func refreshIfNeeded() async {
-        if let exp = stored?.expiresAt, exp < Date().addingTimeInterval(300) { await refresh() }
+        if let exp = stored?.expiresAt, exp < Date().addingTimeInterval(300) { await refreshOnce() }
+    }
+
+    /// Forces a refresh (used when the server answers "JWT expired"). Concurrent
+    /// callers share one in-flight refresh so the refresh token is used once.
+    func forceRefresh() async { await refreshOnce() }
+
+    private var inflightRefresh: Task<Void, Never>?
+    private func refreshOnce() async {
+        if let t = inflightRefresh { await t.value; return }
+        let t = Task { await self.refresh() }
+        inflightRefresh = t
+        await t.value
+        inflightRefresh = nil
+        EventLog.shared.log("auth.refreshed", status: stored == nil ? "fail" : "ok")
     }
 
     private func store(_ s: Stored) {
