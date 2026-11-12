@@ -23,7 +23,14 @@ final class RecordingLiveActivity {
     /// Seconds between Live Activity pushes while recording. ActivityKit
     /// throttles anything faster, and the timer ticks on its own
     /// (Text(timerInterval:)), so the only reason to push is the waveform.
-    private static let pushInterval: UInt64 = 500_000_000
+    /// Every 1 s while the app is on screen, every 5 s in the background — the
+    /// timer text ticks on its own, so background pushes only refresh the wave.
+    private static let foregroundPush: UInt64 = 1_000_000_000
+    private static let backgroundPush: UInt64 = 5_000_000_000
+    private var inBackground = UIApplication.shared.applicationState == .background
+    /// The "Pause or finish from here" pop-open fires once per recording.
+    private var poppedThisRecording = false
+    private var lastState: Recorder.State = .idle
 
     func bind() {
         guard !started else { return }
@@ -44,6 +51,7 @@ final class RecordingLiveActivity {
             }
         }
         let rec = Recorder.shared
+        endOrphans()
         // Sample the input level a few times a second; push to the Live
         // Activity about once a second (the system throttles faster updates).
         rec.$level.receive(on: RunLoop.main).sink { [weak self] l in
@@ -62,7 +70,8 @@ final class RecordingLiveActivity {
         }.store(in: &bag)
         levelLoop = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: RecordingLiveActivity.pushInterval)
+                let wait = (self?.inBackground ?? false) ? RecordingLiveActivity.backgroundPush : RecordingLiveActivity.foregroundPush
+                try? await Task.sleep(nanoseconds: wait)
                 guard let self, Recorder.shared.state == .recording else { continue }
                 self.sync(state: .recording, appending: Recorder.shared.appendTo != nil)
             }
@@ -72,7 +81,11 @@ final class RecordingLiveActivity {
         // expanded island — the small pill opens the app when tapped.
         NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.popOpen() }
+            .sink { [weak self] _ in self?.inBackground = true; self?.popOpen() }
+            .store(in: &bag)
+        NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.inBackground = false }
             .store(in: &bag)
         rec.$state.combineLatest(rec.$appendTo)
             .receive(on: RunLoop.main)
@@ -83,8 +96,9 @@ final class RecordingLiveActivity {
     private func popOpen() {
         guard #available(iOS 16.2, *) else { return }
         let rec = Recorder.shared
-        guard rec.state == .recording || rec.state == .paused,
+        guard !poppedThisRecording, rec.state == .recording || rec.state == .paused,
               let a = Activity<RecordingActivityAttributes>.activities.first else { return }
+        poppedThisRecording = true
         let cs = RecordingActivityAttributes.ContentState(
             timerStart: Date().addingTimeInterval(-rec.elapsed),
             paused: rec.state == .paused,
@@ -97,8 +111,23 @@ final class RecordingLiveActivity {
         CrashReporter.shared.add("live activity popped open on background")
     }
 
+    /// At launch, a Live Activity left over while the recorder is idle (the app was
+    /// killed mid-recording, or the phone rebooted) is ended so it can't linger.
+    private func endOrphans() {
+        guard #available(iOS 16.2, *) else { return }
+        guard Recorder.shared.state == .idle else { return }
+        for a in Activity<RecordingActivityAttributes>.activities {
+            let id = a.id
+            Task { await a.end(nil, dismissalPolicy: .immediate) }
+            EventLog.shared.log(.system, "live_activity.ended", status: "ok", payload: ["reason": "orphan_at_launch", "activity": id])
+        }
+    }
+
     private func sync(state: Recorder.State, appending: Bool) {
         guard #available(iOS 16.2, *) else { return }
+        let previous = lastState
+        lastState = state
+        if state == .recording && previous == .idle { poppedThisRecording = false }
         let elapsed = Recorder.shared.elapsed
         switch state {
         case .recording, .paused:
@@ -113,16 +142,22 @@ final class RecordingLiveActivity {
                 Task { await a.update(content) }
             } else if ActivityAuthorizationInfo().areActivitiesEnabled {
                 do {
-                    _ = try Activity.request(attributes: RecordingActivityAttributes(title: "Scribbly"),
-                                             content: content, pushType: nil)
+                    let a = try Activity.request(attributes: RecordingActivityAttributes(title: "Scribbly"),
+                                                 content: content, pushType: nil)
                     CrashReporter.shared.add("live activity started")
+                    EventLog.shared.log(.system, "live_activity.started", status: "ok", payload: ["activity": a.id, "appending": appending])
                 } catch {
                     CrashReporter.shared.add("live activity request failed: \(error.localizedDescription)")
                 }
             }
         case .finishing, .idle:
+            // finishing → the ✓ was tapped; idle straight from recording/paused → discarded.
+            let reason = state == .finishing ? "finish" : (previous == .finishing ? "finish" : (previous == .idle ? "idle_sync" : "discard"))
             for a in Activity<RecordingActivityAttributes>.activities {
+                let id = a.id
                 Task { await a.end(nil, dismissalPolicy: .immediate) }
+                EventLog.shared.log(.system, "live_activity.ended", status: "ok", payload: ["reason": reason, "activity": id])
+                CrashReporter.shared.add("live activity ended (\(reason))")
             }
         }
     }

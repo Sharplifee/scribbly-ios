@@ -43,12 +43,35 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
             try? fm.removeItem(at: prevCrumbsURL)
             try? fm.moveItem(at: crumbsURL, to: prevCrumbsURL)
         }
+        let prev = (try? String(contentsOf: prevCrumbsURL, encoding: .utf8)) ?? ""
+        let prevLines = prev.split(separator: "\n").map(String.init)
+        // A clean exit leaves "background" or "terminate" as the last crumb. If the
+        // last run stopped on anything else (jetsam, watchdog, power loss, a crash
+        // MetricKit hasn't delivered yet) it ended uncleanly — log it even when it
+        // happened in the background, which the foreground flag alone can't see.
+        let lastCrumb = prevLines.last ?? ""
+        // A run that iOS started in the background (state 2) and never brought to
+        // the foreground gets no "background" crumb either — that's normal too.
+        let lastLaunch = prevLines.lastIndex { $0.contains(" launch build ") }
+        let bgOnlyRun = lastLaunch.map { li in prevLines[li].hasSuffix("state 2") && !prevLines[li...].contains { $0.hasSuffix(" active") } } ?? false
+        let endedClean = lastCrumb.hasSuffix(" background") || lastCrumb.hasSuffix(" terminate") || bgOnlyRun
+        let rebooted = Self.deviceRebootedSinceLastRun()
+        if rebooted {
+            EventLog.shared.log(.system, "device.rebooted", status: "info",
+                                payload: Self.envelope(["boot_time": Self.bootTime(), "prev_last_crumb": lastCrumb], crumbs: prevLines))
+        }
+        if !prevLines.isEmpty && (!endedClean || diedInForeground || signalText != nil || exceptionText != nil) {
+            EventLog.shared.log(.system, "app.prev_unclean", status: "fail",
+                                payload: Self.envelope(["died_in_foreground": diedInForeground, "device_rebooted": rebooted,
+                                                        "prev_last_crumb": lastCrumb, "signal": signalText ?? "",
+                                                        "exception": exceptionText ?? ""], crumbs: prevLines))
+        }
         if diedInForeground || signalText != nil || exceptionText != nil {
-            let prev = (try? String(contentsOf: prevCrumbsURL, encoding: .utf8)) ?? ""
             send(kind: "unclean", json: [
-                "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?",
+                "build": Self.build,
                 "os": UIDevice.current.systemVersion,
                 "model": Self.model(),
+                "simulator": Self.isSimulator,
                 "diedInForeground": diedInForeground,
                 "signal": signalText ?? "",
                 "exception": exceptionText ?? "",
@@ -79,7 +102,7 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
         nc.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
             self?.add("memory warning")
         }
-        add("launch build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?") state \(UIApplication.shared.applicationState.rawValue)")
+        add("launch build \(Self.build) state \(UIApplication.shared.applicationState.rawValue)")
     }
 
     /// Record one breadcrumb (cheap; written through to disk off the main thread).
@@ -105,11 +128,80 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
 
     private func forward(_ p: MXDiagnosticPayload) {
         guard (p.crashDiagnostics?.isEmpty == false) || (p.hangDiagnostics?.isEmpty == false) else { return }
-        let key = "mx.sent.\(p.timeStampEnd.timeIntervalSince1970)"
+        let stamp = p.timeStampEnd.timeIntervalSince1970
+        // Every MetricKit crash/hang also goes to the permanent event_log (once).
+        let logKey = "mx.logged.\(stamp)"
+        if !UserDefaults.standard.bool(forKey: logKey) {
+            let json = String(decoding: p.jsonRepresentation(), as: UTF8.self)
+            var pl: [String: Any] = ["build": Self.build, "os": UIDevice.current.systemVersion, "model": Self.model(),
+                                     "window_start": p.timeStampBegin, "window_end": p.timeStampEnd,
+                                     "crashes": p.crashDiagnostics?.count ?? 0, "hangs": p.hangDiagnostics?.count ?? 0]
+            if let c = p.crashDiagnostics?.first {
+                pl["exception_type"] = c.exceptionType?.intValue ?? -1
+                pl["signal"] = c.signal?.intValue ?? -1
+                pl["termination_reason"] = c.terminationReason ?? ""
+                pl["app_version"] = c.applicationVersion
+            }
+            if let h = p.hangDiagnostics?.first { pl["hang_duration_s"] = h.hangDuration.converted(to: .seconds).value }
+            // The full report, chunked so nothing is cut (2000 chars per field, max 60).
+            var chunks: [String: Any] = [:]
+            var i = json.startIndex; var n = 0
+            while i < json.endIndex && n < 60 {
+                let j = json.index(i, offsetBy: 2000, limitedBy: json.endIndex) ?? json.endIndex
+                chunks[String(format: "part_%02d", n)] = String(json[i..<j]); i = j; n += 1
+            }
+            pl["report"] = chunks; pl["report_parts"] = n; pl["report_truncated"] = i < json.endIndex
+            let name = (p.crashDiagnostics?.isEmpty == false) ? "metrickit.crash" : "metrickit.hang"
+            EventLog.shared.log(.system, name, status: "fail", payload: pl)
+            UserDefaults.standard.set(true, forKey: logKey)
+        }
+        let key = "mx.sent.\(stamp)"
         guard !UserDefaults.standard.bool(forKey: key) else { return }
-        post(kind: "metrickit", body: p.jsonRepresentation()) { ok in
+        // Tag the payload with build + device so the box can sort it.
+        var body = p.jsonRepresentation()
+        if var obj = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] {
+            obj["scribbly"] = ["build": Self.build, "model": Self.model(), "os": UIDevice.current.systemVersion,
+                               "simulator": Self.isSimulator]
+            body = (try? JSONSerialization.data(withJSONObject: obj)) ?? body
+        }
+        post(kind: "metrickit", body: body) { ok in
             if ok { UserDefaults.standard.set(true, forKey: key) }
         }
+    }
+
+    // MARK: device facts
+
+    static var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?" }
+    static var isSimulator: Bool {
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        return false
+        #endif
+    }
+    /// Seconds since 1970 when the phone last booted (kern.boottime).
+    static func bootTime() -> Int {
+        var tv = timeval(); var size = MemoryLayout<timeval>.size
+        var mib: [Int32] = [CTL_KERN, KERN_BOOTTIME]
+        guard sysctl(&mib, 2, &tv, &size, nil, 0) == 0 else { return 0 }
+        return Int(tv.tv_sec)
+    }
+    /// True when the boot time differs from the one stored on the previous launch.
+    static func deviceRebootedSinceLastRun() -> Bool {
+        let now = bootTime(); let key = "crash.lastBootTime"
+        let prev = UserDefaults.standard.integer(forKey: key)
+        UserDefaults.standard.set(now, forKey: key)
+        // Allow a few seconds of drift; 0 means first launch on this install.
+        return prev != 0 && now != 0 && abs(now - prev) > 5
+    }
+    /// Common fields + the last 60 crumbs, split so event_log's 50-item cap keeps them all.
+    static func envelope(_ extra: [String: Any], crumbs: [String]) -> [String: Any] {
+        var p = extra
+        p["build"] = build; p["os"] = UIDevice.current.systemVersion; p["model"] = model()
+        let last = Array(crumbs.suffix(60))
+        p["crumbs_1"] = Array(last.prefix(30)); p["crumbs_2"] = Array(last.dropFirst(30))
+        p["crumb_count"] = last.count
+        return p
     }
 
     // MARK: transport
@@ -152,7 +244,8 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
     private static func stamp() -> String {
         let f = DateFormatter(); f.dateFormat = "HH:mm:ss.SSS"; return f.string(from: Date())
     }
-    private static func model() -> String {
+    static func model() -> String {
+        if let sim = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] { return "Simulator \(sim)" }
         var s = utsname(); uname(&s)
         return withUnsafeBytes(of: &s.machine) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
     }
