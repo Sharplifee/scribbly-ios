@@ -60,6 +60,7 @@ struct SignInView: View {
     @State private var sent = false
     @State private var busy = false
     @State private var password = ""
+    @State private var showPassword = false
     @State private var useCode = false
     @State private var signUp = false
     @State private var confirm = ""
@@ -131,7 +132,7 @@ struct SignInView: View {
         VStack(spacing: 12) {
             modeToggle
             if hasFaceID && !signUp {
-                pill(busy ? "Signing in…" : "Sign in with Face ID", icon: "faceid", primary: true) { faceID() }
+                pill(busy ? "Signing in…" : (FaceIDVault.lastEmail.map { "Face ID — \($0)" } ?? "Sign in with Face ID"), icon: "faceid", primary: true) { faceID() }
             }
             SignInWithAppleButton(signUp ? .signUp : .signIn) { auth.prepareApple($0) } onCompletion: { r in
                 Task { busy = true; await auth.finishApple(r); busy = false }
@@ -186,17 +187,25 @@ struct SignInView: View {
         }
     }
     private func secure(_ placeholder: String, _ text: Binding<String>, newPassword: Bool) -> some View {
-        SecureField(placeholder, text: text)
+        HStack(spacing: 8) {
+            SwiftUI.Group {
+                if showPassword { TextField(placeholder, text: text).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                else { SecureField(placeholder, text: text) }
+            }
             .textContentType(newPassword ? .newPassword : .password)
             .submitLabel(.go).onSubmit { passwordSubmit() }
             .font(.geist(size: 18)).foregroundColor(P.ink)
+            Button { showPassword.toggle() } label: {
+                Image(systemName: showPassword ? "eye.slash" : "eye").foregroundColor(P.textSec)
+            }.accessibilityLabel(showPassword ? "Hide password" : "Show password")
+        }
             .padding(.horizontal, 18).frame(height: 54)
             .background(Capsule().fill(P.surface2)).overlay(Capsule().stroke(P.border))
     }
     private func faceID() {
         Task {
             busy = true
-            let ok = await auth.signInWithFaceID()
+            let ok = await auth.signInWithFaceID(email: target.contains("@") ? target : nil)
             busy = false
             if !ok { hasFaceID = FaceIDVault.hasLogin }
         }
