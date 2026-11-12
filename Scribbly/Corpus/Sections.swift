@@ -491,8 +491,12 @@ struct IngestSection: View {
                     TextField("A channel, a playlist, one link or twenty…", text: $text, axis: .vertical)
                         .lineLimit(3...8)
                         .font(.geist(size: 14)).foregroundColor(P.ink)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        .keyboardType(.URL)
+                        // Standard keyboard with the predictive bar left ON — that bar is
+                        // where iOS offers "Paste from YouTube" for whatever you copied,
+                        // same as every other app. (Disabling autocorrect or using the
+                        // URL keyboard hid it.) Capitals stay off so links aren't mangled.
+                        .textInputAutocapitalization(.never)
+                        .textContentType(.URL)
                         .submitLabel(.go)
                         .focused($pasteFocused)
                         .onSubmit { pasteFocused = false; Task { await submit() } }
@@ -513,6 +517,18 @@ struct IngestSection: View {
                         .padding(.horizontal, 14).padding(.vertical, 14)
                         .toolbar {
                             ToolbarItemGroup(placement: .keyboard) {
+                                // One-tap paste of what's on the clipboard (no permission pop-up).
+                                if text.isEmpty {
+                                    PasteButton(payloadType: String.self) { items in
+                                        let pasted = items.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                                        guard !pasted.isEmpty else { return }
+                                        lastText = pasted; text = pasted
+                                        EventLog.shared.log("paste.keyboard_button", ["chars": pasted.count])
+                                    }
+                                    .buttonBorderShape(.capsule)
+                                    .labelStyle(.titleAndIcon)
+                                    .tint(P.accent)
+                                }
                                 Spacer()
                                 Button("Done") { pasteFocused = false }.font(.geist(size: 15, weight: .semibold)).foregroundColor(P.accent)
                             }

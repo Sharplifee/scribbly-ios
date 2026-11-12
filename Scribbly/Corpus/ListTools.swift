@@ -98,7 +98,7 @@ struct ListSearch: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundColor(P.textDim)
                 TextField(placeholder, text: $text)
-                    .foregroundColor(P.ink).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .foregroundColor(P.ink).textInputAutocapitalization(.never)   // predictive bar on (clipboard paste suggestions)
                 if !text.isEmpty {
                     Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundColor(P.textDim) }
                 }
