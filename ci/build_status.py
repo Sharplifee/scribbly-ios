@@ -10,3 +10,15 @@ def get(path):
 app = get("/apps?filter[bundleId]=com.connor.scribbly")["data"][0]
 for b in get(f"/builds?filter[app]={app['id']}&sort=-uploadedDate&limit=4")["data"]:
     a = b["attributes"]; print("BUILD", a["version"], a["processingState"], a["uploadedDate"], "expired" if a.get("expired") else "")
+
+for st in ["PROCESSING","FAILED","INVALID"]:
+    for b in get(f"/builds?filter[app]={app['id']}&filter[processingState]={st}&limit=10")["data"]:
+        print("STATE", st, b["attributes"]["version"], b["attributes"]["uploadedDate"])
+for v in ["252","253"]:
+    d = get(f"/builds?filter[app]={app['id']}&filter[version]={v}")["data"]
+    print("VERSION", v, [x["attributes"]["processingState"] for x in d] or "not found")
+try:
+    for u in get(f"/apps/{app['id']}/buildUploads?limit=5").get("data", []):
+        a = u["attributes"]; print("UPLOAD", a.get("cfBundleVersion"), a.get("state"), json.dumps(a.get("state")))
+except Exception as e:
+    print("UPLOADS n/a", e)
