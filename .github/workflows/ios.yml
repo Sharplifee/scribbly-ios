@@ -43,15 +43,36 @@ jobs:
       - name: Install provisioning profile
         env:
           PROFILE: ${{ secrets.APPLE_PROVISION_PROFILE }}
+          P12: ${{ secrets.APPLE_DIST_P12 }}
+          P12_PASSWORD: ${{ secrets.APPLE_DIST_P12_PASSWORD }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
         run: |
           set -euo pipefail
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          echo "$PROFILE" | base64 --decode > /tmp/p.mobileprovision
+          # Prefer a profile that carries Associated Domains (iPhone Passwords).
+          # If Apple's API can't provide one, fall back to the stored profile and
+          # drop that one entitlement so the build still ships.
+          echo "$P12" | base64 --decode > /tmp/dist.p12
+          openssl pkcs12 -in /tmp/dist.p12 -passin pass:"$P12_PASSWORD" -nokeys -clcerts -legacy -out /tmp/dist.pem 2>/dev/null \
+            || openssl pkcs12 -in /tmp/dist.p12 -passin pass:"$P12_PASSWORD" -nokeys -clcerts -out /tmp/dist.pem
+          pip3 install --quiet --break-system-packages pyjwt cryptography || pip3 install --quiet pyjwt cryptography
+          if python3 ci/refresh_profile.py /tmp/p.mobileprovision; then
+            echo "Using Associated Domains profile"
+          else
+            echo "::warning::Could not get an Associated Domains profile; shipping without iPhone Passwords support"
+            echo "$PROFILE" | base64 --decode > /tmp/p.mobileprovision
+            /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.associated-domains" Scribbly/Scribbly.entitlements || true
+          fi
           UUID=$(security cms -D -i /tmp/p.mobileprovision | plutil -extract UUID raw -)
           NAME=$(security cms -D -i /tmp/p.mobileprovision | plutil -extract Name raw -)
           cp /tmp/p.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$UUID.mobileprovision
           echo "PROFILE_UUID=$UUID" >> $GITHUB_ENV
           echo "PROFILE_NAME=$NAME" >> $GITHUB_ENV
+          # point the app target at whichever profile was installed
+          sed -i '' "s/PROVISIONING_PROFILE_SPECIFIER = \"Scribbly CI\";/PROVISIONING_PROFILE_SPECIFIER = \"$NAME\";/" Scribbly.xcodeproj/project.pbxproj
+          grep -c "PROVISIONING_PROFILE_SPECIFIER = \"$NAME\"" Scribbly.xcodeproj/project.pbxproj || true
           echo "Installed profile: $NAME ($UUID)"
 
       - name: Install widget provisioning profile

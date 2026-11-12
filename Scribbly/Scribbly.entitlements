@@ -6,5 +6,9 @@
 	<array>
 		<string>Default</string>
 	</array>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>webcredentials:207-148-6-194.sslip.io</string>
+	</array>
 </dict>
 </plist>
