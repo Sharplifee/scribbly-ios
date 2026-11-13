@@ -51,7 +51,7 @@ struct FailedList: View {
                 if !model.voice.isEmpty {
                     group(title: "RECORDINGS & FILES · \(model.voice.count)") {
                         ForEach(Array(model.voice.prefix(expanded.contains("voice") ? model.voice.count : preview))) { j in
-                            item(title: j.title ?? "Recording", reason: FailedModel.plain(j.error ?? (j.state == "no_speech" ? "no speech" : "failed")), url: nil,
+                            item(title: j.title ?? "Recording", reason: (j.state == "failed" && !RetryEngine.shared.exhausted("job:\(j.id)")) ? "Retrying automatically — \(RetryEngine.shared.attemptLabel("job:\(j.id)"))" : FailedModel.plain(j.error ?? (j.state == "no_speech" ? "no speech" : "failed")), url: nil,
                                  retry: { await model.retryVoice(j.id) }, remove: { await model.removeVoice(j.id) })
                         }
                         moreButton(id: "voice", count: model.voice.count)
@@ -62,7 +62,7 @@ struct FailedList: View {
                 ForEach(model.groups, id: \.id) { g in
                     group(title: "\(g.name.uppercased()) · \(g.rows.count)", retryAll: { await model.retryCollection(g.id) }) {
                         ForEach(Array(g.rows.prefix(expanded.contains(g.id) ? g.rows.count : preview))) { r in
-                            item(title: r.title ?? r.video_id ?? "Video", reason: FailedModel.plain(r.error ?? r.status),
+                            item(title: r.title ?? r.video_id ?? "Video", reason: (r.status == "failed" && !RetryEngine.shared.exhausted(r.id)) ? "Retrying automatically — \(RetryEngine.shared.attemptLabel(r.id))" : FailedModel.plain(r.error ?? r.status),
                                  url: r.video_id.flatMap { URL(string: "https://www.youtube.com/watch?v=\($0)") },
                                  retry: { await model.retry(ids: [r.id]) }, remove: { await model.remove(r.id) })
                         }

@@ -183,6 +183,7 @@ extension Recorder {
             // its pending store; on a failed copy they stay for crash recovery.
             up.uploadRecording(parts, duration: dur, location: rec.place ?? place, appendTo: appendTo) { ok, msg in
                 BottomChrome.shared.savedTitle = ok ? (appending ? "Added to the recording" : (msg ?? "Saved to your library")) : nil
+                StatusWatcher.shared.uploadFinished(ok: ok, title: ok ? msg : nil, error: ok ? nil : msg)
             }
         }
     }

@@ -27,7 +27,9 @@ final class WatchBridge: NSObject, WCSessionDelegate {
         DispatchQueue.main.async {
             // Only a place fixed in the last 15 minutes — never a stale one.
             Uploader.shared.upload(fileURL: dst, title: title, duration: duration,
-                                   location: PlaceTagger.shared.recentPlace) { _, _ in }
+                                   location: PlaceTagger.shared.recentPlace) { ok, msg in
+                StatusWatcher.shared.uploadFinished(ok: ok, title: title, error: ok ? nil : msg, watch: true)
+            }
         }
     }
 

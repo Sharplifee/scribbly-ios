@@ -782,6 +782,25 @@ struct IngestSection: View {
                         }.buttonStyle(.plain)
                     }
                     Spacer()
+                    // Front and center: send what didn't work straight back in.
+                    if progressFailed > 0, !progressActive, let cid = progressCollection {
+                        Button {
+                            Task {
+                                let n = await RetryEngine.shared.retryNow(collection: cid)
+                                if n > 0 {
+                                    status = "Retrying \(n) that didn't work…"
+                                    startProgress(collection: cid, total: progressTotal)
+                                } else { status = "Couldn't reach the server to retry — Scribbly® will keep trying on its own." }
+                            }
+                        } label: {
+                            Label("Retry \(progressFailed)", systemImage: "arrow.clockwise")
+                                .font(.geist(size: 12.5, weight: .semibold)).foregroundColor(.black)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(Capsule().fill(P.accent))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Retry \(progressFailed) failed")
+                    }
                     if progressActive {
                         Button {
                             Task { await cancelBatch() }
@@ -1076,6 +1095,22 @@ struct IngestSection: View {
                     }
                 }
 
+                if rowsFinished && progressActive && progressFailed > 0 {
+                    // The batch is through; what failed goes straight back in
+                    // (up to 3 more tries each) while you watch.
+                    let n = await RetryEngine.shared.batchFinished(collection: collection)
+                    if n > 0 {
+                        status = "\(progressDone) saved — retrying \(n) that didn't work…"
+                        try? await Task.sleep(nanoseconds: 3_000_000_000)
+                        continue
+                    }
+                    let waiting = await RetryEngine.shared.retriesLeft(collection: collection)
+                    if waiting > 0 {
+                        status = "\(progressDone) saved — \(waiting) waiting for another try…"
+                        try? await Task.sleep(nanoseconds: 10_000_000_000)
+                        continue
+                    }
+                }
                 if rowsFinished && progressActive {
                     progressActive = false
                     progressPercent = 100

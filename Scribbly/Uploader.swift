@@ -544,6 +544,7 @@ final class Uploader: NSObject, ObservableObject {
                                            state: state, progress: shownPct, stage: stage)
             }
             if finished {
+                StatusWatcher.shared.serverJobFinished(id: id, state: state, title: title, error: j["error"] as? String)
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 break
             }

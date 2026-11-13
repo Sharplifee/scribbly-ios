@@ -1,6 +1,7 @@
 import SwiftUI
 import AuthenticationServices
 import AVFoundation
+import UserNotifications
 
 /// Keeps the app (and its recorder) alive underneath; sign-in and the short
 /// setup sit on top until they're done. QA runs (SCRIBBLY_* env) skip it.
@@ -292,6 +293,7 @@ struct OnboardingView: View {
     @State private var saving = false
     @State private var micAsked = false
     @State private var locAsked = false
+    @State private var notifyAsked = false
     @FocusState private var nameFocused: Bool
 
     var body: some View {
@@ -395,8 +397,8 @@ struct OnboardingView: View {
 
     private var permissionStep: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Two quick permissions").font(.geist(size: 30, weight: .semibold)).foregroundColor(P.ink)
-            Text("Scribbly needs the microphone to record. Location is optional — it labels where a recording happened.")
+            Text("Three quick permissions").font(.geist(size: 30, weight: .semibold)).foregroundColor(P.ink)
+            Text("Scribbly needs the microphone to record. Location is optional — it labels where a recording happened. Notifications tell you the moment a transcript is ready.")
                 .font(.geist(size: 15)).foregroundColor(P.textSec).fixedSize(horizontal: false, vertical: true)
             permRow("Microphone", icon: "mic.fill", done: micAsked) {
                 AVAudioSession.sharedInstance().requestRecordPermission { _ in
@@ -407,8 +409,14 @@ struct OnboardingView: View {
                 PlaceTagger.shared.tag { _ in }
                 locAsked = true
             }
+            permRow("Notifications", icon: "bell.badge.fill", done: notifyAsked) {
+                Notifier.shared.requestAuthorization { _ in notifyAsked = true }
+            }
         }
         .onAppear {
+            UNUserNotificationCenter.current().getNotificationSettings { s in
+                DispatchQueue.main.async { notifyAsked = s.authorizationStatus != .notDetermined }
+            }
             micAsked = AVAudioSession.sharedInstance().recordPermission != .undetermined
         }
     }

@@ -11,6 +11,7 @@ struct SettingsSection: View {
     @AppStorage(TextSizeOption.storageKey) private var textSize = TextSizeOption.standard.rawValue
     @ObservedObject private var up = Uploader.shared
     @ObservedObject private var auth = AuthSession.shared
+    @ObservedObject private var notify = NotifySettings.shared
     @State private var editingName = false
     @State private var nameDraft = ""
     @State private var confirmSignOut = false
@@ -82,6 +83,15 @@ struct SettingsSection: View {
                             .font(.geist(size: 14)).foregroundColor(P.textSec)
                     }
                     .padding(.vertical, 14)
+                }
+                header("NOTIFICATIONS")
+                card {
+                    Button { BottomChrome.shared.moreSub = .notifications } label: {
+                        HStack { Text("Notifications, Sounds & Haptics").foregroundColor(P.ink); Spacer()
+                            Text(notify.statusText).foregroundColor(notify.allowed ? P.good : P.textDim).font(.geist(size: 14))
+                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(P.textDim)
+                        }.padding(.vertical, 12).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
                 }
                 header("PERMISSIONS")
                 card {

@@ -20,6 +20,8 @@ struct GlassTabBar: View {
 
     @ObservedObject private var rec = Recorder.shared
     @ObservedObject private var up = Uploader.shared
+    @ObservedObject private var status = StatusWatcher.shared
+    @ObservedObject private var notify = NotifySettings.shared
     @State private var recordTaps = 0
     @State private var finishTaps = 0
     @State private var showDiscardConfirm = false
@@ -291,6 +293,25 @@ struct GlassTabBar: View {
 
     // MARK: Tabs
 
+    /// Live badges: Library = new since you last looked; More = processing now
+    /// (red when something didn't work).
+    @ViewBuilder private func tabBadge(for s: LibraryScreen.Section) -> some View {
+        if notify.tabBadges {
+            let n: Int = s == .library ? status.unseenLibrary : (s == .more ? status.activeJobs + status.unseenFailures : 0)
+            if n > 0 {
+                let red = s == .library || (s == .more && status.unseenFailures > 0)
+                Text(n > 99 ? "99+" : "\(n)")
+                    .font(.system(size: 11, weight: .bold, design: .rounded)).monospacedDigit()
+                    .foregroundColor(red ? .white : .black)
+                    .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18)
+                    .background(Capsule().fill(red ? Color(red: 1, green: 0.23, blue: 0.19) : P.accent))
+                    .overlay(Capsule().stroke(Color.black, lineWidth: 1.5))
+                    .transition(.scale.combined(with: .opacity))
+                    .accessibilityLabel(s == .library ? "\(n) new" : "\(n) in progress")
+            }
+        }
+    }
+
     private func tab(for s: LibraryScreen.Section) -> some View {
         let on = selection == s
         return Button {
@@ -304,6 +325,7 @@ struct GlassTabBar: View {
             VStack(spacing: 4) {
                 Image(systemName: s.icon).font(.system(size: 19, weight: on ? .semibold : .regular))
                     .foregroundStyle(on ? AnyShapeStyle(P.brand) : AnyShapeStyle(P.textDim))
+                    .overlay(alignment: .topTrailing) { tabBadge(for: s).offset(x: 12, y: -7) }
                 Text(s.rawValue).font(.geist(size: 10.5, weight: .medium))
                     .foregroundColor(on ? P.ink : P.textDim)
             }
@@ -326,6 +348,7 @@ struct GlassTabBar: View {
 struct MoreSection: View {
     let store: LibraryStore
     @ObservedObject private var up = Uploader.shared
+    @ObservedObject private var status = StatusWatcher.shared
 
     var body: some View {
         ScrollView {
@@ -335,7 +358,7 @@ struct MoreSection: View {
             VStack(spacing: 12) {
                 tap(icon: "square.stack.fill", title: "Batches", sub: "Every fetch you've run — one batch per channel, playlist or set of links, with how much of it is saved.", go: .collections)
                 tap(icon: "sparkle.magnifyingglass", title: "Query", sub: "Ask a question across everything in the library.", go: .query)
-                tap(icon: "waveform.path.ecg", title: "Activity", sub: "What's processing now, the last 30 saved, and anything that didn't work — retry or remove.", badge: up.pendingCount, go: .jobs)
+                tap(icon: "waveform.path.ecg", title: "Activity", sub: "What's processing now, the last 30 saved, and anything that didn't work — retry or remove.", badge: max(up.pendingCount, status.activeJobs + status.unseenFailures), go: .jobs)
                 tap(icon: "applewatch", title: "Apple Watch", sub: "Record on the wrist; it lands here with the same place title.", go: .watch)
                 tap(icon: "gearshape.fill", title: "Settings", sub: "Permissions, recording, storage, server status.", go: .settings)
             }

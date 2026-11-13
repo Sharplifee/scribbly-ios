@@ -26,16 +26,28 @@ struct ScribblyApp: App {
                 // Anything that didn't finish uploading is retried here, so a
                 // recording can never be stranded by a crash, a dead network,
                 // or the app being swiped away mid-upload.
-                .onAppear { Uploader.shared.resumePending() }
+                .onAppear { Uploader.shared.resumePending(); StatusWatcher.shared.start() }
                 .onReceive(NotificationCenter.default.publisher(
                     for: UIApplication.didBecomeActiveNotification)) { _ in
                     Uploader.shared.resumePending()
+                    Notifier.shared.refreshStatus()
+                    StatusWatcher.shared.start()
+                    Task { await StatusWatcher.shared.refresh(reason: "became_active") }
                 }
         }
     }
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
+    /// Notifications (delegate must be set before launch ends so a tapped
+    /// alert that launched the app is delivered) and background refresh.
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        Notifier.shared.configure()
+        StatusWatcher.shared.registerBackgroundRefresh()
+        StatusWatcher.shared.scheduleBackgroundRefresh()
+        return true
+    }
     /// iOS relaunches us here when a background upload finishes after termination.
     func application(_ app: UIApplication,
                      handleEventsForBackgroundURLSession identifier: String,
@@ -156,6 +168,8 @@ final class BottomChrome: ObservableObject {
     }
     /// True while the paste field owns the keyboard — the glass bar steps out of the way.
     @Published var keyboardUp = false
+    /// Set by a tapped notification: Library opens this entry.
+    @Published var openEntryID: String? = nil
     @Published var armToken = 0
     /// Measured height of each tab's floating bottom chrome (tab bar + recorder /
     /// upload capsule). Scroll pages inset their content by this (ChromeInset).

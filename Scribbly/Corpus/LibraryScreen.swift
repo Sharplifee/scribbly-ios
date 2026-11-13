@@ -14,7 +14,7 @@ struct LibraryScreen: View {
     enum Section: String, CaseIterable, Identifiable {
         case home = "Home", library = "Library", record = "Record",
              groups = "Groups", more = "More", collections = "Collections", query = "Query", jobs = "Activity",
-             settings = "Settings", watch = "Apple Watch"
+             settings = "Settings", watch = "Apple Watch", notifications = "Notifications"
         var id: String { rawValue }
         /// The four real pages. Collections · Query · Activity live inside More.
         static let pages: [Section] = [.home, .library, .groups, .more]
@@ -30,6 +30,7 @@ struct LibraryScreen: View {
             case .jobs:        return "waveform.path.ecg"
             case .settings:    return "gearshape.fill"
             case .watch:       return "applewatch"
+            case .notifications: return "bell.badge.fill"
             }
         }
     }
@@ -56,9 +57,10 @@ struct LibraryScreen: View {
             if newTab != .home { chrome.savedTitle = nil }
             switch newTab {
             case .record: chrome.currentTab = lastRealTab; startRecording()
-            case .collections, .query, .jobs, .settings, .watch: chrome.moreSub = newTab; chrome.currentTab = .more
+            case .collections, .query, .jobs, .settings, .watch, .notifications: chrome.moreSub = newTab; chrome.currentTab = .more
             default: lastRealTab = newTab
             }
+            if newTab == .library { StatusWatcher.shared.markLibrarySeen() }
         }
         // Tapping the tab you're already on: back to its root (and the page
         // scrolls to the top — see ScrollTopOnReselect).
@@ -67,6 +69,15 @@ struct LibraryScreen: View {
             paths[t] = NavigationPath()
             if t == .more { chrome.moreSub = nil }
         }
+        // A tapped notification opens its entry in Library.
+        .onChange(of: chrome.openEntryID) { id in
+            guard let id else { return }
+            chrome.openEntryID = nil
+            chrome.currentTab = .library
+            paths[.library] = NavigationPath()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { paths[.library, default: NavigationPath()].append(id) }
+        }
+        .onChange(of: chrome.moreSub) { sub in if sub == .jobs { StatusWatcher.shared.markActivitySeen() } }
         .task {
             // Screenshot/QA hook: SCRIBBLY_TAB=home|library|groups|more opens that page on launch.
             let env = ProcessInfo.processInfo.environment
@@ -206,6 +217,7 @@ struct LibraryScreen: View {
         case .query:       QuerySection()
         case .settings:    SettingsSection()
         case .watch:       WatchInfoSection()
+        case .notifications: NotificationsSection()
         }
     }
 }
@@ -699,6 +711,7 @@ struct MoreHost: View {
         case .query:       QuerySection()
         case .settings:    SettingsSection()
         case .watch:       WatchInfoSection()
+        case .notifications: NotificationsSection()
         default:           JobsSection()
         }
     }
