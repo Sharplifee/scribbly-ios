@@ -42,5 +42,15 @@ struct ScribblyShortcuts: AppShortcutsProvider {
             shortTitle: "Start or Stop",
             systemImageName: "record.circle"
         )
+        AppShortcut(
+            intent: PauseScribblyRecordingIntent(),
+            phrases: [
+                "Pause \(.applicationName)",
+                "Resume \(.applicationName)",
+                "Pause \(.applicationName) recording"
+            ],
+            shortTitle: "Pause / Resume",
+            systemImageName: "pause.circle"
+        )
     }
 }

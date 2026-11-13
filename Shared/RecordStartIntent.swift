@@ -31,8 +31,11 @@ struct StartScribblyRecordingIntent: AudioRecordingIntent {
 
 /// Stops the current recording and saves it (same as the ✓ on the Live Activity).
 /// "Hey Siri, stop Scribbly" — works locked or unlocked, without opening the app.
+/// A LiveActivityIntent so it always runs in the APP's process (where the
+/// recorder lives) — from a widget or Control Center too, not just Siri. As a
+/// plain AppIntent it ran inside the widget extension and did nothing there.
 @available(iOS 18.0, *)
-struct StopScribblyRecordingIntent: AppIntent {
+struct StopScribblyRecordingIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Stop Scribbly Recording"
     static let description = IntentDescription("Stops the recording in progress and saves it to your library.")
     static let openAppWhenRun: Bool = false
@@ -70,6 +73,21 @@ struct ToggleScribblyRecordingIntent: AudioRecordingIntent {
             if RecordingControl.isRecording?() == true { break }
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
+        return .result()
+    }
+}
+
+
+/// Pause / resume from a widget or Control Center (runs in the app's process).
+@available(iOS 18.0, *)
+struct PauseScribblyRecordingIntent: LiveActivityIntent {
+    static let title: LocalizedStringResource = "Pause or Resume Scribbly Recording"
+    static let description = IntentDescription("Pauses the recording in progress, or resumes it if paused.")
+    static let openAppWhenRun: Bool = false
+    static let authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
+    init() {}
+    @MainActor func perform() async throws -> some IntentResult {
+        if RecordingControl.isActive?() == true { RecordingControl.handler?("toggle") }
         return .result()
     }
 }

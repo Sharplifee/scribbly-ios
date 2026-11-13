@@ -15,14 +15,14 @@ struct RecordProvider: TimelineProvider {
 }
 
 
-/// Tap target: on iOS 18+ the whole widget is a button that starts recording
-/// in place (works locked, in StandBy and CarPlay). Older iOS opens the app
-/// straight into recording.
+/// Tap target: the widget is a button that starts a recording in place (works
+/// locked, in StandBy and CarPlay) — and tapped again while recording, stops
+/// and saves it. Runs in Scribbly's own process.
 struct RecordTap<Content: View>: View {
     @ViewBuilder var content: () -> Content
     var body: some View {
         if #available(iOS 18.0, *) {
-            Button(intent: StartScribblyRecordingIntent()) { content() }.buttonStyle(.plain)
+            Button(intent: ToggleScribblyRecordingIntent()) { content() }.buttonStyle(.plain)
         } else {
             content().widgetURL(URL(string: "scribbly://record"))
         }
@@ -47,7 +47,7 @@ struct RecordWidgetView: View {
                     Image(systemName: "record.circle.fill").font(.system(size: 26))
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Scribbly").font(Sinky.font(15, .semibold))
-                        Text("TAP TO RECORD").font(Sinky.font(10, .medium, mono: true)).tracking(0.6)
+                        Text("TAP · TAP AGAIN TO SAVE").font(Sinky.font(10, .medium, mono: true)).tracking(0.6)
                     }
                     Spacer(minLength: 0)
                 }
@@ -55,19 +55,22 @@ struct RecordWidgetView: View {
         case .accessoryInline:
             RecordTap { Label("Record · Scribbly", systemImage: "record.circle") }
         case .systemMedium:
-            RecordTap {
-                HStack(spacing: 16) {
-                    SinkyRecordMark(size: 62)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Record").font(Sinky.font(26, .semibold)).tracking(-0.8).foregroundColor(Sinky.ink)
-                        Text("STARTS INSTANTLY · EVEN LOCKED").font(Sinky.font(9.5, .medium, mono: true)).tracking(0.6)
-                            .foregroundColor(Sinky.ink.opacity(0.85))
-                        Capsule().fill(Sinky.rule).frame(width: 64, height: 1.5)
+            HStack(spacing: 12) {
+                RecordTap {
+                    HStack(spacing: 14) {
+                        SinkyRecordMark(size: 58)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Record").font(Sinky.font(24, .semibold)).tracking(-0.8).foregroundColor(Sinky.ink)
+                            Text("TAP AGAIN TO SAVE").font(Sinky.font(9.5, .medium, mono: true)).tracking(0.6)
+                                .foregroundColor(Sinky.ink.opacity(0.85))
+                            Capsule().fill(Sinky.rule).frame(width: 64, height: 1.5)
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 6)
+                ActionStack()
             }
+            .padding(.horizontal, 4)
         case .systemLarge:
             RecordTap {
                 VStack(alignment: .leading, spacing: 0) {
@@ -76,11 +79,12 @@ struct RecordWidgetView: View {
                     HStack { Spacer(); SinkyRecordMark(size: 110); Spacer() }
                     Spacer()
                     Text("Tap to record").font(Sinky.font(28, .semibold)).tracking(-1).foregroundColor(Sinky.ink)
-                    Text("TRANSCRIBED · SUMMARIZED · SEARCHABLE").font(Sinky.font(9.5, .medium, mono: true)).tracking(0.6)
+                    Text("TAP AGAIN TO STOP & SAVE").font(Sinky.font(9.5, .medium, mono: true)).tracking(0.6)
                         .foregroundColor(Sinky.ink.opacity(0.85)).padding(.top, 4)
                 }
                 .padding(4)
             }
+            .overlay(alignment: .topTrailing) { ActionStack(horizontal: true) }
         default: // systemSmall (also StandBy, CarPlay)
             RecordTap {
                 VStack(alignment: .leading, spacing: 0) {
@@ -95,6 +99,33 @@ struct RecordWidgetView: View {
     }
 }
 
+/// Pause / Stop & Save buttons for the bigger widgets (iOS 18+).
+struct ActionStack: View {
+    var horizontal = false
+    var body: some View {
+        if #available(iOS 18.0, *) {
+            let pause = Button(intent: PauseScribblyRecordingIntent()) { pill("pause.fill", "Pause") }.buttonStyle(.plain)
+            let stop = Button(intent: StopScribblyRecordingIntent()) { pill("stop.fill", "Save") }.buttonStyle(.plain)
+            if horizontal {
+                HStack(spacing: 6) { pause; stop }
+            } else {
+                VStack(spacing: 8) { pause; stop }
+            }
+        }
+    }
+    private func pill(_ icon: String, _ label: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon).font(.system(size: 11, weight: .bold))
+            Text(label).font(Sinky.font(12, .semibold))
+        }
+        .foregroundColor(Sinky.ink)
+        .padding(.horizontal, 10).frame(height: 30)
+        .background(Capsule().fill(Color.black.opacity(0.35)))
+        .overlay(Capsule().stroke(Sinky.copperBright.opacity(0.6), lineWidth: 1))
+        .accessibilityLabel(label == "Save" ? "Stop and save" : "Pause or resume")
+    }
+}
+
 struct RecordWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "com.connor.scribbly.widget", provider: RecordProvider()) { _ in
@@ -105,7 +136,7 @@ struct RecordWidget: Widget {
             }
         }
         .configurationDisplayName("Scribbly Record")
-        .description("One tap starts a recording — Home Screen, Lock Screen, StandBy and CarPlay.")
+        .description("Tap to record, tap again to stop and save — Home Screen, Lock Screen, StandBy and CarPlay.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge,
                             .accessoryCircular, .accessoryRectangular, .accessoryInline])
     }

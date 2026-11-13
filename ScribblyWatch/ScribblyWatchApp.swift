@@ -20,6 +20,18 @@ final class WatchAppDelegate: NSObject, WKApplicationDelegate {
 struct ScribblyWatchApp: App {
     @WKApplicationDelegateAdaptor(WatchAppDelegate.self) var appDelegate
     var body: some Scene {
-        WindowGroup { WatchRecordView() }
+        WindowGroup {
+            WatchRecordView()
+                // Complications: scribbly-watch://record | stop | toggle | open
+                .onOpenURL { url in
+                    let r = WatchRecorder.shared
+                    switch url.host {
+                    case "record": if !r.isRecording { r.start() }
+                    case "stop":   if r.isRecording { r.finish() }
+                    case "toggle": r.isRecording ? r.finish() : r.start()
+                    default: break
+                    }
+                }
+        }
     }
 }
