@@ -61,7 +61,7 @@ final class RetryEngine {
     /// after a batch finishes on Home, and by background refresh.
     /// Returns how many items were sent back in.
     @discardableResult
-    func run(reason: String) async -> Int {
+    @MainActor func run(reason: String) async -> Int {
         let signedIn = await MainActor.run { AuthSession.shared.user != nil }
         guard !busy, signedIn else { return 0 }
         busy = true
@@ -111,7 +111,7 @@ final class RetryEngine {
 
     /// Home's "Retry now" — the user asked, so it goes in immediately and gets
     /// a fresh set of tries.
-    func retryNow(collection: String) async -> Int {
+    @MainActor func retryNow(collection: String) async -> Int {
         guard let rows = try? await failedRows(collection: collection), !rows.isEmpty else { return 0 }
         let ids = rows.map(\.id)
         forget(ids)
@@ -122,7 +122,7 @@ final class RetryEngine {
     }
 
     /// After a batch's normal run: sends its failures straight back in (try 2).
-    func batchFinished(collection: String) async -> Int {
+    @MainActor func batchFinished(collection: String) async -> Int {
         guard let rows = try? await failedRows(collection: collection) else { return 0 }
         let ids = rows.map(\.id).filter { due($0) }
         guard !ids.isEmpty, await requeue(ids: ids, collection: collection) else { return 0 }

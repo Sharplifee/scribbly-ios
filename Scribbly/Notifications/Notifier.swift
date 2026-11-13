@@ -76,7 +76,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                                    hiddenPreviewsBodyPlaceholder: "New in Scribbly®", options: [])
         }
         center.setNotificationCategories(Set(cats))
-        refreshStatus()
+        // Accounts made before notifications existed were never asked, so iOS
+        // rejected every alert ("Source is not authorized"). Ask once.
+        center.getNotificationSettings { s in
+            if s.authorizationStatus == .notDetermined { self.requestAuthorization() }
+            else { self.refreshStatus() }
+        }
     }
 
     func refreshStatus() {

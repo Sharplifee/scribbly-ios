@@ -54,7 +54,14 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
         // the foreground gets no "background" crumb either — that's normal too.
         let lastLaunch = prevLines.lastIndex { $0.contains(" launch build ") }
         let bgOnlyRun = lastLaunch.map { li in prevLines[li].hasSuffix("state 2") && !prevLines[li...].contains { $0.hasSuffix(" active") } } ?? false
-        let endedClean = lastCrumb.hasSuffix(" background") || lastCrumb.hasSuffix(" terminate") || bgOnlyRun
+        // Killed while a recording was still running (in the background, where
+        // the last crumb is "background") is NOT a clean exit — the recording
+        // was cut off. Recording is open if its Live Activity started and
+        // never ended.
+        let startedAt = prevLines.lastIndex { $0.hasSuffix("live activity started") }
+        let endedAt = prevLines.lastIndex { $0.contains("live activity ended") }
+        let diedRecording = startedAt.map { s in endedAt.map { $0 < s } ?? true } ?? false
+        let endedClean = (lastCrumb.hasSuffix(" background") || lastCrumb.hasSuffix(" terminate") || bgOnlyRun) && !diedRecording
         let rebooted = Self.deviceRebootedSinceLastRun()
         if rebooted {
             EventLog.shared.log(.system, "device.rebooted", status: "info",
@@ -63,7 +70,7 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
         if !prevLines.isEmpty && (!endedClean || diedInForeground || signalText != nil || exceptionText != nil) {
             EventLog.shared.log(.system, "app.prev_unclean", status: "fail",
                                 payload: Self.envelope(["died_in_foreground": diedInForeground, "device_rebooted": rebooted,
-                                                        "prev_last_crumb": lastCrumb, "signal": signalText ?? "",
+                                                        "prev_last_crumb": lastCrumb, "died_while_recording": diedRecording, "signal": signalText ?? "",
                                                         "exception": exceptionText ?? ""], crumbs: prevLines))
         }
         if diedInForeground || signalText != nil || exceptionText != nil {

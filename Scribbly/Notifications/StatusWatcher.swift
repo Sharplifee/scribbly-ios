@@ -120,7 +120,10 @@ final class StatusWatcher: ObservableObject {
 
     // MARK: Poll
 
-    func refresh(reason: String) async {
+    /// Runs on the main actor so two refreshes (the 15 s loop, "became active",
+    /// a finished job, background refresh) can never touch the same state at
+    /// once — concurrent runs raced on lastBatches and could crash the app.
+    @MainActor func refresh(reason: String) async {
         let signedIn = await MainActor.run { AuthSession.shared.user != nil }
         guard signedIn else { return }
         guard !running else { return }
@@ -141,7 +144,7 @@ final class StatusWatcher: ObservableObject {
     }
 
     /// Anything new in the library since the last check → "Transcript Ready".
-    private func checkNewEntries() async {
+    @MainActor private func checkNewEntries() async {
         guard let since = notifiedThrough else { return }
         guard let rows = try? await CorpusAPI.recentEntries(limit: 25, filters: [
             URLQueryItem(name: "created_at", value: "gt.\(since)")]) else { return }
@@ -165,7 +168,7 @@ final class StatusWatcher: ObservableObject {
     }
 
     /// Server jobs + batches: the More / Activity badges, failures, finished batches.
-    private func checkJobs() async {
+    @MainActor private func checkJobs() async {
         let jm = await MainActor.run { JobsModel.shared }
         await jm.refresh()
         let (voice, batches) = await MainActor.run { (jm.voiceJobs, jm.batches) }
