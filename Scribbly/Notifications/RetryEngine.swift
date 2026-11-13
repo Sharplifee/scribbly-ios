@@ -62,7 +62,8 @@ final class RetryEngine {
     /// Returns how many items were sent back in.
     @discardableResult
     func run(reason: String) async -> Int {
-        guard !busy, AuthSession.shared.user != nil else { return 0 }
+        let signedIn = await MainActor.run { AuthSession.shared.user != nil }
+        guard !busy, signedIn else { return 0 }
         busy = true
         defer { busy = false }
         var sent = 0
@@ -183,7 +184,8 @@ final class RetryEngine {
         return u
     }
     private func voiceFailures() async -> [JobsModel.VoiceJob] {
-        guard AuthSession.shared.isLibraryOwner, let url = URL(string: voiceBase + "/jobs") else { return [] }
+        let owner = await MainActor.run { AuthSession.shared.isLibraryOwner }
+        guard owner, let url = URL(string: voiceBase + "/jobs") else { return [] }
         var req = URLRequest(url: url); req.timeoutInterval = 20
         struct R: Decodable { let jobs: [JobsModel.VoiceJob] }
         guard let (data, _) = try? await URLSession.shared.data(for: req),

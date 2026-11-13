@@ -121,7 +121,8 @@ final class StatusWatcher: ObservableObject {
     // MARK: Poll
 
     func refresh(reason: String) async {
-        guard AuthSession.shared.user != nil else { return }
+        let signedIn = await MainActor.run { AuthSession.shared.user != nil }
+        guard signedIn else { return }
         guard !running else { return }
         running = true
         defer { running = false }
