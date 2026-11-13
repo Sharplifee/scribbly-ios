@@ -1,0 +1,16 @@
+name: Rename app in App Store Connect
+on:
+  workflow_dispatch:
+    inputs:
+      name: { description: "New app name", required: true, default: "Scribbly®" }
+jobs:
+  rename:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install --quiet pyjwt cryptography
+      - env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: python3 ci/rename_app.py "${{ inputs.name }}"

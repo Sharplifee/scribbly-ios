@@ -11,7 +11,7 @@
 		<string>GeistMono-Medium.ttf</string>
 	</array>
   <key>CFBundleDevelopmentRegion</key><string>$(DEVELOPMENT_LANGUAGE)</string>
-  <key>CFBundleDisplayName</key><string>Scribbly</string>
+  <key>CFBundleDisplayName</key><string>Scribbly®</string>
   <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
   <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>

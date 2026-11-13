@@ -13,8 +13,9 @@
 	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>CFBundleSpokenName</key><string>Scribbly</string>
 	<key>CFBundleDisplayName</key>
-	<string>Scribbly</string>
+	<string>Scribbly®</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIconName</key>
