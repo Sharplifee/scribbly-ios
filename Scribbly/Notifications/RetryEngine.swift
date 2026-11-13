@@ -34,8 +34,8 @@ final class RetryEngine {
 
     func retriesDone(_ id: String) -> Int { Int(ledger[id]?.first ?? 0) }
     func exhausted(_ id: String) -> Bool { retriesDone(id) >= Self.maxRetries }
-    /// "try 2 of 4" for the UI.
-    func attemptLabel(_ id: String) -> String { "try \(min(retriesDone(id) + 1, Self.maxRetries + 1)) of \(Self.maxRetries + 1)" }
+    /// The NEXT try, "try 2 of 4", for the UI (try 1 was the batch's own run).
+    func attemptLabel(_ id: String) -> String { "try \(min(retriesDone(id) + 2, Self.maxRetries + 1)) of \(Self.maxRetries + 1)" }
 
     private func due(_ id: String) -> Bool {
         guard let e = ledger[id], e.count == 2 else { return true }
@@ -137,6 +137,10 @@ final class RetryEngine {
         return rows.filter { !exhausted($0.id) }.count
     }
 
+    func failedCount(collection: String) async -> Int {
+        (try? await failedRows(collection: collection).count) ?? 0
+    }
+
     /// Failed rows in a batch that have used all 4 tries.
     func exhaustedCount(ids: [String]) -> Int { ids.filter { exhausted($0) }.count }
 
@@ -167,7 +171,9 @@ final class RetryEngine {
                                                        body: ["status": "pending", "attempts": 0, "error": NSNull()]),
                   (try? await CorpusAPI.send(req)) != nil else { return false }
         }
-        if let collection {
+        // Nudge the server to pick the batch back up — but never on a batch
+        // that has cancelled ("skipped") rows, so a cancel is never undone.
+        if let collection, await skippedCount(collection) == 0 {
             var req = URLRequest(url: URL(string: "\(CorpusAPI.appBase)/api/ingest")!)
             req.httpMethod = "POST"
             req.timeoutInterval = 60
@@ -176,6 +182,12 @@ final class RetryEngine {
             _ = try? await URLSession.shared.data(for: req)
         }
         return true
+    }
+
+    private func skippedCount(_ collection: String) async -> Int {
+        (try? await CorpusAPI.count(table: "scribbly_queue", filters: [
+            URLQueryItem(name: "collection_id", value: "eq.\(collection)"),
+            URLQueryItem(name: "status", value: "eq.skipped")])) ?? 1
     }
 
     private var voiceBase: String {

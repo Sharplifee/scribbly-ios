@@ -131,11 +131,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         if let haptic { HapticPlayer.shared.play(haptic: haptic, tone: id) }
         guard id != ToneLibrary.noneID else { return }
         if id == ToneLibrary.systemID { AudioServicesPlaySystemSound(1007); return }
-        guard let u = ToneLibrary.url(id) else { return }
-        if Recorder.shared.state == .idle {
-            try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
-            try? AVAudioSession.sharedInstance().setActive(true)
-        }
+        // Never play a preview into a recording in progress.
+        guard let u = ToneLibrary.url(id), Recorder.shared.state == .idle else { return }
+        try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
+        try? AVAudioSession.sharedInstance().setActive(true)
         preview = try? AVAudioPlayer(contentsOf: u)
         preview?.play()
     }

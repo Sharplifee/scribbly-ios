@@ -429,7 +429,7 @@ final class Uploader: NSObject, ObservableObject {
                         })
 
                     finishJob(job, audio: audio)
-                    EventLog.shared.log("upload.handed_off", subject: result.jobID ?? job.id, status: "ok", ["title": result.title ?? "", "attempt": job.attempts + 1])
+                    EventLog.shared.log("upload.handed_off", subject: result.jobID ?? job.id, status: "ok", ["title": result.title, "attempt": job.attempts + 1])
                     results[job.id] = (true, result.title)
                     lastTitle = result.title
                     if let jid = result.jobID { trackServerJob(jid, title: result.title) }

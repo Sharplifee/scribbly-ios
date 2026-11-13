@@ -127,6 +127,9 @@ final class StatusWatcher: ObservableObject {
         running = true
         defer { running = false }
         await RetryEngine.shared.run(reason: reason)
+        let (tab, sub) = await MainActor.run { (BottomChrome.shared.currentTab, BottomChrome.shared.moreSub) }
+        if tab == .library { librarySeen = Self.nowISO() }
+        if tab == .more && sub == .jobs { activitySeen = Date().timeIntervalSince1970 }
         await checkNewEntries()
         await checkJobs()
         if let seen = librarySeen,
@@ -163,7 +166,7 @@ final class StatusWatcher: ObservableObject {
 
     /// Server jobs + batches: the More / Activity badges, failures, finished batches.
     private func checkJobs() async {
-        let jm = JobsModel.shared
+        let jm = await MainActor.run { JobsModel.shared }
         await jm.refresh()
         let (voice, batches) = await MainActor.run { (jm.voiceJobs, jm.batches) }
         let pending = await MainActor.run { Uploader.shared.pendingCount }
@@ -183,19 +186,26 @@ final class StatusWatcher: ObservableObject {
         var now: [String: (name: String, total: Int, done: Int)] = [:]
         for b in batches { now[b.id] = (b.name, b.total, b.done) }
         for (id, b) in lastBatches where now[id] == nil {
-            // Its failures go straight back in; the alert says what's left.
+            // Its failures go straight back in. Stay quiet while any are still
+            // being retried — one alert when the batch is truly done.
             let retrying = await RetryEngine.shared.batchFinished(collection: id)
-            Notifier.shared.post(.batchFinished, title: "Batch finished",
-                                 body: retrying > 0
-                                    ? "\(b.name) — \(b.done) saved. \(retrying) didn't make it the first time and are being retried automatically."
+            let waiting = retrying > 0 ? retrying : await RetryEngine.shared.retriesLeft(collection: id)
+            guard waiting == 0, !notifiedIDs.contains("batchdone:\(id)") else { continue }
+            notifiedIDs = notifiedIDs + ["batchdone:\(id)"]
+            let stuck = await RetryEngine.shared.failedCount(collection: id)
+            Notifier.shared.post(stuck > 0 ? .needsAttention : .batchFinished,
+                                 title: stuck > 0 ? "Batch finished — \(stuck) need you" : "Batch finished",
+                                 body: stuck > 0
+                                    ? "\(b.name) — \(stuck) couldn't be saved after 4 tries. Tap Retry on Home, or Scribbly® tries again in its daily checkup."
                                     : "\(b.name) — everything is fetched and in your library.",
-                                 id: "batch-\(id)-\(Self.nowISO())")
+                                 id: "batch-\(id)")
         }
         lastBatches = now
         let active = pending + running + batches.count
+        let failuresNow = newFailures
         await MainActor.run {
             self.activeJobs = active
-            self.unseenFailures = max(self.unseenFailures, newFailures)
+            self.unseenFailures = max(self.unseenFailures, failuresNow)
         }
     }
 
