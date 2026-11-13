@@ -304,6 +304,18 @@ public final class EventLog: @unchecked Sendable {
                     // offline or server trouble: put the batch back and spill to disk
                     self.buffer.insert(contentsOf: batch, at: 0)
                     self.persistPending()
+                } else if (status == 401 || status == 403), req.value(forHTTPHeaderField: "Authorization") != "Bearer \(cfg.apiKey)" {
+                    // The user's token had expired (typical right at launch, before
+                    // the auth refresh) — that silently dropped the launch rows,
+                    // including crash reports. Resend this batch with the app key.
+                    var retry = req
+                    retry.setValue("Bearer \(cfg.apiKey)", forHTTPHeaderField: "Authorization")
+                    URLSession.shared.dataTask(with: retry) { _, r2, e2 in
+                        let s2 = (r2 as? HTTPURLResponse)?.statusCode ?? 0
+                        if e2 != nil || s2 == 0 || s2 >= 500 {
+                            self.queue.async { self.buffer.insert(contentsOf: batch, at: 0); self.persistPending() }
+                        } else if s2 >= 400 { NSLog("[event_log] rejected after retry %d", s2) }
+                    }.resume()
                 } else if status >= 400 {
                     NSLog("[event_log] rejected %d", status)   // bad rows are dropped, never retried forever
                 }

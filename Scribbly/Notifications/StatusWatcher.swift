@@ -59,8 +59,10 @@ final class StatusWatcher: ObservableObject {
             if self.activitySeen == 0 { self.activitySeen = Date().timeIntervalSince1970 }
             self.loop = Task { [weak self] in
                 while !Task.isCancelled {
-                    await self?.refresh(reason: "foreground")
-                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    // On screen and the phone isn't hot only — background work
+                    // is left to iOS background refresh (see PowerGovernor).
+                    if PowerGovernor.shared.allowsPolling { await self?.refresh(reason: "foreground") }
+                    try? await Task.sleep(nanoseconds: 20_000_000_000)
                 }
             }
         }

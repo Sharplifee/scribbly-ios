@@ -27,7 +27,7 @@ struct BatchProgressPanel: View {
         }
         .task {
             while !Task.isCancelled {
-                await load()
+                if PowerGovernor.shared.allowsPolling { await load() }
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
             }
         }

@@ -398,7 +398,9 @@ final class Recorder: NSObject, ObservableObject {
         runStartedAt = Date()
         lastRawPos = -1
         lastRawPosChange = Date()
-        let t = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+        // 20 Hz on screen (smooth meter); 4 Hz with the screen off, where only
+        // the Live Activity waveform samples it and the UI isn't drawn.
+        let t = Timer(timeInterval: PowerGovernor.shared.inBackground ? 0.25 : 0.05, repeats: true) { [weak self] _ in
             guard let self else { return }
             guard let r = self.recorder, r.isRecording else {
                 // The recorder died under us (encode error, media reset) while
@@ -428,6 +430,12 @@ final class Recorder: NSObject, ObservableObject {
         // .common so the timer keeps firing while the user scrolls
         RunLoop.main.add(t, forMode: .common)
         timer = t
+    }
+
+    /// Re-time the meter when the app goes to/from the background mid-recording.
+    @objc func powerChanged() {
+        guard state == .recording, timer != nil else { return }
+        startTimer()
     }
 
     private func stopTimer() {

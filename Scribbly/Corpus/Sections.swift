@@ -1068,6 +1068,11 @@ struct IngestSection: View {
             while !Task.isCancelled, progressActive, progressCollection == collection {
                 if tick > 0 { try? await Task.sleep(nanoseconds: 2_000_000_000) }
                 if Task.isCancelled { break }
+                // Screen off or phone hot: wait instead of polling.
+                if !PowerGovernor.shared.allowsPolling {
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    continue
+                }
                 tick += 1
 
                 var rowsFinished = false

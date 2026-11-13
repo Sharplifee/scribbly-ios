@@ -131,10 +131,26 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
     // MARK: MetricKit
 
     func didReceive(_ payloads: [MXDiagnosticPayload]) { payloads.forEach(forward) }
-    func didReceive(_ payloads: [MXMetricPayload]) {}
+    /// Daily energy/performance report from iOS (CPU, GPU, background audio
+    /// time, network, exit reasons). Logged so energy use can be assessed later.
+    func didReceive(_ payloads: [MXMetricPayload]) {
+        for p in payloads {
+            guard let obj = try? JSONSerialization.jsonObject(with: p.jsonRepresentation()) as? [String: Any] else { continue }
+            var out: [String: Any] = ["begin": "\(p.timeStampBegin)", "end": "\(p.timeStampEnd)",
+                                      "build": p.latestApplicationVersion]
+            for k in ["cpuMetrics", "gpuMetrics", "applicationTimeMetrics", "applicationExitMetrics",
+                      "networkTransferMetrics", "memoryMetrics", "displayMetrics", "diskIOMetrics",
+                      "locationActivityMetrics", "cellularConditionMetrics"] {
+                if let v = obj[k], let d = try? JSONSerialization.data(withJSONObject: v),
+                   let s = String(data: d, encoding: .utf8) { out[k] = String(s.prefix(1900)) }
+            }
+            EventLog.shared.log(.system, "metrickit.metrics", status: "info", payload: out)
+        }
+    }
 
     private func forward(_ p: MXDiagnosticPayload) {
-        guard (p.crashDiagnostics?.isEmpty == false) || (p.hangDiagnostics?.isEmpty == false) else { return }
+        guard (p.crashDiagnostics?.isEmpty == false) || (p.hangDiagnostics?.isEmpty == false)
+              || (p.cpuExceptionDiagnostics?.isEmpty == false) || (p.diskWriteExceptionDiagnostics?.isEmpty == false) else { return }
         let stamp = p.timeStampEnd.timeIntervalSince1970
         // Every MetricKit crash/hang also goes to the permanent event_log (once).
         let logKey = "mx.logged.\(stamp)"

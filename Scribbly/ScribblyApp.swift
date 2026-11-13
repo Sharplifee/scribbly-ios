@@ -43,6 +43,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     /// alert that launched the app is delivered) and background refresh.
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        PowerGovernor.shared.start()
+        NotificationCenter.default.addObserver(Recorder.shared, selector: #selector(Recorder.powerChanged),
+                                               name: .scribblyPowerChanged, object: nil)
         Notifier.shared.configure()
         StatusWatcher.shared.registerBackgroundRefresh()
         StatusWatcher.shared.scheduleBackgroundRefresh()

@@ -75,6 +75,8 @@ final class RecordingLiveActivity {
                 let wait = (self?.inBackground ?? false) ? RecordingLiveActivity.backgroundPush : RecordingLiveActivity.foregroundPush
                 try? await Task.sleep(nanoseconds: wait)
                 guard let self, Recorder.shared.state == .recording else { continue }
+                // Phone hot: stop the waveform pushes (the timer ticks by itself).
+                guard PowerGovernor.shared.allowsWaveform else { continue }
                 self.sync(state: .recording, appending: Recorder.shared.appendTo != nil)
             }
         }

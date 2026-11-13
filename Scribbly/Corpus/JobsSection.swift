@@ -326,7 +326,8 @@ final class JobsModel: ObservableObject {
         guard polling == nil else { return }
         polling = Task { [weak self] in
             while !Task.isCancelled {
-                await self?.refresh()
+                // Screen off or phone hot: don't poll (nobody is looking).
+                if PowerGovernor.shared.allowsPolling { await self?.refresh() }
                 // Every 2s while a voice job is running (live progress), else every 5s.
                 let fast = self?.voiceJobs.contains(where: { j in j.isRunning }) ?? false
                 try? await Task.sleep(nanoseconds: fast ? 2_000_000_000 : 5_000_000_000)
