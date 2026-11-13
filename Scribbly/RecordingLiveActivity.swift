@@ -36,9 +36,11 @@ final class RecordingLiveActivity {
         guard !started else { return }
         started = true
         RecordingControl.isRecording = { Recorder.shared.state == .recording }
+        RecordingControl.isActive = { Recorder.shared.state == .recording || Recorder.shared.state == .paused }
         RecordingControl.handler = { action in
             let rec = Recorder.shared
             CrashReporter.shared.add("control \(action) (state \(rec.state))")
+            EventLog.shared.log("voice_control.\(action)", ["state": "\(rec.state)"])
             switch action {
             case "start":
                 guard rec.state == .idle else { return }

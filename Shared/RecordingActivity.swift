@@ -27,6 +27,8 @@ struct RecordingActivityAttributes: ActivityAttributes {
 enum RecordingControl {
     @MainActor static var handler: ((String) -> Void)?
     @MainActor static var isRecording: (() -> Bool)?
+    /// Recording or paused — anything a stop command should finish.
+    @MainActor static var isActive: (() -> Bool)?
 }
 
 @available(iOS 17.0, *)

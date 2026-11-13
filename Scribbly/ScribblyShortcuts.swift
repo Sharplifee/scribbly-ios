@@ -1,8 +1,8 @@
 import AppIntents
 
-/// Siri / Shortcuts / Action button phrases. Say any of these to Siri, or pick
-/// "Start Scribbly Recording" in Shortcuts, the Action button, or a Voice
-/// Control custom command.
+/// Siri phrases (iPhone). Siri requires the app's name in every phrase.
+/// For a phrase with NO "Hey Siri" (e.g. just "Scribbly"), set up an iPhone
+/// Vocal Shortcut that runs "Start or Stop Scribbly Recording".
 @available(iOS 18.0, *)
 struct ScribblyShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
@@ -10,6 +10,7 @@ struct ScribblyShortcuts: AppShortcutsProvider {
             intent: StartScribblyRecordingIntent(),
             phrases: [
                 "Hey \(.applicationName)",
+                "Start \(.applicationName)",
                 "Start a \(.applicationName) recording",
                 "Start recording in \(.applicationName)",
                 "Record with \(.applicationName)",
@@ -18,6 +19,28 @@ struct ScribblyShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Start Recording",
             systemImageName: "waveform"
+        )
+        AppShortcut(
+            intent: StopScribblyRecordingIntent(),
+            phrases: [
+                "Stop \(.applicationName)",
+                "Stop \(.applicationName) recording",
+                "Stop recording in \(.applicationName)",
+                "Finish \(.applicationName) recording",
+                "Save \(.applicationName) recording",
+                "\(.applicationName) stop"
+            ],
+            shortTitle: "Stop & Save",
+            systemImageName: "stop.circle"
+        )
+        AppShortcut(
+            intent: ToggleScribblyRecordingIntent(),
+            phrases: [
+                "Toggle \(.applicationName)",
+                "\(.applicationName) start or stop"
+            ],
+            shortTitle: "Start or Stop",
+            systemImageName: "record.circle"
         )
     }
 }
