@@ -189,6 +189,20 @@ final class Recorder: NSObject, ObservableObject {
         closeSegment()
         let total = max(activeTime, accumulated)
         let segs = segments
+        // Back-to-back takes: the recorder is free the instant this take's
+        // files are closed. Saving (merge → upload) carries on with its own
+        // copy of the segment list, so Record can be tapped again right away
+        // and the new take never touches the one being saved.
+        segments = []
+        accumulated = 0
+        activeTime = 0
+        runStartedAt = nil
+        elapsed = 0
+        level = 0
+        interrupted = false
+        userPaused = false
+        state = .idle
+        EventLog.shared.log("record.finish_handoff", ["segments": segs.count, "seconds": Int(total)])
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var parts: [Uploader.RecordingPart] = []
@@ -209,15 +223,10 @@ final class Recorder: NSObject, ObservableObject {
             }
             let ready = parts
             DispatchQueue.main.async {
-                try? self?.session.setActive(false, options: [.notifyOthersOnDeactivation])
-                self?.state = .idle
-                self?.elapsed = 0
-                self?.level = 0
-                self?.interrupted = false
-                self?.segments = []
-                self?.accumulated = 0
-                self?.activeTime = 0
-                if ready.isEmpty { self?.appendTo = nil }
+                // Only release the mic if a new take hasn't already started.
+                if let self, self.state == .idle, self.recorder == nil {
+                    try? self.session.setActive(false, options: [.notifyOthersOnDeactivation])
+                }
                 completion(ready, total)
             }
         }

@@ -179,17 +179,19 @@ extension Recorder {
     @MainActor func finishAndUpload() {
         let rec = self
         let up = Uploader.shared
+        defer { rec.appendTo = nil; rec.place = nil }   // free for the next take immediately
         // Captured now: a second tap or a new recording must not change where
         // THIS take goes.
         let appendTo = rec.appendTo
         let place = rec.place
         rec.finish { parts, dur in
-            rec.appendTo = nil
             guard !parts.isEmpty else { return }
             let appending = appendTo != nil
             // The uploader deletes the raw segments only after the audio is in
             // its pending store; on a failed copy they stay for crash recovery.
-            up.uploadRecording(parts, duration: dur, location: rec.place ?? place, appendTo: appendTo) { ok, msg in
+            // Uses only what was captured above — a new take may already be
+            // recording with its own place / append target.
+            up.uploadRecording(parts, duration: dur, location: place ?? PlaceTagger.shared.recentPlace, appendTo: appendTo) { ok, msg in
                 BottomChrome.shared.savedTitle = ok ? (appending ? "Added to the recording" : (msg ?? "Saved to your library")) : nil
                 StatusWatcher.shared.uploadFinished(ok: ok, title: ok ? msg : nil, error: ok ? nil : msg)
             }

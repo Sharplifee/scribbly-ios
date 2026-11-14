@@ -23,6 +23,7 @@ struct GlassTabBar: View {
     @ObservedObject private var status = StatusWatcher.shared
     @ObservedObject private var notify = NotifySettings.shared
     @State private var recordTaps = 0
+    @State private var lastFinishAt = Date.distantPast
     @State private var finishTaps = 0
     @State private var showDiscardConfirm = false
     @Namespace private var glassNS
@@ -244,8 +245,12 @@ struct GlassTabBar: View {
             if finishing {
                 guard rec.state == .recording || rec.state == .paused else { return }
                 finishTaps += 1
+                lastFinishAt = Date()
                 rec.finishAndUpload()
             } else {
+                // Back-to-back takes are allowed the moment the last one is
+                // handed off — only a finger bounce (< 0.3 s) is ignored.
+                guard Date().timeIntervalSince(lastFinishAt) > 0.3 else { return }
                 recordTaps += 1
                 onRecord()
             }
