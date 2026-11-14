@@ -62,7 +62,7 @@ struct FailedList: View {
                 ForEach(model.groups, id: \.id) { g in
                     group(title: "\(g.name.uppercased()) · \(g.rows.count)", retryAll: { await model.retryCollection(g.id) }) {
                         ForEach(Array(g.rows.prefix(expanded.contains(g.id) ? g.rows.count : preview))) { r in
-                            item(title: r.title ?? r.video_id ?? "Video", reason: (r.status == "failed" && !RetryEngine.shared.exhausted(r.id)) ? "Retrying automatically — \(RetryEngine.shared.attemptLabel(r.id))" : FailedModel.plain(r.error ?? r.status),
+                            item(title: r.title ?? r.video_id ?? "Video", reason: (r.status == "failed" && !RetryEngine.isPermanent(r.error) && !RetryEngine.shared.exhausted(r.id)) ? "Retrying automatically — \(RetryEngine.shared.attemptLabel(r.id))" : FailedModel.plain(r.error ?? r.status),
                                  url: r.video_id.flatMap { URL(string: "https://www.youtube.com/watch?v=\($0)") },
                                  retry: { await model.retry(ids: [r.id]) }, remove: { await model.remove(r.id) })
                         }

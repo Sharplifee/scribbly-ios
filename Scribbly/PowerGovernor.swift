@@ -13,12 +13,18 @@ import UIKit
 final class PowerGovernor {
     static let shared = PowerGovernor()
 
-    private(set) var inBackground = UIApplication.shared.applicationState == .background
+    /// Starts false: at launch iOS reports the app as "background" until its
+    /// window appears, and no "will enter foreground" follows a cold launch —
+    /// reading it here froze every poller (Home progress stuck at 0%) until the
+    /// app was backgrounded and reopened. Only a real trip to the background
+    /// flips it.
+    private(set) var inBackground = false
     private(set) var thermal = ProcessInfo.processInfo.thermalState
 
     /// Network pollers (status, Activity, batch panels, Home progress) run only
-    /// while the app is on screen and the phone isn't hot.
-    var allowsPolling: Bool { !inBackground && thermal.rawValue < ProcessInfo.ThermalState.serious.rawValue }
+    /// while the app is on screen. On screen the live views keep updating even when the phone is warm; only
+    /// at "critical" (the level where iOS starts killing apps) do they pause.
+    var allowsPolling: Bool { !inBackground && thermal.rawValue < ProcessInfo.ThermalState.critical.rawValue }
     /// Live Activity waveform pushes stop when the phone is hot; the timer on
     /// the Island keeps ticking on its own.
     var allowsWaveform: Bool { thermal.rawValue < ProcessInfo.ThermalState.serious.rawValue }
@@ -30,9 +36,12 @@ final class PowerGovernor {
             self?.inBackground = true
             NotificationCenter.default.post(name: .scribblyPowerChanged, object: nil)
         }
-        nc.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.inBackground = false
-            NotificationCenter.default.post(name: .scribblyPowerChanged, object: nil)
+        for n in [UIApplication.willEnterForegroundNotification, UIApplication.didBecomeActiveNotification] {
+            nc.addObserver(forName: n, object: nil, queue: .main) { [weak self] _ in
+                guard let self, self.inBackground else { return }
+                self.inBackground = false
+                NotificationCenter.default.post(name: .scribblyPowerChanged, object: nil)
+            }
         }
         nc.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
@@ -48,8 +57,12 @@ final class PowerGovernor {
         }
     }
 
-    /// Call once at launch so the observers exist.
-    func start() {}
+    /// Call once at launch so the observers exist; logs the starting heat level.
+    func start() {
+        EventLog.shared.log(.system, "power.launch", status: isHot ? "warn" : "ok",
+                            payload: ["thermal": Self.name(thermal),
+                                      "low_power": ProcessInfo.processInfo.isLowPowerModeEnabled])
+    }
 
     static func name(_ s: ProcessInfo.ThermalState) -> String {
         switch s {

@@ -55,7 +55,18 @@ final class RetryEngine {
         ledger = l
     }
 
-    struct QRow: Decodable { let id: String; let collection_id: String?; let status: String; let title: String? }
+    struct QRow: Decodable { let id: String; let collection_id: String?; let status: String; let title: String?; let error: String? }
+
+    /// Failures no retry can fix (the video never aired, is private, removed or
+    /// members-only). They go straight to "Didn't work" with the reason instead
+    /// of burning 3 more rounds — Nov 14 the app retried 3 livestreams that
+    /// never aired, three times each.
+    static func isPermanent(_ error: String?) -> Bool {
+        guard let e = error?.lowercased() else { return false }
+        return ["never aired", "private video", "members-only", "members only", "has been removed",
+                "video unavailable", "does not exist", "age-restricted", "copyright"]
+            .contains { e.contains($0) }
+    }
 
     /// One pass. Called by the live status loop (every 15 s while open), right
     /// after a batch finishes on Home, and by background refresh.
@@ -147,16 +158,17 @@ final class RetryEngine {
     // MARK: Network
 
     private func failedRows(collection: String? = nil) async throws -> [QRow] {
-        var items = [URLQueryItem(name: "select", value: "id,collection_id,status,title"),
+        var items = [URLQueryItem(name: "select", value: "id,collection_id,status,title,error"),
                      URLQueryItem(name: "status", value: "eq.failed"),
                      URLQueryItem(name: "order", value: "id.asc"),
                      URLQueryItem(name: "limit", value: "1000")]
         if let collection { items.append(URLQueryItem(name: "collection_id", value: "eq.\(collection)")) }
         return try await CorpusAPI.getJSON(CorpusAPI.restURL("scribbly_queue", items), as: [QRow].self)
+            .filter { !Self.isPermanent($0.error) }
     }
     private func activeCollections() async throws -> [String] {
         let rows = try await CorpusAPI.getJSON(CorpusAPI.restURL("scribbly_queue", [
-            URLQueryItem(name: "select", value: "id,collection_id,status,title"),
+            URLQueryItem(name: "select", value: "id,collection_id,status,title,error"),
             URLQueryItem(name: "status", value: "in.(pending,processing)"),
             URLQueryItem(name: "limit", value: "1000")]), as: [QRow].self)
         return Array(Set(rows.compactMap(\.collection_id)))

@@ -515,8 +515,11 @@ final class Uploader: NSObject, ObservableObject {
         let jobsURL = CorpusAPI.voiceIngestURL.replacingOccurrences(of: "/upload", with: "/jobs")
         let deadline = Date().addingTimeInterval(30 * 60)
         var misses = 0
+        var shown: Double = 0
         while !Task.isCancelled, Date() < deadline {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            // Every second: a recording is usually transcribed in 5–20 s, so a
+            // 2 s poll only ever caught one or two steps (looked like 0 → 100).
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             if Task.isCancelled { return }
             guard let url = URL(string: jobsURL) else { break }
             var req = URLRequest(url: url)
@@ -537,7 +540,15 @@ final class Uploader: NSObject, ObservableObject {
             if state == "done" { pct = 100 }
             let stage = serverStage ?? Self.stageText(state)
             let title = (j["title"] as? String) ?? ""
-            let shownPct = pct
+            // The server reports milestones (5, 10, 25–80 per chunk, 85, 100).
+            // Between them, creep forward 2%/s so the bar moves the whole time,
+            // never past the next milestone, never backwards.
+            let real = pct ?? 0
+            if finished { shown = real } else {
+                let ceiling: Double = real < 25 ? 24 : (real < 85 ? 84 : 99)
+                shown = max(real, min(shown + 2, ceiling))
+            }
+            let shownPct: Double? = shown
             DispatchQueue.main.async {
                 guard self.serverJob?.id == id else { return }
                 self.serverJob = ServerJob(id: id, title: title.isEmpty ? (self.serverJob?.title ?? "") : title,
