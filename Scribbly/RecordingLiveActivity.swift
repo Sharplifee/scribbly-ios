@@ -119,6 +119,7 @@ final class RecordingLiveActivity {
                                        sound: .named("silence.wav"))
         Task { await a.update(ActivityContent(state: cs, staleDate: nil), alertConfiguration: alert) }
         CrashReporter.shared.add("live activity popped open on background")
+        EventLog.shared.log("live_activity.popped", ["app_state": UIApplication.shared.applicationState.rawValue])
     }
 
     /// At launch, a Live Activity left over while the recorder is idle (the app was
@@ -155,6 +156,12 @@ final class RecordingLiveActivity {
                     let a = try Activity.request(attributes: RecordingActivityAttributes(title: "Scribbly"),
                                                  content: content, pushType: nil)
                     CrashReporter.shared.add("live activity started")
+                    // Started from a widget, control, Siri or a Shortcut with
+                    // the app closed: don't open the app — pop the Dynamic
+                    // Island open (Pause / ✓ right there), then let it settle.
+                    if UIApplication.shared.applicationState != .active {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.popOpen() }
+                    }
                     EventLog.shared.log(.system, "live_activity.started", status: "ok", payload: ["activity": a.id, "appending": appending])
                 } catch {
                     CrashReporter.shared.add("live activity request failed: \(error.localizedDescription)")
