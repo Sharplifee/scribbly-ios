@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import UIKit
+import AVFoundation
 #if canImport(ActivityKit)
 import ActivityKit
 #endif
@@ -37,6 +38,11 @@ final class RecordingLiveActivity {
         started = true
         RecordingControl.isRecording = { Recorder.shared.state == .recording }
         RecordingControl.isActive = { Recorder.shared.state == .recording || Recorder.shared.state == .paused }
+        RecordingControl.micAllowed = { AVAudioSession.sharedInstance().recordPermission == .granted }
+        RecordingControl.log = { name, outcome in
+            EventLog.shared.log(name, ["outcome": outcome, "state": "\(Recorder.shared.state)",
+                                       "app_state": UIApplication.shared.applicationState.rawValue])
+        }
         RecordingControl.handler = { action in
             let rec = Recorder.shared
             CrashReporter.shared.add("control \(action) (state \(rec.state))")

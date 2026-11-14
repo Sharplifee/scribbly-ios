@@ -29,11 +29,19 @@ enum RecordingControl {
     @MainActor static var isRecording: (() -> Bool)?
     /// Recording or paused — anything a stop command should finish.
     @MainActor static var isActive: (() -> Bool)?
+    /// Microphone permission (false = denied / not yet asked).
+    @MainActor static var micAllowed: (() -> Bool)?
+    /// Writes to the app's permanent event log (set by the app).
+    @MainActor static var log: ((String, String) -> Void)?
 }
 
 @available(iOS 17.0, *)
 struct RecordingPauseIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Pause or Resume Recording"
+    static let description = IntentDescription("The pause button on Scribbly's Live Activity.")
+    /// Only for the Live Activity's own button — hidden from Shortcuts/Siri
+    /// (the full "Pause or Resume Scribbly Recording" is the one to use there).
+    static let isDiscoverable: Bool = false
     init() {}
     @MainActor func perform() async throws -> some IntentResult {
         RecordingControl.handler?("toggle")
@@ -44,6 +52,9 @@ struct RecordingPauseIntent: LiveActivityIntent {
 @available(iOS 17.0, *)
 struct RecordingFinishIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Finish Recording"
+    static let description = IntentDescription("The ✓ button on Scribbly's Live Activity.")
+    /// Live Activity button only — "Stop Scribbly Recording" is the Shortcuts one.
+    static let isDiscoverable: Bool = false
     init() {}
     @MainActor func perform() async throws -> some IntentResult {
         RecordingControl.handler?("finish")

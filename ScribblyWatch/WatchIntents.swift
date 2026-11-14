@@ -30,6 +30,7 @@ struct StopWatchRecordingIntent: AppIntent {
 
 struct ToggleWatchRecordingIntent: AppIntent {
     static let title: LocalizedStringResource = "Start or Stop Scribbly Recording"
+    static let description = IntentDescription("Starts recording on your watch, or stops and saves if one is running.")
     static let openAppWhenRun: Bool = true
     init() {}
     @MainActor func perform() async throws -> some IntentResult {
