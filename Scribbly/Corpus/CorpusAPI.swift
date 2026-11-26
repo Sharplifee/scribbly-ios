@@ -196,7 +196,7 @@ enum CorpusAPI {
         var isByDate: Bool { self == .newest || self == .oldest }
     }
 
-    static let listSelect = "id,title,type,tags,summary,date,created_at,collection_id,duration_seconds,place,kind"
+    static let listSelect = "id,title,type,tags,summary,date,created_at,collection_id,duration_seconds,place,kind,published_at"
 
     /// PostgREST order clause for a sort; `id` breaks ties so the keyset cursor is exact.
     static func orderClause(_ sort: EntrySort) -> String {
@@ -212,7 +212,7 @@ enum CorpusAPI {
     /// Newest few entries without summaries — tiny payload, used for Home → Recent at launch.
     static func recentEntries(limit: Int = 6, filters: [URLQueryItem] = []) async throws -> [Entry] {
         let url = restURL("scribbly_entries", [
-            .init(name: "select", value: "id,title,type,date,created_at,collection_id,duration_seconds,place,kind"),
+            .init(name: "select", value: "id,title,type,date,created_at,collection_id,duration_seconds,place,kind,published_at"),
             .init(name: "order", value: "created_at.desc"),
             .init(name: "limit", value: String(limit))
         ] + filters)

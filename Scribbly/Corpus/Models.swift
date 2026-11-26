@@ -23,6 +23,8 @@ struct Entry: Codable, Identifiable, Hashable {
     var audio_path: String? = nil
     /// The transcript in readable paragraphs, each with its start time in the audio.
     var paragraphs: [TranscriptPara]? = nil
+    /// When the video was posted on YouTube (filled by the cloud computer).
+    var published_at: String? = nil
 
     var tagList: [String] {
         (tags ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -110,6 +112,19 @@ struct Entry: Codable, Identifiable, Hashable {
     /// The discreet line under the title.
     /// Voice: "Voice note · Oct 23, 5:12 AM · 4m 12s · University Place, Orem".
     /// Others: "YouTube · Jordan Peterson · Oct 23, 2026".
+    /// "Added Nov 25, 1:34 PM" — when it came into Scribbly, to the minute.
+    var addedText: String? {
+        guard let d = EntryDates.parse(created_at) else { return nil }
+        let sameYear = Calendar.current.isDate(d, equalTo: Date(), toGranularity: .year)
+        return "Added " + (sameYear ? EntryDates.dayTime : EntryDates.dayTimeYear).string(from: d)
+    }
+    /// "Uploaded Mar 3, 2025" — when the video itself was posted (YouTube only).
+    var uploadedText: String? {
+        guard let p = published_at, let d = EntryDates.parse(p),
+              d.timeIntervalSince1970 > 86_400 else { return nil }   // 1970 = video no longer on YouTube
+        return "Uploaded " + EntryDates.display.string(from: d)
+    }
+
     func metaLine(creator: String?) -> String {
         var parts: [String] = []
         if isVoice {
@@ -120,7 +135,12 @@ struct Entry: Codable, Identifiable, Hashable {
         } else {
             parts.append(displayType)
             if let c = creator, !c.isEmpty { parts.append(c) }
-            parts.append(displayDate)
+            if displayType == "YouTube" {
+                parts.append(addedText ?? displayDate)
+                if let u = uploadedText { parts.append(u) }
+            } else {
+                parts.append(displayDate)
+            }
             if isPodcast, let d = durationText { parts.append(d) }
         }
         return parts.filter { !$0.isEmpty }.joined(separator: " · ")

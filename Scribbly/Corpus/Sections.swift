@@ -285,7 +285,7 @@ struct CollectionDetail: View {
             if !CorpusAPI.isCancellation(error) && entries.isEmpty { self.error = error.localizedDescription }
         }
     }
-    private static let select = "id,title,type,tags,date,created_at,collection_id,duration_seconds,place,kind"
+    private static let select = "id,title,type,tags,date,created_at,collection_id,duration_seconds,place,kind,published_at"
 
     private func loadMore() async {
         guard !loading, !reachedEnd else { return }
