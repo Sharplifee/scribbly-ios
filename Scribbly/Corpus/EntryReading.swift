@@ -105,71 +105,172 @@ final class EntryAudio: ObservableObject {
 struct EntryAudioCard: View {
     @ObservedObject var audio: EntryAudio
     let title: String
+    /// When set, the tile also carries "Add to this recording" — one place to
+    /// listen back or keep talking.
+    var onAddMore: (() -> Void)? = nil
 
     var body: some View {
-        VStack(spacing: 14) {
-            HStack(spacing: 12) {
-                Image(systemName: "waveform")
-                    .font(.system(size: 15, weight: .semibold)).foregroundColor(P.accent)
-                    .frame(width: 36, height: 36).background(Circle().fill(P.surface2))
-                Text(title).font(.geist(size: 14, weight: .medium)).foregroundColor(P.ink).lineLimit(1)
-                Spacer(minLength: 0)
-            }
+        VStack(spacing: 10) {
             if let f = audio.failed {
                 Text(f).font(.geist(size: 13)).foregroundColor(P.textDim).frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                VStack(spacing: 4) {
-                    Slider(value: Binding(get: { audio.time }, set: { audio.time = $0 }),
-                           in: 0...max(1, audio.duration),
-                           onEditingChanged: { editing in
-                               audio.scrubbing = editing
-                               if !editing { audio.seek(audio.time) }
-                           })
-                        .tint(P.accent)
-                    HStack {
-                        Text(EntryAudio.clock(audio.time))
-                        Spacer()
-                        Text(EntryAudio.clock(audio.duration))
-                    }
-                    .font(.geist(size: 11.5, design: .monospaced)).monospacedDigit().foregroundColor(P.textDim)
-                }
-                HStack {
-                    Button { audio.cycleRate() } label: {
-                        Text(audio.rate == 1 ? "1x" : String(format: "%gx", audio.rate))
-                            .font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink).frame(width: 48, height: 44)
-                    }
-                    Spacer()
-                    Button { audio.skip(-15) } label: {
-                        Image(systemName: "gobackward.15").font(.system(size: 22)).foregroundColor(P.ink).frame(width: 48, height: 44)
-                    }
-                    Spacer()
+                HStack(spacing: 10) {
                     Button { audio.toggle() } label: {
                         ZStack {
-                            Circle().fill(P.ink).frame(width: 60, height: 60)
-                            if !audio.ready { ProgressView().tint(P.bg) }
+                            Circle().fill(P.ink).frame(width: 44, height: 44)
+                            if !audio.ready { ProgressView().tint(P.bg).controlSize(.small) }
                             else {
                                 Image(systemName: audio.playing ? "pause.fill" : "play.fill")
-                                    .font(.system(size: 22, weight: .bold)).foregroundColor(P.bg)
-                                    .offset(x: audio.playing ? 0 : 2)
+                                    .font(.system(size: 17, weight: .bold)).foregroundColor(P.bg)
+                                    .offset(x: audio.playing ? 0 : 1.5)
                             }
                         }
                     }
                     .disabled(!audio.ready)
                     .accessibilityLabel(audio.playing ? "Pause" : "Play")
-                    Spacer()
-                    Button { audio.skip(15) } label: {
-                        Image(systemName: "goforward.15").font(.system(size: 22)).foregroundColor(P.ink).frame(width: 48, height: 44)
+                    VStack(spacing: 2) {
+                        Slider(value: Binding(get: { audio.time }, set: { audio.time = $0 }),
+                               in: 0...max(1, audio.duration),
+                               onEditingChanged: { editing in
+                                   audio.scrubbing = editing
+                                   if !editing { audio.seek(audio.time) }
+                               })
+                            .tint(P.accent)
+                            .controlSize(.mini)
+                        HStack {
+                            Text(EntryAudio.clock(audio.time))
+                            Spacer()
+                            Text(EntryAudio.clock(audio.duration))
+                        }
+                        .font(.geist(size: 10.5, design: .monospaced)).monospacedDigit().foregroundColor(P.textDim)
                     }
-                    Spacer()
-                    Color.clear.frame(width: 48, height: 44)
+                    Button { audio.skip(-15) } label: {
+                        Image(systemName: "gobackward.15").font(.system(size: 17)).foregroundColor(P.ink).frame(width: 30, height: 40)
+                    }
+                    .accessibilityLabel("Back 15 seconds")
+                    Button { audio.skip(15) } label: {
+                        Image(systemName: "goforward.15").font(.system(size: 17)).foregroundColor(P.ink).frame(width: 30, height: 40)
+                    }
+                    .accessibilityLabel("Forward 15 seconds")
+                    Button { audio.cycleRate() } label: {
+                        Text(audio.rate == 1 ? "1x" : String(format: "%gx", audio.rate))
+                            .font(.geist(size: 12.5, weight: .semibold)).foregroundColor(P.ink)
+                            .frame(width: 38, height: 26).background(Capsule().fill(P.surface2))
+                    }
+                    .accessibilityLabel("Playback speed")
                 }
                 .buttonStyle(.plain)
             }
+            if let add = onAddMore {
+                Divider().overlay(P.border)
+                Button(action: add) {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            Circle().fill(P.ink).frame(width: 22, height: 22)
+                            Circle().fill(P.accent).frame(width: 8, height: 8)
+                        }
+                        Text("Add to this recording").font(.geist(size: 14.5, weight: .semibold)).foregroundColor(P.ink)
+                        Spacer(minLength: 6)
+                        Text("Records more onto the end").font(.geist(size: 11)).foregroundColor(P.textDim)
+                    }
+                    .frame(height: 30)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add to this recording")
+            }
         }
-        .padding(16)
+        .padding(.horizontal, 12).padding(.vertical, 10)
         .background(P.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(P.border))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(P.border))
+    }
+}
+
+// MARK: - Send to Grok Bots
+
+/// Hands an entry to one of Connor's Grok Bots (Donna first) — the same
+/// hand-off Claude and ChatGPT use; the bot is woken and gets the title,
+/// summary and a link to the full transcript.
+@MainActor
+final class GrokBots: ObservableObject {
+    static let shared = GrokBots()
+    struct Bot: Decodable, Identifiable { let name: String; let about: String?; var id: String { name } }
+    @Published var bots: [Bot] = []
+    @Published var sending: String?
+    @Published var result: String?
+
+    private var base: String {
+        var u = CorpusAPI.voiceIngestURL
+        if let r = u.range(of: "/upload", options: .backwards) { u = String(u[..<r.lowerBound]) }
+        return u
+    }
+    func load() async {
+        guard bots.isEmpty, let url = URL(string: base + "/bots") else { return }
+        var req = URLRequest(url: url); req.timeoutInterval = 15
+        if let t = AuthTokens.access { req.setValue(t, forHTTPHeaderField: "x-auth") }
+        struct R: Decodable { let bots: [Bot] }
+        if let (d, _) = try? await URLSession.shared.data(for: req), let r = try? JSONDecoder().decode(R.self, from: d) { bots = r.bots }
+    }
+    func send(entryID: String, to bot: String, link: String?) async {
+        sending = bot; result = nil
+        defer { sending = nil }
+        var req = URLRequest(url: URL(string: base + "/send-to-bot")!)
+        req.httpMethod = "POST"; req.timeoutInterval = 30
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let t = AuthTokens.access { req.setValue(t, forHTTPHeaderField: "x-auth") }
+        var body: [String: Any] = ["entryId": entryID, "bot": bot]
+        if let link { body["link"] = link }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (d, resp) = try await URLSession.shared.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if code == 200 { result = "Sent to \(bot)."; EventLog.shared.log("grokbot.sent", ["bot": bot, "entry": entryID]) }
+            else {
+                let err = (try? JSONSerialization.jsonObject(with: d) as? [String: Any])?["error"] as? String
+                result = "Didn't send: \(err ?? "HTTP \(code)")"
+                EventLog.shared.log("grokbot.send_fail", ["bot": bot, "code": code, "error": err ?? ""])
+            }
+        } catch {
+            result = "Didn't send: \(error.localizedDescription)"
+        }
+    }
+}
+
+struct GrokBotsSheet: View {
+    let entryID: String
+    let link: () async -> String?
+    @ObservedObject private var gb = GrokBots.shared
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            List {
+                if let r = gb.result {
+                    Text(r).font(.geist(size: 14, weight: .semibold)).foregroundColor(r.hasPrefix("Sent") ? P.good : P.danger)
+                }
+                ForEach(gb.bots) { b in
+                    Button {
+                        Task { await gb.send(entryID: entryID, to: b.name, link: await link()) }
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(b.name).font(.geist(size: 16, weight: .semibold)).foregroundColor(P.ink)
+                                if let a = b.about, !a.isEmpty { Text(a).font(.geist(size: 12)).foregroundColor(P.textDim).lineLimit(2) }
+                            }
+                            Spacer()
+                            if gb.sending == b.name { ProgressView() } else { Image(systemName: "paperplane").foregroundColor(P.accent) }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .disabled(gb.sending != nil)
+                }
+                if gb.bots.isEmpty { ProgressView().frame(maxWidth: .infinity) }
+            }
+            .scrollContentBackground(.hidden).background(P.bg)
+            .navigationTitle("Send to Grok Bots").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .task { gb.result = nil; await gb.load() }
+        }
     }
 }
 

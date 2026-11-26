@@ -20,6 +20,7 @@ struct EntryDetail: View {
     /// The kept recording, when there is one.
     @State private var audio: EntryAudio?
     @State private var tab = 0   // 0 Summary · 1 Transcript
+    @State private var showBots = false
 
     private func originalLink(_ e: Entry) -> URL? { e.sourceLink ?? mirrorSource }
     private func originalLabel(_ u: URL) -> String {
@@ -96,7 +97,8 @@ struct EntryDetail: View {
                     }
 
                     if let a = audio {
-                        EntryAudioCard(audio: a, title: e.kindLabel + (e.place.map { " · " + $0 } ?? ""))
+                        EntryAudioCard(audio: a, title: e.kindLabel + (e.place.map { " · " + $0 } ?? ""),
+                                       onAddMore: isRecordingEntry(e) ? { addMore(e) } : nil)
                     }
                     if hasTranscript(e) {
                         Picker("", selection: $tab) {
@@ -115,30 +117,38 @@ struct EntryDetail: View {
                     }
                     sectionLabel("Send to")
                     sendToClaudeButton(e)
+                    Button { showBots = true } label: {
+                        HStack(spacing: 8) {
+                            Image("logo-grok").resizable().scaledToFit().frame(width: 20, height: 20)
+                            Text("Send to Grok Bots").font(.geist(size: 14.5, weight: .semibold)).foregroundColor(P.ink)
+                            Spacer()
+                            Text("Donna and the rest").font(.geist(size: 12)).foregroundColor(P.textDim)
+                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(P.textDim)
+                        }
+                        .padding(.horizontal, 14).frame(height: 48)
+                        .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(P.edge))
+                    }
+                    .buttonStyle(.plain)
+                    .sheet(isPresented: $showBots) {
+                        GrokBotsSheet(entryID: e.id, link: { await shareLink(e.id) })
+                            .presentationDetents([.medium, .large])
+                    }
 
-                    // Copy · Export · Share · Delete
-                    HStack {
+                    // Copy · Export · Share · Delete — big, easy targets
+                    HStack(spacing: 8) {
                         Menu {
                             Button { copy(summaryText()) } label: { Label("Summary", systemImage: "text.alignleft") }
                                 .disabled(summaryText().isEmpty)
                             Button { copy(transcriptText()) } label: { Label("Transcript", systemImage: "text.quote") }
                                 .disabled(transcriptText().isEmpty)
                             Button { copy(exportText()) } label: { Label("Both — summary + transcript", systemImage: "doc.on.doc") }
-                        } label: {
-                            Text(copied ? "Copied" : "Copy").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
-                        }
-                        Spacer()
-                        ShareLink(item: exportText(), preview: SharePreview(e.title)) {
-                            Text("Export").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
-                        }
-                        Spacer()
-                        ShareLink(item: shareText(e), subject: Text(e.title), preview: SharePreview(e.title)) {
-                            Text("Share").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.accent)
-                        }
-                        Spacer()
+                        } label: { actionTile(copied ? "Copied" : "Copy", "doc.on.doc", P.accent) }
+                        ShareLink(item: exportText(), preview: SharePreview(e.title)) { actionTile("Export", "arrow.down.doc", P.accent) }
+                        ShareLink(item: shareText(e), subject: Text(e.title), preview: SharePreview(e.title)) { actionTile("Share", "square.and.arrow.up", P.accent) }
                         Button { confirmDelete = true } label: {
-                            if deleting { ProgressView().controlSize(.small).tint(P.danger) }
-                            else { Text("Delete").font(.geist(size: 13, weight: .semibold)).foregroundColor(P.danger) }
+                            if deleting { ProgressView().tint(P.danger).frame(maxWidth: .infinity, minHeight: 58) }
+                            else { actionTile("Delete", "trash", P.danger) }
                         }
                         .disabled(deleting)
                     }
@@ -147,18 +157,9 @@ struct EntryDetail: View {
                         Text("Couldn't delete: \(err)").font(.geist(size: 12)).foregroundColor(P.danger)
                     }
 
-                    // Add to this recording — record more now; it's transcribed and appended to this transcript.
-                    if (e.type ?? "").lowercased().contains("voice") || (e.type ?? "").lowercased().contains("audio") {
-                        Button {
-                            let rec = Recorder.shared
-                            // Uploads queue independently; recording can start while one uploads.
-                            guard rec.state == .idle else { return }
-                            rec.appendTo = e.id
-                            rec.place = nil
-                            PlaceTagger.shared.tag { Recorder.shared.place = $0 }
-                            rec.start()
-                        } label: {
-                            // One slim row, not a block: the record mark, the label, a hint.
+                    // Add to this recording lives in the player tile; entries without kept audio still get it here.
+                    if isRecordingEntry(e) && audio == nil {
+                        Button { addMore(e) } label: {
                             HStack(spacing: 12) {
                                 ZStack {
                                     Circle().fill(P.ink).frame(width: 28, height: 28)
@@ -174,7 +175,6 @@ struct EntryDetail: View {
                             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }
                         .accessibilityLabel("Add to this recording")
-                        .accessibilityHint("Records more; it's transcribed and added to the end of this transcript.")
                         .buttonStyle(.plain)
                     }
 
@@ -380,6 +380,31 @@ struct EntryDetail: View {
     }
 
     /// Clear, unmistakable section breaks: Summary · Send to · Transcript.
+    private func isRecordingEntry(_ e: Entry) -> Bool {
+        let t = (e.type ?? "").lowercased()
+        return t.contains("voice") || t.contains("audio")
+    }
+    private func addMore(_ e: Entry) {
+        let rec = Recorder.shared
+        // Uploads queue independently; recording can start while one uploads.
+        guard rec.state == .idle else { return }
+        rec.appendTo = e.id
+        rec.place = nil
+        PlaceTagger.shared.tag { Recorder.shared.place = $0 }
+        rec.start()
+    }
+    private func actionTile(_ label: String, _ icon: String, _ tint: Color) -> some View {
+        VStack(spacing: 5) {
+            Image(systemName: icon).font(.system(size: 18, weight: .semibold))
+            Text(label).font(.geist(size: 13.5, weight: .semibold))
+        }
+        .foregroundColor(tint)
+        .frame(maxWidth: .infinity, minHeight: 58)
+        .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(P.edge))
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
     private func hasTranscript(_ e: Entry) -> Bool { !(e.cleanTranscript ?? "").isEmpty }
 
     private func sectionLabel(_ t: String) -> some View {
