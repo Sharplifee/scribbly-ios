@@ -909,7 +909,7 @@ struct IngestSection: View {
         }
         // Instagram + any other direct URL: social links go to Sharp's Cloud Computer,
         // the rest through the pipeline endpoint (fetch, transcribe, summarise, save).
-        let others = urls.filter { CorpusAPI.youtubeID(from: $0) == nil && !$0.contains("podcasts.apple.com") && !$0.contains("open.spotify.com") }
+        let others = urls.filter { CorpusAPI.youtubeID(from: $0) == nil && !isPodcast($0) }   // Spotify songs/albums included
         var otherSaved = 0, otherFailed = 0
         for u in others {
             status = "Processing \(u.contains("instagram.com") ? "Instagram" : "web") link…"
@@ -1189,8 +1189,10 @@ struct IngestSection: View {
         }
         // Social video (Instagram / TikTok / Facebook / Vimeo / X) → the Scribbly® server pulls the audio
         // and transcribes it on its own clock, exactly like a recording. Accepted instantly; shows in Activity.
+        // Every other link goes there too: the server pulls audio when there is any, and
+        // otherwise reads the page itself (lyrics, Apple Music, Spotify songs, Audible, articles).
         let low0 = url.lowercased()
-        if ["instagram.com", "tiktok.com", "facebook.com", "fb.watch", "vimeo.com", "x.com/", "twitter.com/"].contains(where: { low0.contains($0) }) {
+        if !low0.isEmpty {
             do {
                 var req = URLRequest(url: URL(string: CorpusAPI.voiceIngestURL.replacingOccurrences(of: "/upload", with: "/link"))!)
                 req.httpMethod = "POST"; req.timeoutInterval = 30
