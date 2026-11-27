@@ -468,11 +468,11 @@ struct IngestSection: View {
     var body: some View {
         ScrollView {
             // any tap outside the field puts the keyboard away
-            VStack(spacing: 14) {
+            VStack(spacing: 26) {
 
                 // ── Hero: the same pillar banner as every page, with the wordmark,
                 // the line, and what the library holds.
-                PageHeader(title: "Say it once.\nFind it forever.", subtitle: "Transcribed · Summarized · Searchable",
+                PageHeader(title: "Everything you hear.\nCaptured.", subtitle: "Transcribed · Summarized · Searchable",
                            trailing: homeSavedLabel)
                     .id(ScrollTop.anchor)
                     .task { if let store { await store.loadRecent() } }
@@ -485,7 +485,7 @@ struct IngestSection: View {
                     Text("Paste anything").monoLabel(9.5)
                     // Return = Go (same as Fetch) and the keyboard goes away; pasted blocks keep their lines.
                     TextField("A channel, a playlist, one link or twenty…", text: $text, axis: .vertical)
-                        .lineLimit(3...8)
+                        .lineLimit(1...6)
                         .font(.geist(size: 14)).foregroundColor(P.ink)
                         // Standard keyboard with the predictive bar left ON — that bar is
                         // where iOS offers "Paste from YouTube" for whatever you copied,
@@ -510,7 +510,7 @@ struct IngestSection: View {
                                 Task { await submit() }
                             }
                         }
-                        .padding(.horizontal, 14).padding(.vertical, 14)
+                        .padding(.horizontal, 14).padding(.vertical, 11)
                         .toolbar {
                             ToolbarItemGroup(placement: .keyboard) {
                                 // One-tap paste of what's on the clipboard (no permission pop-up).
@@ -558,7 +558,7 @@ struct IngestSection: View {
                                 Text("Upload").lineLimit(1).fixedSize()
                             }
                             .font(.geist(size: 15, weight: .medium)).foregroundColor(P.ink)
-                            .frame(maxWidth: .infinity).frame(height: 46)
+                            .frame(maxWidth: .infinity).frame(height: 40)
                             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                             .sinkyGlass(RoundedRectangle(cornerRadius: 12, style: .continuous), interactive: true)
                         }
@@ -566,12 +566,12 @@ struct IngestSection: View {
                         Button { pasteFocused = false; Task { await submit() } } label: {
                             Text(fetchLabel(det))
                         }
-                        .buttonStyle(SinkyPrimaryButtonStyle(enabled: !det.isEmpty))
+                        .buttonStyle(SinkyPrimaryButtonStyle(enabled: !det.isEmpty, height: 40))
                         .frame(maxWidth: .infinity)
                         .disabled(det.isEmpty)
                     }
                 }
-                .padding(14)
+                .padding(12)
                 .animation(.easeOut(duration: 0.18), value: det.isEmpty)
                 .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(P.surface)
                     .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(P.edge)))
@@ -1343,9 +1343,9 @@ private struct RecentList: View {
     private var liveBatches: [JobsModel.Batch] { jobs.batches.filter { $0.pending > 0 } }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("RECENT ACTIVITY").sectionHead()
-            filterChips.padding(.bottom, 2)
+            filterChips.padding(.bottom, 4)
             VStack(spacing: 0) {
                 if filter == .all {
                 // ── Live: what's processing right now
@@ -1450,12 +1450,12 @@ private struct RecentList: View {
         let title = e.displayTitle(creator: creator)
         let meta = e.metaLine(creator: creator)
         // More air per note so the list reads as separate items, not one block.
-        return VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 7) {
             Text(title).font(.geist(size: 14, weight: .semibold)).foregroundColor(P.ink).lineLimit(2).multilineTextAlignment(.leading)
-                .lineSpacing(2)
+                .lineSpacing(3)
             Text(meta).font(.geist(size: 11.5)).foregroundColor(P.textDim).lineLimit(2).multilineTextAlignment(.leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 19)
     }
 }
 

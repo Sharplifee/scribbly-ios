@@ -100,6 +100,8 @@ struct EntryDetail: View {
                         EntryAudioCard(audio: a, title: e.kindLabel + (e.place.map { " · " + $0 } ?? ""),
                                        onAddMore: isRecordingEntry(e) ? { addMore(e) } : nil)
                     }
+                    // Send to + Copy + Share up top, so they never need a scroll.
+                    quickActions(e)
                     if hasTranscript(e) {
                         Picker("", selection: $tab) {
                             Text("Summary").tag(0)
@@ -115,44 +117,16 @@ struct EntryDetail: View {
                         sectionLabel("Summary")
                         StructuredSummary(text: s)
                     }
-                    sectionLabel("Send to")
-                    sendToClaudeButton(e)
-                    Button { showBots = true } label: {
-                        HStack(spacing: 8) {
-                            Image("logo-grok").resizable().scaledToFit().frame(width: 20, height: 20)
-                            Text("Send to Grok Bots").font(.geist(size: 14.5, weight: .semibold)).foregroundColor(P.ink)
-                            Spacer()
-                            Text("Donna and the rest").font(.geist(size: 12)).foregroundColor(P.textDim)
-                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(P.textDim)
-                        }
-                        .padding(.horizontal, 14).frame(height: 48)
-                        .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(P.edge))
-                    }
-                    .buttonStyle(.plain)
-                    .sheet(isPresented: $showBots) {
-                        GrokBotsSheet(entryID: e.id, link: { await shareLink(e.id) })
-                            .presentationDetents([.medium, .large])
-                    }
-
-                    // Copy · Export · Share · Delete — big, easy targets
+                    // Export · Delete stay at the bottom, small.
                     HStack(spacing: 8) {
-                        Menu {
-                            Button { copy(summaryText()) } label: { Label("Summary", systemImage: "text.alignleft") }
-                                .disabled(summaryText().isEmpty)
-                            Button { copy(transcriptText()) } label: { Label("Transcript", systemImage: "text.quote") }
-                                .disabled(transcriptText().isEmpty)
-                            Button { copy(exportText()) } label: { Label("Both — summary + transcript", systemImage: "doc.on.doc") }
-                        } label: { actionTile(copied ? "Copied" : "Copy", "doc.on.doc", P.accent) }
-                        ShareLink(item: exportText(), preview: SharePreview(e.title)) { actionTile("Export", "arrow.down.doc", P.accent) }
-                        ShareLink(item: shareText(e), subject: Text(e.title), preview: SharePreview(e.title)) { actionTile("Share", "square.and.arrow.up", P.accent) }
+                        ShareLink(item: exportText(), preview: SharePreview(e.title)) { smallTile("Export", "arrow.down.doc", P.ink) }
                         Button { confirmDelete = true } label: {
-                            if deleting { ProgressView().tint(P.danger).frame(maxWidth: .infinity, minHeight: 58) }
-                            else { actionTile("Delete", "trash", P.danger) }
+                            if deleting { ProgressView().tint(P.danger).frame(maxWidth: .infinity, minHeight: 36) }
+                            else { smallTile("Delete", "trash", P.danger) }
                         }
                         .disabled(deleting)
                     }
-                    .padding(.vertical, 2)
+                    .padding(.top, 4)
                     if let err = deleteError {
                         Text("Couldn't delete: \(err)").font(.geist(size: 12)).foregroundColor(P.danger)
                     }
@@ -165,11 +139,10 @@ struct EntryDetail: View {
                                     Circle().fill(P.ink).frame(width: 28, height: 28)
                                     Circle().fill(P.accent).frame(width: 9, height: 9)
                                 }
-                                Text("Add to this recording").font(.geist(size: 15, weight: .semibold)).foregroundColor(P.ink)
+                                Text("Add to this recording").font(.geist(size: 14.5, weight: .semibold)).foregroundColor(P.ink)
                                 Spacer(minLength: 6)
-                                Text("Records more onto the end").font(.geist(size: 11.5)).foregroundColor(P.textDim)
                             }
-                            .padding(.horizontal, 14).frame(height: 50)
+                            .padding(.horizontal, 14).frame(height: 42)
                             .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(P.surface))
                             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(P.edge))
                             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -392,6 +365,67 @@ struct EntryDetail: View {
         rec.place = nil
         PlaceTagger.shared.tag { Recorder.shared.place = $0 }
         rec.start()
+    }
+    /// One compact row: Claude · GPT · Grok · Bots · Copy · Share.
+    @ViewBuilder private func quickActions(_ e: Entry) -> some View {
+        HStack(spacing: 6) {
+            ForEach(destinations) { d in
+                let primary = d.label == defaultDestination
+                Button { send(e, to: d) } label: {
+                    quickTile(d.label, primary: primary) {
+                        Image(d.logo).resizable().scaledToFit().frame(width: 16, height: 16)
+                            .padding(d == .chatgpt ? 2 : 0)
+                            .background(d == .chatgpt ? Color.white : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Send to \(d.label)")
+            }
+            Button { showBots = true } label: {
+                quickTile("Bots") { Image("logo-grok").resizable().scaledToFit().frame(width: 16, height: 16) }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Send to Grok Bots")
+            .sheet(isPresented: $showBots) {
+                GrokBotsSheet(entryID: e.id, link: { await shareLink(e.id) })
+                    .presentationDetents([.medium, .large])
+            }
+            Menu {
+                Button { copy(summaryText()) } label: { Label("Summary", systemImage: "text.alignleft") }
+                    .disabled(summaryText().isEmpty)
+                Button { copy(transcriptText()) } label: { Label("Transcript", systemImage: "text.quote") }
+                    .disabled(transcriptText().isEmpty)
+                Button { copy(exportText()) } label: { Label("Both — summary + transcript", systemImage: "doc.on.doc") }
+            } label: {
+                quickTile(copied ? "Copied" : "Copy") { Image(systemName: "doc.on.doc").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent) }
+            }
+            ShareLink(item: shareText(e), subject: Text(e.title), preview: SharePreview(e.title)) {
+                quickTile("Share") { Image(systemName: "square.and.arrow.up").font(.system(size: 13, weight: .semibold)).foregroundColor(P.accent) }
+            }
+        }
+    }
+    private func quickTile<I: View>(_ label: String, primary: Bool = false, @ViewBuilder icon: () -> I) -> some View {
+        VStack(spacing: 3) {
+            icon().frame(height: 16)
+            Text(label).font(.geist(size: 10.5, weight: .semibold)).foregroundColor(P.ink).lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity).frame(height: 44)
+        .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .stroke(primary ? AnyShapeStyle(P.accent) : AnyShapeStyle(P.edge), lineWidth: primary ? 1.3 : 1))
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+    private func smallTile(_ label: String, _ icon: String, _ tint: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 13, weight: .semibold))
+            Text(label).font(.geist(size: 13, weight: .semibold))
+        }
+        .foregroundColor(tint)
+        .frame(maxWidth: .infinity, minHeight: 36)
+        .background(P.surface).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(P.edge))
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
     private func actionTile(_ label: String, _ icon: String, _ tint: Color) -> some View {
         VStack(spacing: 5) {

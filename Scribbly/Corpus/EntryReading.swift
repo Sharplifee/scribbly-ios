@@ -158,26 +158,18 @@ struct EntryAudioCard: View {
                             .frame(width: 38, height: 26).background(Capsule().fill(P.surface2))
                     }
                     .accessibilityLabel("Playback speed")
-                }
-                .buttonStyle(.plain)
-            }
-            if let add = onAddMore {
-                Divider().overlay(P.border)
-                Button(action: add) {
-                    HStack(spacing: 10) {
-                        ZStack {
-                            Circle().fill(P.ink).frame(width: 22, height: 22)
-                            Circle().fill(P.accent).frame(width: 8, height: 8)
+                    // Add to this recording sits opposite the play button: a record dot.
+                    if let add = onAddMore {
+                        Button(action: add) {
+                            ZStack {
+                                Circle().stroke(P.edge, lineWidth: 1).background(Circle().fill(P.surface2)).frame(width: 36, height: 36)
+                                Circle().fill(P.accent).frame(width: 12, height: 12)
+                            }
                         }
-                        Text("Add to this recording").font(.geist(size: 14.5, weight: .semibold)).foregroundColor(P.ink)
-                        Spacer(minLength: 6)
-                        Text("Records more onto the end").font(.geist(size: 11)).foregroundColor(P.textDim)
+                        .accessibilityLabel("Add to this recording")
                     }
-                    .frame(height: 30)
-                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Add to this recording")
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
